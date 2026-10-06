@@ -66,6 +66,14 @@
 - Save timing: take the timestamp **before** `storage.set`. The background can apply and write `applyReport` before the write promise resolves, and a later timestamp would leave status stuck on "Applying"
 - Imported rules with a custom `resourceTypes` list show under Advanced as "Custom…". The collapsed Advanced section has a checkbox per type. An empty list is a field error. Inject and mock ignore `resourceTypes`
 
+## Rule tester
+
+- The default probe is a **page load**. A rule that omits `resourceTypes` does not match it (DNR's "everything except main_frame"). Pick Script or Fetch / XHR in Request context to test those rules
+- Mocks win only for Fetch / XHR. A script or page load still follows DNR even when a mock pattern matches the URL
+- A page-load redirect or block suppresses injects for that URL. A subresource redirect does not
+- The tester does not model the initiatorDomains cross-site iframe gap. It scopes by the page URL's host
+- It resolves the draft on screen. "Detour is off" and "Includes unsaved edits" mean the live engines may differ
+
 ## Resource Override import
 
 - v1 (master): `{ v: 1, data: [{ id: "d1", matchUrl, on, rules }] }`, file bodies inline in `rule.file`

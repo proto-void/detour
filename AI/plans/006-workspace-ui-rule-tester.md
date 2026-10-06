@@ -1,6 +1,6 @@
 # 006 — workspace-ui rule tester
 
-**Status:** In progress  
+**Status:** Done  
 **Date:** 2026-10-06  
 **Spec:** [workspace-ui](../specs/workspace-ui.md) slice 3 — Approved (Hamza, 2026-10-06)
 
@@ -29,12 +29,18 @@ Recipes, DevTools panel, light theme, popup group toggles, Firefox `testMatchOut
 
 ## Tasks
 
-- [ ] T1 Spec approved, this plan, PROGRESS
-- [ ] T2 `resolveProbe` + result text — unit tests for precedence
-- [ ] T3 Options-page tester + popup entry
-- [ ] T4 Typecheck, unit tests, Chrome + Firefox builds
-- [ ] T5 e2e: open tester, paste URL, assert the winning rule
-- [ ] T6 KB write-back
+- [x] T1 Spec approved, this plan, PROGRESS
+- [x] T2 `resolveProbe` + result text — unit tests for precedence
+- [x] T3 Options-page tester + popup entry
+- [x] T4 Typecheck, unit tests, Chrome + Firefox builds
+- [x] T5 e2e: open tester, paste URL, assert the winning rule
+- [x] T6 KB write-back
+
+## Results (2026-10-06)
+
+- 263 unit tests pass (24 new, in `tester.test.ts`); `tsc` + `svelte-check --fail-on-warnings` clean
+- Chrome and Firefox production builds clean
+- `pnpm e2e:chrome` 45/45 on Chrome for Testing 154: winning redirect, no match, redirect loop not applied
 
 ## Verification
 

@@ -66,16 +66,16 @@ CodeMirror was deferred from this slice and landed with page-inject (plan 005). 
 
 ### Acceptance criteria
 
-- [ ] Options page has a tester: a URL field, plus optional method, resource type, page URL, and “page is inside a frame”
-- [ ] Resolves the workspace on screen (the editor draft) with the engines’ precedence: group order, rule order, on/off, site scoping (`pageDomains` + subdomain match), and action type
-- [ ] Fetch/XHR: the first matching mock wins, and network rules do not (the request never leaves the page). Other resource types ignore mocks
-- [ ] Otherwise the earliest matching block or redirect wins. Redirects show the target with the same wildcard / `\1` expansion as the compiler. Header rules all apply; on one header an earlier set or remove wins, and later appends still apply
-- [ ] Inject rules run against the page URL (all of them, in order). They do not run when this probe is a page load that is redirected or blocked. Inline JS is not applied when user scripts are off
-- [ ] A rule the compiler would refuse (redirect loop, non-ASCII pattern, and the same) does not win; the tester says it matched but is not applied
-- [ ] Shows the group name, a short rule summary, and the outcome (redirect target, block, headers, inject, or mock status and body), or “No rule matches.”
-- [ ] Popup has a control that opens the tester
-- [ ] Notes when Detour is off or the draft has unsaved edits
-- [ ] Dark, keyboard accessible, result text is not color-only, and the result is announced
+- [x] Options page has a tester: a URL field, plus optional method, resource type, page URL, and “page is inside a frame”
+- [x] Resolves the workspace on screen (the editor draft) with the engines’ precedence: group order, rule order, on/off, site scoping (`pageDomains` + subdomain match), and action type
+- [x] Fetch/XHR: the first matching mock wins, and network rules do not (the request never leaves the page). Other resource types ignore mocks
+- [x] Otherwise the earliest matching block or redirect wins. Redirects show the target with the same wildcard / `\1` expansion as the compiler. Header rules all apply; on one header an earlier set or remove wins, and later appends still apply
+- [x] Inject rules run against the page URL (all of them, in order). They do not run when this probe is a page load that is redirected or blocked. Inline JS is not applied when user scripts are off
+- [x] A rule the compiler would refuse (redirect loop, non-ASCII pattern, and the same) does not win; the tester says it matched but is not applied
+- [x] Shows the group name, a short rule summary, and the outcome (redirect target, block, headers, inject, or mock status and body), or “No rule matches.”
+- [x] Popup has a control that opens the tester
+- [x] Notes when Detour is off or the draft has unsaved edits
+- [x] Dark, keyboard accessible, result text is not color-only, and the result is announced
 
 ### Slice 3 out of scope
 

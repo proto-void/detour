@@ -15,7 +15,7 @@
 | **Deep engine** | Chromium `chrome.debugger` / CDP path for body-level overrides |
 | **Local Bridge** | Optional Node CLI serving local files to the extension over loopback |
 | **Recipe** | Shareable starter pack of rules for a scenario (e.g. Vite) |
-| **Rule tester** | UI that shows which rule matches a pasted URL |
+| **Rule tester** | Options-page UI: paste a URL (optional method, resource type, page) and see which rule wins, using engine precedence |
 | **RO** | Resource Override (kylepaulsen) — upstream inspiration |
 | **SDD** | Spec-driven development — Draft → Approved before implementation |
 | **Workspace** | All groups the user has; stored/exported as `{ v, data }` envelope |
