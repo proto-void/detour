@@ -1,5 +1,7 @@
-import { fulfillParams, hostnameOf, pickBodyRule, type HeaderEntry } from './decide';
-import type { BodyPlan } from './plan';
+import type { ReadBridgeFile } from '../local-bridge/read';
+import { contentTypeForRelative } from '../local-bridge/paths';
+import { fulfillRaw, hostnameOf, pickBodyRule, type HeaderEntry } from './decide';
+import type { BodyPlan, BodyRule } from './plan';
 
 /** chrome.debugger, shaped so tests can pass a fake. Protocol 1.3. */
 export interface Debuggee {
@@ -70,6 +72,7 @@ export interface BodyMatchNote {
 export function createChromeBodySession(dbg: DebuggerApi, tabs: TabsApi, onMatch?: (note: BodyMatchNote) => void) {
   let plan: BodyPlan = { rules: [], patterns: [], broad: false, refused: [] };
   let planKey = '';
+  let readFile: ReadBridgeFile | undefined;
   const attached = new Set<number>();
   const cancelled = new Set<number>();
   const mainFrame = new Map<number, string>();
@@ -191,14 +194,45 @@ export function createChromeBodySession(dbg: DebuggerApi, tabs: TabsApi, onMatch
       await finish('Fetch.continueResponse', { requestId });
       return;
     }
-    const replaced = await finish('Fetch.fulfillRequest', fulfillParams(requestId, rule, event.responseStatusCode, event.responseStatusText, event.responseHeaders));
+    const replacement = await bytesFor(rule);
+    if (!replacement) {
+      await finish('Fetch.continueResponse', { requestId });
+      return;
+    }
+    const replaced = await finish(
+      'Fetch.fulfillRequest',
+      fulfillRaw(
+        requestId,
+        replacement.bytes,
+        replacement.status ?? event.responseStatusCode,
+        replacement.phrase ?? event.responseStatusText,
+        event.responseHeaders,
+        replacement.contentType,
+        replacement.noStore,
+      ),
+    );
     if (replaced) onMatch?.({ groupId: rule.groupId, ruleId: rule.ruleId, url, tabId });
   }
 
+  async function bytesFor(rule: BodyRule): Promise<{ bytes: Uint8Array; status?: number; phrase?: string; contentType?: string; noStore: boolean } | undefined> {
+    if (!rule.bridgePath) {
+      return { bytes: new TextEncoder().encode(rule.body), status: undefined, phrase: undefined, contentType: rule.contentType, noStore: false };
+    }
+    if (!readFile) return undefined;
+    try {
+      const read = await readFile(rule.bridgePath);
+      if (!read.ok) return undefined;
+      return { bytes: read.bytes, status: 200, phrase: 'OK', contentType: rule.contentType ?? read.contentType ?? contentTypeForRelative(rule.bridgePath), noStore: true };
+    } catch {
+      return undefined;
+    }
+  }
+
   return {
-    /** Install `plan` (empty detaches). Returns short errors, never rule bodies. */
-    async apply(next: BodyPlan): Promise<string[]> {
-      const key = JSON.stringify(next.rules.map((rule) => [rule.ruleId, rule.body, rule.contentType, rule.match, rule.resourceTypes, rule.pageDomains, rule.caseSensitive]));
+    /** Install `plan` (empty detaches). Returns short errors, never rule bodies. `read` is used for bridge paths and is not logged. */
+    async apply(next: BodyPlan, read?: ReadBridgeFile): Promise<string[]> {
+      readFile = read;
+      const key = JSON.stringify(next.rules.map((rule) => [rule.ruleId, rule.body, rule.bridgePath, rule.contentType, rule.match, rule.resourceTypes, rule.pageDomains, rule.caseSensitive]));
       if (key !== planKey) cancelled.clear();
       planKey = key;
       plan = next;

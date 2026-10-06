@@ -57,15 +57,19 @@ export interface FulfillBody {
   body: string;
 }
 
-/** UTF-8 then base64. Chunked so a 1 MB body doesn't blow the argument stack. */
-export function utf8Base64(text: string): string {
-  const bytes = new TextEncoder().encode(text);
+/** Base64 of raw bytes. Chunked so a large body doesn't blow the argument stack. */
+export function bytesBase64(bytes: Uint8Array): string {
   let binary = '';
   const size = 0x8000;
   for (let i = 0; i < bytes.length; i += size) {
     binary += String.fromCharCode(...bytes.subarray(i, i + size));
   }
   return btoa(binary);
+}
+
+/** UTF-8 then base64. */
+export function utf8Base64(text: string): string {
+  return bytesBase64(new TextEncoder().encode(text));
 }
 
 export function hostnameOf(url: string | undefined): string {
@@ -110,24 +114,43 @@ export function pickBodyRule(rules: readonly BodyRule[], request: BodyRequest): 
  * Drop encoding headers so the new bytes aren't gunzipped, and optionally
  * replace Content-Type. Other headers (including CSP) stay.
  */
-export function replacementHeaders(original: readonly HeaderEntry[] | undefined, contentType?: string): HeaderEntry[] {
+export function replacementHeaders(original: readonly HeaderEntry[] | undefined, contentType?: string, options?: { noStore?: boolean }): HeaderEntry[] {
   const headers = (original ?? []).filter((header) => !STRIP_ON_REPLACE.has(header.name.toLowerCase())).map((header) => ({ ...header }));
   const type = contentType?.trim();
-  if (!type) return headers;
-  const index = headers.findIndex((header) => header.name.toLowerCase() === 'content-type');
-  if (index >= 0) headers[index] = { name: headers[index]!.name, value: type };
-  else headers.push({ name: 'content-type', value: type });
+  if (type) {
+    const index = headers.findIndex((header) => header.name.toLowerCase() === 'content-type');
+    if (index >= 0) headers[index] = { name: headers[index]!.name, value: type };
+    else headers.push({ name: 'content-type', value: type });
+  }
+  if (options?.noStore) {
+    const index = headers.findIndex((header) => header.name.toLowerCase() === 'cache-control');
+    if (index >= 0) headers[index] = { name: headers[index]!.name, value: 'no-store' };
+    else headers.push({ name: 'cache-control', value: 'no-store' });
+  }
   return headers;
 }
 
-export function fulfillParams(requestId: string, rule: BodyRule, status: number | undefined, statusText: string | undefined, headers: readonly HeaderEntry[] | undefined): FulfillBody {
+/** Fulfill with raw bytes. `noStore` is for bridge files, which change on disk between reloads. */
+export function fulfillRaw(
+  requestId: string,
+  bytes: Uint8Array,
+  status: number | undefined,
+  statusText: string | undefined,
+  headers: readonly HeaderEntry[] | undefined,
+  contentType?: string,
+  noStore = false,
+): FulfillBody {
   const responseCode = status && status >= 100 && status <= 599 ? status : 200;
   const phrase = statusText?.trim();
   return {
     requestId,
     responseCode,
     ...(phrase && { responsePhrase: phrase }),
-    responseHeaders: replacementHeaders(headers, rule.contentType),
-    body: utf8Base64(rule.body),
+    responseHeaders: replacementHeaders(headers, contentType, noStore ? { noStore: true } : undefined),
+    body: bytesBase64(bytes),
   };
+}
+
+export function fulfillParams(requestId: string, rule: BodyRule, status: number | undefined, statusText: string | undefined, headers: readonly HeaderEntry[] | undefined): FulfillBody {
+  return fulfillRaw(requestId, new TextEncoder().encode(rule.body), status, statusText, headers, rule.contentType, false);
 }

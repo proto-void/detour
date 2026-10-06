@@ -47,6 +47,25 @@ describe('planBody', () => {
     expect(plan.refused).toEqual([expect.objectContaining({ ruleId: 'bad', reason: 'non-ascii-pattern' })]);
   });
 
+  it('arms a local file only when the caller asked for in-place, and refuses an escaping path', () => {
+    const local: Rule = {
+      id: 's',
+      enabled: true,
+      match: { kind: 'glob', pattern: 'https://cdn.example.com/app.js' },
+      action: { type: 'serveLocal', path: 'assets/app.js' },
+      resourceTypes: ['script'],
+    };
+    expect(planBody(ws([local])).rules).toEqual([]);
+    const plan = planBody(ws([body('b', 'https://cdn.example.com/app.js', 'INLINE'), local]), { bridgeInPlace: true });
+    expect(plan.rules.map((rule) => rule.ruleId)).toEqual(['b', 's']);
+    expect(plan.rules[1]).toMatchObject({ bridgePath: 'assets/app.js', body: '' });
+    expect(plan.patterns.map((pattern) => pattern.urlPattern)).toEqual(['https://cdn.example.com/app.js']);
+    const escaped = planBody(ws([{ ...local, action: { type: 'serveLocal', path: '../secret' } }]), { bridgeInPlace: true });
+    expect(escaped.rules).toEqual([]);
+    expect(escaped.refused).toEqual([expect.objectContaining({ reason: 'invalid-bridge-path' })]);
+    expect(escaped.refused[0]?.message).not.toContain('secret');
+  });
+
   it('is empty when the group is off, and keeps site scope', () => {
     expect(planBody(ws([body('b', '*')], { enabled: false })).rules).toEqual([]);
     const scoped = planBody(ws([body('b', 'https://cdn.example.com/a.js')], { pageDomains: ['app.example.com'] }));

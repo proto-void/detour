@@ -10,6 +10,7 @@ export interface BridgeListen {
   close: () => Promise<void>;
 }
 
+/** Keep in sync with `contentTypeForRelative` in `extension/src/local-bridge/paths.ts`. */
 const TEXT: Record<string, string> = {
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',

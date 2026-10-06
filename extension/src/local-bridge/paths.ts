@@ -1,4 +1,4 @@
-/** Keep in sync with `cli/src/paths.ts`. The extension cannot import the CLI package. */
+/** Keep in sync with `cli/src/paths.ts` and the content-type map in `cli/src/server.ts`. The extension cannot import the CLI package. */
 
 export const DEFAULT_BRIDGE_PORT = 47321;
 export const MAX_RELATIVE_PATH = 512;
@@ -41,6 +41,39 @@ export const BRIDGE_NOT_CONNECTED =
 
 export function bridgeDownMessage(port: number): string {
   return `Local Bridge is not responding on 127.0.0.1:${port}. Start it with detour bridge <folder> and connect the new token.`;
+}
+
+/** Shown when a stored path escapes the bridge folder. Does not echo the path. */
+export const BRIDGE_PATH_REFUSED =
+  'The file path has to stay inside the bridge folder, like assets/app.js. Absolute paths and .. are not allowed.';
+
+/** Same map as `contentTypeFor` in the CLI. Used when the extension fulfills a response itself. */
+const CONTENT_TYPES: Record<string, string> = {
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.htm': 'text/html; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.txt': 'text/plain; charset=utf-8',
+  '.xml': 'application/xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.wasm': 'application/wasm',
+};
+
+export function contentTypeForRelative(rel: string): string {
+  const dot = rel.lastIndexOf('.');
+  const ext = dot >= 0 ? rel.slice(dot).toLowerCase() : '';
+  return CONTENT_TYPES[ext] ?? 'application/octet-stream';
 }
 
 /** Refusal text must not carry the session token or the file URL. */

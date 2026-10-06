@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BodyRule } from './plan';
-import { fulfillParams, pickBodyRule, replacementHeaders, resourceAllowed, utf8Base64 } from './decide';
+import { bytesBase64, fulfillParams, fulfillRaw, pickBodyRule, replacementHeaders, resourceAllowed, utf8Base64 } from './decide';
 
 const rule = (extra: Partial<BodyRule> = {}): BodyRule => ({
   groupId: 'g',
@@ -60,5 +60,15 @@ describe('replacement headers and body encoding', () => {
     expect(params.body).toBe(utf8Base64('window.A = "LOCAL"'));
     expect(params.responseHeaders.some((header) => header.name.toLowerCase() === 'content-encoding')).toBe(false);
     expect(params.responseHeaders).toContainEqual({ name: 'content-type', value: 'text/javascript' });
+  });
+
+  it('base64-encodes raw bytes and marks a bridge response no-store', () => {
+    expect(bytesBase64(new Uint8Array([0xff]))).toBe('/w==');
+    const params = fulfillRaw('req', new Uint8Array([0xff, 0x00]), 200, 'OK', [{ name: 'Content-Encoding', value: 'gzip' }, { name: 'Cache-Control', value: 'max-age=60' }], 'application/octet-stream', true);
+    expect(params.body).toBe('/wA=');
+    expect(params.responseHeaders).toEqual([
+      { name: 'Cache-Control', value: 'no-store' },
+      { name: 'content-type', value: 'application/octet-stream' },
+    ]);
   });
 });

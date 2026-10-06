@@ -10,7 +10,7 @@
   import { serializeExport } from '../../rule-model/transfer';
   import { announce, live } from '../../ui/announcer.svelte';
   import ThemeToggle from '../../ui/ThemeToggle.svelte';
-  import { BODY_CONSENT_KEY, bodyPermissions, workspaceHasBodyRules } from '../../engine-deep/permissions';
+  import { BODY_CONSENT_KEY, bodyPermissions, workspaceHasBodyRules, workspaceHasServeLocal } from '../../engine-deep/permissions';
   import { addGroup, exportFileName, isAwaitingApply, isDirty, newGroup, validateWorkspace } from '../../workspace-ui/editor';
 import BridgePanel from './BridgePanel.svelte';
 import GroupCard from './GroupCard.svelte';
@@ -34,6 +34,7 @@ import RecipePicker from './RecipePicker.svelte';
   let failures: PageFailure[] = $state.raw([]);
   let userScriptsReady = $state(true);
   let bodyPermission = $state(true);
+  let bodyRewriteAllowed = $state(false);
   let testerFocused = $state(false);
 
   const validation = $derived(validateWorkspace(draft));
@@ -46,16 +47,18 @@ import RecipePicker from './RecipePicker.svelte';
   const isFirefox = import.meta.env.FIREFOX;
   const bodyPermissionNames = bodyPermissions(isFirefox ? 'firefox' : 'chrome');
   const needsBodyPermission = $derived(workspaceHasBodyRules(saved ?? { groups: [] }) && !bodyPermission);
+  const needsInPlaceConsent = $derived(workspaceHasServeLocal(saved ?? { groups: [] }) && !bodyRewriteAllowed && bodyPermission);
 
   async function checkBodyPermission() {
+    const stored = await area.get(BODY_CONSENT_KEY);
+    const consented = stored[BODY_CONSENT_KEY] === true;
+    const granted = await browser.permissions.contains({ permissions: bodyPermissionNames as never }).catch(() => false);
+    bodyRewriteAllowed = consented && granted;
     if (!workspaceHasBodyRules(saved ?? { groups: [] })) {
       bodyPermission = true;
       return true;
     }
-    const stored = await area.get(BODY_CONSENT_KEY);
-    const consented = stored[BODY_CONSENT_KEY] === true;
-    const granted = await browser.permissions.contains({ permissions: bodyPermissionNames as never }).catch(() => false);
-    bodyPermission = consented && granted;
+    bodyPermission = bodyRewriteAllowed;
     return bodyPermission;
   }
 
@@ -68,6 +71,7 @@ import RecipePicker from './RecipePicker.svelte';
     }
     await area.set({ [BODY_CONSENT_KEY]: true });
     bodyPermission = true;
+    bodyRewriteAllowed = true;
     await browser.runtime.sendMessage({ type: RESYNC_MESSAGE }).catch(() => {});
     announce('Body overrides allowed. Applying rules…');
   }
@@ -268,6 +272,19 @@ import RecipePicker from './RecipePicker.svelte';
         <p>
           <strong>Response body rules are paused.</strong> Allow debugger before Detour attaches. Chrome then shows a debugging banner, and DevTools on that tab will disconnect. Pages that set <code>integrity</code> can
           still reject the new file.
+        </p>
+      {/if}
+      <button type="button" class="btn" id="allow-body" onclick={allowBodyOverride}>{isFirefox ? 'Allow response rewriting' : 'Allow debugger'}</button>
+    </div>
+  {:else if needsInPlaceConsent}
+    <div class="banner warning" role="status" data-testid="bridge-inplace-banner">
+      {#if isFirefox}
+        <p>
+          <strong>Local files redirect to 127.0.0.1.</strong> A page that blocks that address in Content-Security-Policy will not load them. Allow response rewriting to keep the original URL and replace the body. Connect Local Bridge or the rule does nothing.
+        </p>
+      {:else}
+        <p>
+          <strong>Local files redirect to 127.0.0.1.</strong> A page that blocks that address in Content-Security-Policy will not load them. Allow debugger to keep the original URL and replace the body. Chrome then shows a debugging banner. Connect Local Bridge or the rule does nothing.
         </p>
       {/if}
       <button type="button" class="btn" id="allow-body" onclick={allowBodyOverride}>{isFirefox ? 'Allow response rewriting' : 'Allow debugger'}</button>

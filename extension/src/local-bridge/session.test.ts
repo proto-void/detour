@@ -4,6 +4,8 @@ import { createFakeDnr } from '../test/fake-dnr';
 import { saveWorkspace } from '../rule-model/storage';
 import type { Workspace } from '../rule-model/schema';
 import { syncRules } from '../engine-core/apply';
+import { createBodyEngine } from '../engine-deep/sync';
+import type { DebuggerApi, TabsApi } from '../engine-deep/chrome-session';
 import { bridgeFileUrl } from './paths';
 import { BRIDGE_SESSION_KEY, clearBridgeSession, establishBridge, loadBridgeSession, probeBridge, saveBridgeSession } from './session';
 
@@ -98,5 +100,55 @@ describe('syncRules with serveLocal', () => {
     expect(rules()).toEqual([]);
     expect(JSON.stringify(down)).not.toContain(TOKEN);
     expect(down.refused[0]?.message).toContain('127.0.0.1:47321');
+  });
+
+  it('keeps the production URL when response rewriting is allowed, and still redirects without it', async () => {
+    const { dnr, rules } = createFakeDnr();
+    await saveWorkspace(area, workspace());
+    await saveBridgeSession(area, { port: 47321, token: TOKEN, rootLabel: 'dist' });
+    let consented = false;
+    let attaches = 0;
+    const api: DebuggerApi = {
+      async attach() {
+        attaches += 1;
+      },
+      async detach() {},
+      async sendCommand() {
+        return {};
+      },
+      onEvent: { addListener() {}, removeListener() {} },
+      onDetach: { addListener() {}, removeListener() {} },
+    };
+    const tabs: TabsApi = {
+      async query() {
+        return [{ id: 3, url: 'https://app.example.com/' }];
+      },
+      onUpdated: { addListener() {}, removeListener() {} },
+      onRemoved: { addListener() {}, removeListener() {} },
+    };
+    const engine = createBodyEngine({
+      browser: 'chrome',
+      permissions: { async contains() { return true; } },
+      consent: async () => consented,
+      chrome: () => ({ debugger: api, tabs }),
+    });
+    const probe = async () => ({ ok: true as const, rootLabel: 'dist' });
+
+    const redirected = await syncRules(dnr, area, fixedNow, undefined, engine, probe);
+    expect(redirected.bodies).toEqual([]);
+    expect(redirected.applied.map((row) => row.ruleId)).toEqual(['s']);
+    expect(redirected.refused).toEqual([]);
+    expect(JSON.stringify(redirected)).not.toContain(TOKEN);
+    expect(attaches).toBe(0);
+
+    consented = true;
+    const placed = await syncRules(dnr, area, fixedNow, undefined, engine, probe);
+    expect(placed.applied).toEqual([]);
+    expect(placed.bodies).toEqual([{ groupId: 'g', ruleId: 's' }]);
+    expect(placed.refused).toEqual([]);
+    expect(rules()).toEqual([]);
+    expect(JSON.stringify(placed)).not.toContain(TOKEN);
+    expect(JSON.stringify(rules())).not.toContain(TOKEN);
+    expect(attaches).toBe(1);
   });
 });

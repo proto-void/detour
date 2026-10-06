@@ -37,6 +37,7 @@ export const REASON_LABELS: Record<RefusalReason, string> = {
   'body-permission-denied': 'Permission needed',
   'bridge-not-connected': 'Bridge not connected',
   'bridge-down': 'Bridge not running',
+  'invalid-bridge-path': 'Path not allowed',
 };
 
 export function summarizeRule(rule: Rule): string {

@@ -248,6 +248,10 @@ export function validateRule(rule: Rule): RuleValidation {
     warnings['match.pattern'] =
       'This pattern pauses every response while the rule is on, then lets non-matches continue. A more specific URL avoids that.';
   }
+  if (rule.action.type === 'serveLocal' && (rule.match.kind === 'regex' || /^\*+$/.test(rule.match.pattern))) {
+    warnings['match.pattern'] =
+      'This pattern is very broad. After you allow response rewriting, Detour pauses every response in the tab. Without that, a pattern that also matches 127.0.0.1 is refused so the redirect cannot loop.';
+  }
   if (rule.action.type === 'modifyHeaders') {
     rule.action.request.forEach((op, i) => {
       if (op.op === 'append' && !REQUEST_APPEND_HEADERS.has(op.name)) {

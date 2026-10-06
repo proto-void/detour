@@ -16,7 +16,8 @@ export type RefusalReason =
   | 'inject-failed'
   | 'body-permission-denied'
   | 'bridge-not-connected'
-  | 'bridge-down';
+  | 'bridge-down'
+  | 'invalid-bridge-path';
 
 export interface Refusal {
   groupId: string;
@@ -151,6 +152,8 @@ export interface BridgeCompileState {
   session: { port: number; token: string } | null;
   /** False when /health failed. Ignored when `session` is null. */
   up: boolean;
+  /** When true, the body engine serves the file and this compiler must not redirect. */
+  inPlace?: boolean;
 }
 
 export interface CompileOptions {
@@ -203,6 +206,8 @@ export function compileWorkspace(workspace: Workspace, options: CompileOptions =
           refused.push({ ...ids, reason: 'bridge-down', message: bridgeDownMessage(session.port) });
           continue;
         }
+        // In-place keeps the production URL. Emitting a redirect as well would move the request before Fetch sees it.
+        if (options.bridge.inPlace) continue;
         const to = bridgeFileUrl(session, rule.action.path);
         if (!to) {
           refused.push({ ...ids, reason: 'bridge-not-connected', message: BRIDGE_NOT_CONNECTED });

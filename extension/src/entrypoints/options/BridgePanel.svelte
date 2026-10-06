@@ -61,6 +61,9 @@
   {#if session}
     <p data-testid="bridge-status">Connected to {session.rootLabel} on 127.0.0.1:{session.port}.</p>
     <p class="muted">Listens on this computer only. If a rule says the bridge is not running, start <code>detour bridge &lt;folder&gt;</code> again and connect the new token.</p>
+    <p class="muted">
+      After Allow debugger (Chrome) or Allow response rewriting (Firefox), matching files are served in place and the page address does not change. Until then, the browser redirects to 127.0.0.1, which a strict Content-Security-Policy can block.
+    </p>
     <button type="button" class="btn" id="bridge-disconnect" onclick={disconnect}>Disconnect</button>
   {:else}
     <p class="muted">

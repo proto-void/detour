@@ -283,4 +283,13 @@ describe('serveLocal', () => {
     expect(refused.map((r) => r.reason)).toEqual(['redirect-loop']);
     expect(refused[0]?.message).not.toContain(token);
   });
+
+  it('emits no redirect when the body engine will serve the file in place', () => {
+    const { candidates, refused } = compileWorkspace(ws, { bridge: { session: { port: 47321, token }, up: true, inPlace: true } });
+    expect(candidates).toEqual([]);
+    expect(refused).toEqual([]);
+    expect(JSON.stringify({ candidates, refused })).not.toContain(token);
+    const broad: Workspace = { groups: [{ id: 'g', name: 'g', enabled: true, rules: [{ ...rule, match: { kind: 'glob', pattern: '*' } }] }] };
+    expect(compileWorkspace(broad, { bridge: { session: { port: 47321, token }, up: true, inPlace: true } }).refused).toEqual([]);
+  });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createFirefoxBodyFilter, pipeReplacement, type StreamFilter, type WebRequestApi, type WebRequestDetails } from './firefox-filter';
+import { createFirefoxBodyFilter, pipeReplacement, pipeReplacementBytes, type StreamFilter, type WebRequestApi, type WebRequestDetails } from './firefox-filter';
 import type { BodyRule } from './plan';
 
 function fakeFilter(): StreamFilter & { written: Uint8Array[]; closed: boolean; disconnected: boolean } {
@@ -113,5 +113,47 @@ describe('firefox body filter', () => {
     engine.clear();
     expect(web.before).toBeUndefined();
     expect(web.headers).toBeUndefined();
+  });
+
+  it('holds the original stream until bridge bytes arrive, and does not record a failed read', async () => {
+    const filter = fakeFilter();
+    let resolve: (bytes: Uint8Array | undefined) => void = () => {};
+    const pending = new Promise<Uint8Array | undefined>((done) => {
+      resolve = done;
+    });
+    pipeReplacementBytes(filter, pending);
+    filter.ondata?.({ data: new TextEncoder().encode('PROD').buffer });
+    filter.onstop?.();
+    expect(filter.closed).toBe(false);
+    resolve(new TextEncoder().encode('DISK'));
+    await Promise.resolve();
+    expect(new TextDecoder().decode(filter.written[0]!)).toBe('DISK');
+    expect(filter.closed).toBe(true);
+
+    const web = fakeWebRequest();
+    const notes: { url: string }[] = [];
+    const engine = createFirefoxBodyFilter(web.api, (note) => notes.push(note));
+    const token = 'cd'.repeat(32);
+    engine.install([{ ...rule, body: '', contentType: undefined, bridgePath: 'app.js' }], async () => ({ ok: false }));
+    web.before?.({ requestId: '9', url: 'https://cdn.example.com/app.js', type: 'script', tabId: 2, documentUrl: 'https://app.example.com/' });
+    const missed = web.filters.at(-1)!;
+    const prod = new TextEncoder().encode('PROD');
+    missed.ondata?.({ data: prod.buffer.slice(prod.byteOffset, prod.byteOffset + prod.byteLength) });
+    missed.onstop?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(new TextDecoder().decode(missed.written[0]!)).toBe('PROD');
+    expect(notes).toEqual([]);
+    expect(JSON.stringify(notes)).not.toContain(token);
+
+    const rewritten = web.headers?.({
+      requestId: '9',
+      url: 'https://cdn.example.com/app.js',
+      type: 'script',
+      documentUrl: 'https://app.example.com/',
+      responseHeaders: [{ name: 'Content-Encoding', value: 'gzip' }],
+    });
+    expect(rewritten?.responseHeaders).toContainEqual({ name: 'content-type', value: 'text/javascript; charset=utf-8' });
+    expect(rewritten?.responseHeaders).toContainEqual({ name: 'cache-control', value: 'no-store' });
+    expect(JSON.stringify(rewritten).toLowerCase()).not.toContain('content-encoding');
   });
 });

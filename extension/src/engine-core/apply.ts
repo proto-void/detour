@@ -1,4 +1,4 @@
-import type { BodyEngine } from '../engine-deep/sync';
+import type { BodyEngine, BridgeInPlaceSession } from '../engine-deep/sync';
 import { loadBridgeSession, probeBridge, workspaceNeedsBridge, type BridgeSession } from '../local-bridge/session';
 import { planPage, type InjectedKind } from '../page-inject/plan';
 import { syncPage, userScriptsAvailable, type PageApi } from '../page-inject/sync';
@@ -137,9 +137,13 @@ export async function syncRules(
     report = { appliedAt: now().toISOString(), applied: [], refused: [], fallback: false, disabled: false, errors: loaded.errors };
   } else {
     let bridge: CompileOptions['bridge'];
+    let inPlace: BridgeInPlaceSession | undefined;
     if (workspaceNeedsBridge(loaded.value)) {
       const session = await loadBridgeSession(area);
-      bridge = { session, up: session !== null && (await probe(session)).ok };
+      const up = session !== null && (await probe(session)).ok;
+      const canRewrite = up && session !== null && body !== undefined && (await body.ready());
+      bridge = { session, up, inPlace: canRewrite };
+      if (canRewrite && session) inPlace = { port: session.port, token: session.token };
     }
     report = { ...(await applyWorkspace(dnr, loaded.value, now, bridge ? { bridge } : {})), disabled: !enabled };
     if (page) {
@@ -148,7 +152,7 @@ export async function syncRules(
       report = { ...report, injected: result.injected, refused: [...report.refused, ...result.refused], errors: [...report.errors, ...result.errors] };
     }
     if (body) {
-      const result = await body.sync(loaded.value, enabled);
+      const result = await body.sync(loaded.value, enabled, inPlace ? { bridge: inPlace, allowed: true } : undefined);
       report = { ...report, bodies: result.bodies, refused: [...report.refused, ...result.refused], errors: [...report.errors, ...result.errors] };
     }
   }

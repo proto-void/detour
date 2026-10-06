@@ -299,7 +299,7 @@ export function describeResolution(result: Resolved): TesterView {
   } else if (result.request?.kind === 'serveLocal') {
     lines.push({
       ...result.request.ref,
-      outcome: `Serves ${result.request.path} from Local Bridge on 127.0.0.1. Connect the bridge or this rule is refused.`,
+      outcome: `Serves ${result.request.path} from Local Bridge and keeps this URL when response rewriting is allowed; otherwise it redirects to 127.0.0.1. Connect the bridge or this rule is refused.`,
     });
   }
   for (const header of result.headers) {

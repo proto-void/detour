@@ -165,6 +165,9 @@ describe('validation', () => {
     expect(validateRule(redirect('https://x.com/a', 'localhost:5173/a')).warnings['action.to']).toMatch(/^Invalid redirect target/);
     expect(validateRule(redirect('https://x.com/a', 'http://l/*')).warnings['action.to']).toMatch(/^Too many wildcards/);
     expect(validateRule(redirect('https://bücher.de/*', 'http://l/*')).warnings['match.pattern']).toMatch(/^Non-ASCII/);
+    const broadLocal = validateRule({ ...redirect('*', 'http://127.0.0.1/x'), action: { type: 'serveLocal', path: 'app.js' } });
+    expect(broadLocal.errors).toEqual({});
+    expect(broadLocal.warnings['match.pattern']).toMatch(/pauses every response/);
   });
 
   it("warns about request appends Chrome won't accept", () => {

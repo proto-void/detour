@@ -167,6 +167,48 @@ describe('chrome body session', () => {
     expect(dbg.detachCalls).toEqual([1]);
   });
 
+  it('fulfills a local file in place and continues when the bridge read fails', async () => {
+    const dbg = fakeDebugger();
+    const tabs = fakeTabs([{ id: 1, url: 'https://app.example.com/' }]);
+    const notes: { groupId: string; ruleId: string; url: string; tabId: number }[] = [];
+    const session = createChromeBodySession(dbg.api, tabs.api, (note) => notes.push(note));
+    const token = 'ab'.repeat(32);
+    const plan = planBody(
+      {
+        groups: [
+          {
+            id: 'g',
+            name: 'g',
+            enabled: true,
+            rules: [{ id: 's', enabled: true, match: { kind: 'glob', pattern: 'https://cdn.example.com/app.js' }, action: { type: 'serveLocal', path: 'assets/app.js' }, resourceTypes: ['script'] }],
+          },
+        ],
+      },
+      { bridgeInPlace: true },
+    );
+    const disk = new Uint8Array([0xff, 0x00]);
+    await session.apply(plan, async (filePath) => {
+      expect(filePath).toBe('assets/app.js');
+      return { ok: true, bytes: disk, contentType: 'application/octet-stream' };
+    });
+    dbg.eventListeners[0]?.({ tabId: 1 }, 'Fetch.requestPaused', pause('https://cdn.example.com/app.js', 'Script', { responseStatusCode: 404, responseStatusText: 'Not Found' }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const fulfill = dbg.commands.find((command) => command.method === 'Fetch.fulfillRequest');
+    expect(fulfill?.params).toMatchObject({ requestId: 'req-1', responseCode: 200, responsePhrase: 'OK', body: '/wA=' });
+    const headers = (fulfill?.params as { responseHeaders: { name: string; value: string }[] }).responseHeaders;
+    expect(headers).toContainEqual({ name: 'Content-Type', value: 'application/octet-stream' });
+    expect(headers).toContainEqual({ name: 'cache-control', value: 'no-store' });
+    expect(JSON.stringify(dbg.commands)).not.toContain(token);
+    expect(notes).toEqual([{ groupId: 'g', ruleId: 's', url: 'https://cdn.example.com/app.js', tabId: 1 }]);
+
+    dbg.commands.length = 0;
+    await session.apply(plan, async () => ({ ok: false }));
+    dbg.eventListeners[0]?.({ tabId: 1 }, 'Fetch.requestPaused', pause('https://cdn.example.com/app.js', 'Script'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(dbg.commands.some((command) => command.method === 'Fetch.fulfillRequest')).toBe(false);
+    expect(dbg.commands.map((command) => command.method)).toContain('Fetch.continueResponse');
+  });
+
   it('does not steal a tab DevTools already owns', async () => {
     const dbg = fakeDebugger();
     dbg.setFailAttach(true);
