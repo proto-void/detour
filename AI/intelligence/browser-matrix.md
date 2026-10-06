@@ -1,6 +1,6 @@
 # Browser matrix
 
-**Last verified:** 2026-10-06 (DNR quotas, domain conditions, page engines on Chrome 154)
+**Last verified:** 2026-10-06 (DNR quotas, domain conditions, page engines on Chrome 154; Firefox 157 importer, editor, inject, mock, tester)
 
 ## Supported targets (product intent)
 

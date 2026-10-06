@@ -41,6 +41,7 @@ Recipes, DevTools panel, light theme, popup group toggles, Firefox `testMatchOut
 - 263 unit tests pass (24 new, in `tester.test.ts`); `tsc` + `svelte-check --fail-on-warnings` clean
 - Chrome and Firefox production builds clean
 - `pnpm e2e:chrome` 45/45 on Chrome for Testing 154: winning redirect, no match, redirect loop not applied
+- Firefox 157.0.1 headless check: the same three tester outcomes matched live DNR behavior (winning redirect, no match, loop not applied)
 
 ## Verification
 

@@ -53,7 +53,7 @@ New rule actions `injectJs`, `injectCss`, `mock`, compiled into browser registra
   - a new mock rule defaults to method `GET` (the schema default, if the field is omitted, is `ANY`), status 200, `content-type: application/json`, body `{}`
   - inline JS registers on `<all_urls>` and guards in the page, so the code runs in a block
   - e2e covers inline JS/CSS and mocks. JS-from-URL and CSS-from-URL are implemented and unit-tested, not in the Chrome smoke
-- **Not run in a real browser:** Firefox. After the plan 004 steps:
+- **Firefox 157.0.1 (2026-10-06):** passed — inline JS refused until Allow user scripts, then ran at `document_start` before the page script; inline CSS and fetch/XHR mock passed; a non-matching fetch hit the server; mock off applied without reload. Steps:
   1. Load `.output/firefox-mv3`
   2. Add an inline JS rule; the banner should offer **Allow user scripts** (Firefox 136+). Grant it and reload a matching page
   3. Add inline CSS and a mock; confirm the style and that fetch/XHR return the mock, and that a non-matching fetch still hits the server

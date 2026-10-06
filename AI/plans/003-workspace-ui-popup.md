@@ -37,7 +37,7 @@ A Svelte 5 popup with a global on/off switch, RO/Detour file import, and an appl
   - script redirect fires; `main_frame` redirect fires
   - page-scoped group fires on `localhost:8001` but not on `127.0.0.1:8001`
   - switch off: requests pass through; switch on: redirects are back
-- **Not run in a real browser:** Firefox, and the Firefox tab-import path. Manual steps:
+- **Firefox 157.0.1 (2026-10-06):** passed in a headless temporary add-on — Open importer… opens a tab, RO import summary, skipped file override, redirects, site scope, and the Enabled switch. Steps:
   1. `pnpm build:firefox`
   2. In `about:debugging#/runtime/this-firefox`, choose Load Temporary Add-on and pick `.output/firefox-mv3/manifest.json`
   3. Open the Detour popup and click **Open importer…**. A tab opens; choose an RO export

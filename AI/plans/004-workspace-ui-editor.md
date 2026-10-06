@@ -50,7 +50,7 @@ A workspace editor page (options page, opens in a tab) for groups and rules, wit
 - Deviations:
   - the helper is named `mergeImported` (not `replaceImported`), and `normalizeDomains` replaces `parseDomains`. Invalid hosts stay in the draft so the schema error shows at the field
   - engine pre-check problems are **warnings, not blocking errors**, so an imported refused rule never stops you saving unrelated edits
-- **Not run in a real browser:** Firefox. Manual steps, after the plan 003 steps:
+- **Firefox 157.0.1 (2026-10-06):** passed — editor from the popup, iframe warning on the site-scoped group (no `topDomains`), redirect/block/header rules saved as Applied and fired. Re-import of a changed file was not part of this pass. Steps:
   1. Load `.output/firefox-mv3`
   2. In the popup choose **Edit rules…**; the editor tab opens
   3. Add a group with a site (e.g. `localhost`); the iframe warning shows (Firefox has no `topDomains`)

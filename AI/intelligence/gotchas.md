@@ -49,6 +49,7 @@
 
 - DNR has no "tab URL" condition. A page-scoped rule compiles to two DNR rules: `main_frame` with `requestDomains` (the page load is checked against its own URL, like RO), and subresources with `topDomains` (Chrome 145+), or `initiatorDomains` where that isn't available
 - `initiatorDomains` is the frame that made the request, not the top page, so iframes from other sites aren't covered on Firefox / older Chrome. **Accepted gap** (Hamza, 2026-10-06). The editor warns on scoped groups only when `supportsTopDomains()` is false
+- Firefox 157: `declarativeNetRequest.RuleConditionKeys` is null (no `topDomains`). A site-scoped imported group showed the cross-site iframe warning
 - An unknown condition key (e.g. `topDomains` on old Chrome) rejects the **whole** batch, so Detour feature-detects with `RuleConditionKeys` (Chrome 145+) before using it
 - Domain conditions match hosts only and include subdomains; ports and paths in RO tab patterns can't be enforced (import warning)
 
@@ -61,7 +62,7 @@
 
 ## Editor
 
-- Chrome accepts `append` on **request** headers only for a case-sensitive allowlist (accept, accept-encoding, accept-language, access-control-request-headers, cache-control, connection, content-language, cookie, forwarded, if-match, if-none-match, keep-alive, range, te, trailer, transfer-encoding, upgrade, user-agent, via, want-digest, x-forwarded-for). Any other name makes Chrome reject the rule. The editor warns but doesn't block, because Firefox's rules haven't been verified (DNR reference, 2026-10-06)
+- Chrome accepts `append` on **request** headers only for a case-sensitive allowlist (accept, accept-encoding, accept-language, access-control-request-headers, cache-control, connection, content-language, cookie, forwarded, if-match, if-none-match, keep-alive, range, te, trailer, transfer-encoding, upgrade, user-agent, via, want-digest, x-forwarded-for). Any other name makes Chrome reject the rule. The editor warns but doesn't block. Firefox 157 delivered a DNR `set` of a custom request header (`x-detour`) to the server. `append` on Firefox is still unverified (DNR reference, 2026-10-06)
 - A DNR `regexSubstitution` replaces only the **first match** within the URL, not the whole URL. Glob rules are anchored `^…$`, so for them it's the whole URL anyway. A regex rule with `\1` keeps the unmatched prefix and suffix; the preview copies this
 - Save timing: take the timestamp **before** `storage.set`. The background can apply and write `applyReport` before the write promise resolves, and a later timestamp would leave status stuck on "Applying"
 - Imported rules with a custom `resourceTypes` list show under Advanced as "Custom…". The collapsed Advanced section has a checkbox per type. An empty list is a field error. Inject and mock ignore `resourceTypes`
@@ -120,9 +121,9 @@
 
 ## Page inject and api-mock
 
-- `userScripts` can exist before the user allows it, and its methods throw. Probe with `getScripts()` (`userScriptsAvailable`). Chrome reads it through a getter because the property appears and disappears with the toggle
+- `userScripts` can exist before the user allows it, and its methods throw. Probe with `getScripts()` (`userScriptsAvailable`). Chrome reads it through a getter because the property appears and disappears with the toggle. On Firefox 157 the property is missing until the optional permission is granted; the doorhanger buttons are Allow and Deny
 - Inline JS is registered on `<all_urls>` and wrapped in a guard. The code runs inside a block, so top-level `let` / `const` / `class` are not page globals. The editor says to use `window.name = …`
-- A script URL inserted at `document_start` still downloads asynchronously, so page scripts can run first. Inline `userScripts` at `document_start` runs before them (verified on Chrome 154)
+- A script URL inserted at `document_start` still downloads asynchronously, so page scripts can run first. Inline `userScripts` at `document_start` runs before them (verified on Chrome 154 and Firefox 157)
 - `insertCSS` goes bridge → background → tab, so CSS can land just after `load`. E2E waits for the computed style
 - Subframe site scoping uses `location.ancestorOrigins` when the browser exposes it (Chromium). Firefox frames use their own host
 - Mock config crosses worlds as a `CustomEvent` whose `detail` is a JSON string. Requests made before it arrives are held up to 1 s, then mocked or passed through. Synchronous XHR in that window cannot wait, so it passes through

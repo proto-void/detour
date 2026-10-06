@@ -22,12 +22,12 @@
 - [x] Hamza's plan-004 answers: re-import keeps on/off via `importKey`; name-only match asks (content-hash match replaces silently); request types live in a collapsed Advanced section
 - [x] **page-inject** + **api-mock** Approved (Hamza, 2026-10-06) and built (plan 005, ADR-008): inline and URL JS/CSS, MAIN-world fetch/XHR mocks, CodeMirror 6 on the options page, apply-report refusals and session page failures. 239 unit tests; Chrome + Firefox builds clean; `pnpm e2e:chrome` 41/41 on Chrome for Testing 154
 - [x] **workspace-ui slice 3 (rule tester)** Approved (Hamza, 2026-10-06) and built (plan 006): paste a URL on the rules page (popup opens it) and see which rule wins, using engine precedence across redirect, block, headers, inject, and mock. 263 unit tests; Chrome + Firefox builds clean; `pnpm e2e:chrome` 45/45
+- [x] **Firefox check** (plans 003–006) on Firefox 157.0.1: headless temporary add-on, 43/43. Tab importer (RO export, file override skipped, port warning), editor create/save for redirect, block, headers, inject, and mock, Detour on/off, iframe warning (`RuleConditionKeys` null), CSS inject, fetch/XHR mock, inline JS after Allow user scripts, rule tester (win / no match / loop)
 
 ## Next
 
-1. **Firefox manual check** (plans 003–006): tab importer, editor, iframe warning, user-scripts permission, CSS inject, fetch/XHR mock, rule tester
-2. **Next spec to review/Approve:** `workspace-ui` remainder — recipes, DevTools panel, light theme, popup group toggles. `engine-deep` is next in engine build order if body override comes first
-3. `distribution` approval unlocks CI (unit + build + `e2e:chrome`)
+1. **Next spec to review/Approve:** `workspace-ui` remainder — recipes, DevTools panel, light theme, popup group toggles. `engine-deep` is next in engine build order if body override comes first
+2. `distribution` approval unlocks CI (unit + build + `e2e:chrome`)
 
 ## Blocked
 
