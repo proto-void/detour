@@ -64,12 +64,12 @@ extension/                  pnpm, standalone package (no root workspace until cl
 - None against acceptance criteria. Additions: a `redirect-loop` refusal, and `caseSensitive`, `resourceTypes` and `note` rule fields
 - RO `fileOverride` / `fileInject` are skipped (structured reasons) rather than mapped, because no approved engine can serve bodies without `data:` redirects (see gotchas)
 
-## Open questions (Hamza)
+## Open questions — answered by Hamza (2026-10-06)
 
-1. **Firefox gecko id**: AMO needs `browser_specific_settings.gecko.id` for MV3. Which id should we use (ties to distribution / domain)?
-2. **RO tab-URL group scoping**: imported groups with a non-`*` page pattern now apply on every page (with a warning). Should we add optional group scoping via DNR `initiatorDomains` / `topDomains` (topDomains is newer Chrome only), or import those groups disabled?
-3. **`main_frame` default**: Detour follows the DNR default (all types except main_frame). RO mv3 matched main_frame too. Should RO imports set explicit all-types to stay faithful?
-4. **Fallback cost**: the per-rule fallback can issue n calls on an unexplained rejection. That's acceptable as an error path, but should we bisect instead?
+1. **Firefox gecko id** → `detour@protovoid.com`, set in `wxt.config.ts`. Done.
+2. **RO tab-URL group scoping** → preserve it. Groups now have an optional `pageDomains` field. Page loads match on `requestDomains`; subresources match on `topDomains` (Chrome 145+, feature-detected) or `initiatorDomains` (older Chrome, Firefox). Patterns that can't be expressed import disabled (`page-scope-unsupported`); a port or path that DNR can't enforce produces a `page-scope-approximated` warning. Done, with tests.
+3. **`main_frame`** → imported RO rules list all 13 resource types, including `main_frame`. Done, with tests.
+4. **Fallback cost** → keep the per-rule fallback as is.
 
 ## Out of scope
 
