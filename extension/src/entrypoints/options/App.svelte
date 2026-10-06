@@ -9,6 +9,7 @@
   import { ENABLED_KEY, loadEnabled, loadWorkspace, saveEnabled, saveWorkspace, WORKSPACE_KEY } from '../../rule-model/storage';
   import { serializeExport } from '../../rule-model/transfer';
   import { announce, live } from '../../ui/announcer.svelte';
+  import ThemeToggle from '../../ui/ThemeToggle.svelte';
   import { addGroup, exportFileName, isAwaitingApply, isDirty, newGroup, validateWorkspace } from '../../workspace-ui/editor';
   import GroupCard from './GroupCard.svelte';
   import RuleTester from './RuleTester.svelte';
@@ -205,6 +206,7 @@
     </p>
   </div>
   <div class="actions">
+    <ThemeToggle {area} />
     <button type="button" class="btn" onclick={exportSaved} disabled={!saved || saved.groups.length === 0} title="Downloads the saved workspace">Export</button>
     <button type="button" class="btn" onclick={discard} disabled={!dirty}>Discard changes</button>
     <button type="button" class="btn primary" onclick={save} disabled={!dirty || saving} aria-busy={saving}>{saving ? 'Saving…' : 'Save'}</button>
@@ -323,6 +325,9 @@
 
   .actions {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
     gap: var(--space-2);
   }
 

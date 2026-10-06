@@ -6,6 +6,7 @@
   import { loadEnabled, loadWorkspace, saveEnabled } from '../../rule-model/storage';
   import { describeReport } from '../../workspace-ui/report-view';
   import Switch from '../../ui/Switch.svelte';
+  import ThemeToggle from '../../ui/ThemeToggle.svelte';
   import ImportPanel from './ImportPanel.svelte';
   import ReportView from './ReportView.svelte';
 
@@ -52,11 +53,12 @@
 <main class:tab={inTab}>
   <header>
     <h1>Detour</h1>
-    <Switch checked={enabled} label="Enabled" labelVisible onchange={setEnabled} />
+    <Switch id="detour-enabled" checked={enabled} label="Enabled" labelVisible onchange={setEnabled} />
   </header>
   <ImportPanel {area} {inTab} />
   <ReportView {view} />
   <footer>
+    <ThemeToggle {area} />
     <button type="button" class="btn" onclick={openTester}>Test a URL…</button>
     <button type="button" class="btn" onclick={openEditor}>Edit rules…</button>
   </footer>
@@ -92,9 +94,15 @@
 
   footer {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     justify-content: flex-end;
     gap: var(--space-2);
     padding-top: var(--space-3);
     border-top: 1px solid var(--border);
+  }
+
+  footer :global(.switch-wrap) {
+    margin-right: auto;
   }
 </style>
