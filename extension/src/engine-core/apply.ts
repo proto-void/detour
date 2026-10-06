@@ -1,0 +1,115 @@
+import { loadWorkspace, type StorageAreaLike } from '../rule-model/storage';
+import type { Workspace } from '../rule-model/schema';
+import { compileWorkspace, type Candidate, type Refusal } from './compile';
+import type { DnrApi, DnrRule } from './dnr';
+import { enforceLimits, readLimits } from './limits';
+
+export const APPLY_REPORT_KEY = 'applyReport';
+
+/** Written to storage.local after every refresh; holds ids and reasons only, never rule bodies. */
+export interface ApplyReport {
+  appliedAt: string;
+  applied: { dnrId: number; groupId: string; ruleId: string }[];
+  refused: Refusal[];
+  /** True when the batch was rejected without naming a rule and rules were added one by one. */
+  fallback: boolean;
+  errors: string[];
+}
+
+type RegexCheck = { isSupported: boolean; reason?: string };
+
+async function refuseUnsupportedRegex(dnr: DnrApi, candidates: Candidate[]): Promise<{ supported: Candidate[]; refused: Refusal[] }> {
+  if (!dnr.isRegexSupported) return { supported: candidates, refused: [] };
+  const checks = await Promise.all(
+    candidates.map((c): RegexCheck | Promise<RegexCheck> =>
+      c.condition.regexFilter === undefined
+        ? { isSupported: true }
+        : dnr.isRegexSupported!({
+            regex: c.condition.regexFilter,
+            isCaseSensitive: c.condition.isUrlFilterCaseSensitive ?? false,
+            requireCapturing: c.action.type === 'redirect' && 'regexSubstitution' in c.action.redirect,
+          }),
+    ),
+  );
+  const supported: Candidate[] = [];
+  const refused: Refusal[] = [];
+  candidates.forEach((c, i) => {
+    const check = checks[i]!;
+    if (check.isSupported) supported.push(c);
+    else refused.push({ groupId: c.groupId, ruleId: c.ruleId, reason: 'unsupported-regex', message: `The browser rejected this regex (${check.reason ?? 'unsupported'}); DNR uses RE2 syntax` });
+  });
+  return { supported, refused };
+}
+
+const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/**
+ * Replaces all dynamic rules with the compiled workspace in one atomic `updateDynamicRules` call.
+ * Priority is positional: the first enabled rule of the first enabled group gets the highest value.
+ */
+export async function applyWorkspace(dnr: DnrApi, workspace: Workspace, now = () => new Date()): Promise<ApplyReport> {
+  const compiled = compileWorkspace(workspace);
+  const regexChecked = await refuseUnsupportedRegex(dnr, compiled.candidates);
+  const { kept, refused: overLimit } = enforceLimits(regexChecked.supported, readLimits(dnr));
+  const refused = [...compiled.refused, ...regexChecked.refused, ...overLimit];
+
+  const owners = new Map<number, Candidate>();
+  let addRules: DnrRule[] = kept.map((c, i) => {
+    owners.set(i + 1, c);
+    return { id: i + 1, priority: kept.length - i, action: c.action, condition: c.condition };
+  });
+  const removeRuleIds = (await dnr.getDynamicRules()).map((r) => r.id);
+  const reject = (rule: DnrRule, message: string) => {
+    const owner = owners.get(rule.id)!;
+    refused.push({ groupId: owner.groupId, ruleId: owner.ruleId, reason: 'browser-rejected', message });
+  };
+
+  let fallback = false;
+  for (;;) {
+    try {
+      await dnr.updateDynamicRules({ removeRuleIds, addRules });
+      break;
+    } catch (e) {
+      const message = errorMessage(e);
+      const badId = Number(/Rule with id (\d+)/.exec(message)?.[1]);
+      const bad = addRules.find((r) => r.id === badId);
+      if (bad) {
+        reject(bad, message);
+        addRules = addRules.filter((r) => r !== bad);
+        continue;
+      }
+      // Rejected without naming a rule (e.g. a quota we mis-estimated): add one by one so what fits still applies.
+      fallback = true;
+      await dnr.updateDynamicRules({ removeRuleIds });
+      const added: DnrRule[] = [];
+      for (const rule of addRules) {
+        try {
+          await dnr.updateDynamicRules({ addRules: [rule] });
+          added.push(rule);
+        } catch (err) {
+          reject(rule, errorMessage(err));
+        }
+      }
+      addRules = added;
+      break;
+    }
+  }
+
+  return {
+    appliedAt: now().toISOString(),
+    applied: addRules.map((r) => ({ dnrId: r.id, groupId: owners.get(r.id)!.groupId, ruleId: owners.get(r.id)!.ruleId })),
+    refused,
+    fallback,
+    errors: [],
+  };
+}
+
+/** Loads the stored workspace and applies it. An unreadable workspace leaves the current DNR rules in place. */
+export async function syncRules(dnr: DnrApi, area: StorageAreaLike, now = () => new Date()): Promise<ApplyReport> {
+  const loaded = await loadWorkspace(area);
+  const report: ApplyReport = loaded.ok
+    ? await applyWorkspace(dnr, loaded.value, now)
+    : { appliedAt: now().toISOString(), applied: [], refused: [], fallback: false, errors: loaded.errors };
+  await area.set({ [APPLY_REPORT_KEY]: report });
+  return report;
+}
