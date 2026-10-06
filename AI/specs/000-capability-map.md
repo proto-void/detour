@@ -3,6 +3,8 @@
 **Status:** Draft  
 **Last updated:** 2026-10-07
 
+`local-bridge` is Approved (Hamza, 2026-10-07): a Node CLI on `127.0.0.1`, not a backend. See [local-bridge](local-bridge.md) and ADR-012.
+
 ## Product intent
 
 Detour lets developers **point production at their code** via rules compiled into the least-privilege engine.
@@ -33,4 +35,4 @@ Detour lets developers **point production at their code** via rules compiled int
 
 UI may prototype against mocks earlier, but production wiring follows Approved specs in order.
 
-`distribution` is Approved for CI and packaging only (Hamza, 2026-10-07). `local-bridge` is still Draft, so this slice does not add `cli/`.
+`distribution` is Approved for CI and packaging only (Hamza, 2026-10-07). `local-bridge` is Approved for the localhost file CLI (Hamza, 2026-10-07). npm publish of `@detour/cli` is still out of scope.

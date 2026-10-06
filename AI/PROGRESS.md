@@ -30,7 +30,7 @@
 
 ## Next
 
-1. `local-bridge` is still Draft
+1. **local-bridge** is Approved (Hamza, 2026-10-07). Plan `011-local-bridge` is in progress: localhost HTTP CLI + `serveLocal` redirect
 2. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
 
 ## Open questions (not blocking)

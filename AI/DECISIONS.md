@@ -269,3 +269,29 @@ Detour needs repeatable checks and store zips with **$0** recurring ops and no p
 - Firefox UI smoke stays manual (BiDi cannot open extension pages)
 - `chrome@stable` moves. 2026-10-07 it was 155, and `CI=1` e2e was 62/62. A future stable can fail the smoke test without a product change
 - The installed manifest name stays `Detour`. The store listing doc uses `Detour — Resource Override`
+
+---
+
+## ADR-012 — Local Bridge is localhost HTTP with an explicit token
+
+**Status:** Accepted  
+**Date:** 2026-10-07 (local-bridge approved)
+
+### Context
+
+MV3 cannot read an arbitrary folder. ADR-001 called the bridge a Node CLI over loopback HTTP or WebSocket. The Draft spec required `127.0.0.1` HTTP and left the handshake open. Inline `overrideBody` already pastes a body; it is the wrong place to keep a rebuilt `dist/`.
+
+### Decision
+
+- **HTTP on `127.0.0.1` only.** No `--host`, no `0.0.0.0`, no `::`. WebSocket does not serve a response body. Native messaging needs an OS host manifest.
+- **Action `serveLocal { path }`** relative to the CLI folder. The compiler emits a DNR redirect to `http://127.0.0.1:<port>/d/<token>/<base64url path>` only when `storage.local.bridgeSession` exists and `GET /health` succeeds. Otherwise the rule is refused (`bridge-not-connected` or `bridge-down`) and the production URL is unchanged.
+- The token is 32 random bytes, printed by the CLI, stored only after the user connects. It is in the redirect URL so a page that merely guesses the port cannot read the folder. Refusal text and the match log do not repeat it.
+- The opaque path avoids a redirect loop when the pattern is `*.js` or `*/app.js`.
+- Resource Override `fileOverride` stays inline `overrideBody`. Those files are bytes in the export, not disk paths.
+- Package `@detour/cli` inside the pnpm workspace. Not a service.
+
+### Consequences
+
+- A Content-Security-Policy that blocks `http://127.0.0.1` can reject the redirected file. Keeping the original URL would mean the body engine, which this slice does not do.
+- The page under test can see the token in DevTools. Restarting the CLI rotates it.
+- `localhost` → `::1` will not connect. Use `127.0.0.1`.
