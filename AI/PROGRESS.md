@@ -26,8 +26,9 @@
 
 ## Next
 
-1. **Next spec to review/Approve:** `workspace-ui` remainder — recipes, DevTools panel, light theme, popup group toggles. `engine-deep` is next in engine build order if body override comes first
-2. `distribution` approval unlocks CI (unit + build + `e2e:chrome`)
+1. **workspace-ui slice 4** Approved (Hamza, 2026-10-06), plan 007 in progress: recipes, DevTools panel, light theme, popup group toggles
+2. `engine-deep` is next in engine build order if body override comes first
+3. `distribution` approval unlocks CI (unit + build + `e2e:chrome`)
 
 ## Blocked
 

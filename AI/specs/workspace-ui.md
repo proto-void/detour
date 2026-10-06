@@ -1,10 +1,10 @@
 # Spec: workspace-ui
 
-**Status:** Approved — **slice 1 (popup)**, **slice 2 (rule editor + group/rule switches)**, and **slice 3 (rule tester)** (Hamza, 2026-10-06). Everything under "Remainder" stays Draft.  
+**Status:** Approved — **slice 1 (popup)**, **slice 2 (rule editor + group/rule switches)**, **slice 3 (rule tester)**, and **slice 4 (recipes, DevTools panel, light theme, popup group toggles)** (Hamza, 2026-10-06).  
 **Last updated:** 2026-10-06  
 **Build order:** 7  
 **Depends on:** rule-model (engines as available)  
-**Plans:** [003-workspace-ui-popup](../plans/003-workspace-ui-popup.md), [004-workspace-ui-editor](../plans/004-workspace-ui-editor.md), [006-workspace-ui-rule-tester](../plans/006-workspace-ui-rule-tester.md). CodeMirror for inject/mock bodies is plan [005](../plans/005-page-inject-api-mock.md).
+**Plans:** [003-workspace-ui-popup](../plans/003-workspace-ui-popup.md), [004-workspace-ui-editor](../plans/004-workspace-ui-editor.md), [006-workspace-ui-rule-tester](../plans/006-workspace-ui-rule-tester.md), [007-workspace-ui-remainder](../plans/007-workspace-ui-remainder.md). CodeMirror for inject/mock bodies is plan [005](../plans/005-page-inject-api-mock.md).
 
 ## Objective
 
@@ -25,7 +25,7 @@ Deliver Detour's primary UX: popup quick controls, full workspace editor, recipe
 - [x] **Re-import replaces** (Hamza, 2026-10-06): imported groups remember their source file (file name + SHA-256 of the content). Importing a file with the same name or identical content replaces the groups from that earlier import in place, keeping their position. Any other import is appended. Groups the user created are never touched. The summary says how many groups were replaced
 - [x] Applied vs refused view built from `applyReport`, joined with the workspace for human labels; refused rows show reason + message; storage errors shown
 - [x] Empty state explains "Point production at your code." and points to import
-- [x] Dark theme by default (light theme is in the Remainder)
+- [x] Dark theme by default (light theme is slice 4)
 - [x] Accessible: native controls, visible focus, switch exposed as `role="switch"` with `aria-checked`, status messages announced via `aria-live`, no color-only state
 
 ## Approved scope — slice 2 (workspace editor)
@@ -79,23 +79,42 @@ CodeMirror was deferred from this slice and landed with page-inject (plan 005). 
 
 ### Slice 3 out of scope
 
-Recipes, DevTools panel, light theme, popup group toggles. The tester does not model the initiatorDomains cross-site iframe gap (it uses the page URL’s host, i.e. top-frame scoping). It does not call Firefox `testMatchOutcome`.
+The tester does not model the initiatorDomains cross-site iframe gap (it uses the page URL’s host, i.e. top-frame scoping). It does not call Firefox `testMatchOutcome`. Recipes, the DevTools panel, light theme, and popup group toggles are slice 4.
 
-## Remainder (Draft — not approved)
+## Approved scope — slice 4 (remainder)
+
+Hamza approved these four items on 2026-10-06. The bullets below are the build contract. Anything under "Deferred" is not part of this approval.
 
 ### User stories
 
-- As a developer, I can toggle a group from the popup in two clicks.
-- As a developer, I can apply a **recipe** (e.g. Vite).
-- As a developer, I can use a light theme.
+- As a developer, I turn a group on or off from the popup without opening the rules page.
+- As a developer, I add a starter recipe (point a host at localhost, allow CORS, or SPA fallback) and get a normal rule group I can edit.
+- As a developer, I switch to a light theme, and Detour remembers that on the next open.
+- As a developer, I open a Detour panel in DevTools and see which rule wins for the page I'm inspecting.
 
 ### Acceptance criteria
 
-- [ ] Popup: top groups toggle
-- [ ] Recipes installable from built-in list
-- [ ] DevTools panel
-- [ ] Light theme toggle
-- [x] CodeMirror 6 editors for inject/mock bodies (delivered in plan 005; not part of this remainder)
+- [ ] **Popup group toggles:** the popup lists the first 8 groups in workspace order (the ones that win first) with a switch each. Flipping a switch saves that group's `enabled` flag immediately and the engines re-apply. Further groups are counted, with Edit rules for the rest. The global Enabled switch is unchanged
+- [ ] **Recipes:** the rules page has a built-in list. Adding one appends a group to the editor draft; Save applies it, same as any other edit. The popup links to that list. Built-ins:
+  - Point a host at localhost (default `http://localhost:5173`, the Vite-shaped case). Two redirects, `http` and `https`, `host/*` → `origin/*`, all request types including page loads
+  - Allow CORS: response `Access-Control-Allow-Origin`, `Allow-Methods`, and `Allow-Headers` on a glob (default every URL). Headers on real responses only
+  - SPA fallback: page loads whose path has no dot go to `/index.html` on that origin. One regex rule, `main_frame` only
+- [ ] Recipes produce ordinary groups through the shared rule schema and compiler. They do not invent a second matcher
+- [ ] **Light theme:** a "Light theme" switch on the popup and the rules page. Off (the default when nothing is stored) is the current dark palette. On applies a light palette with the same text for state (On/Off, Applied, Refused). The choice is stored in `storage.local` under `theme` and shared by every Detour page, including the DevTools panel
+- [ ] **DevTools panel:** MV3 `devtools_page` adds a Detour panel (Chrome, Edge, Firefox). For the inspected page it shows the page URL and the rule-tester result for a page load of that URL (same `resolveProbe` precedence). It says when Detour is off. It can open the rules page. It does not attach the debugger
+- [ ] Dark, and light, stay keyboard accessible: native controls, visible focus, switches expose On/Off, results are text, no color-only state
+- [x] CodeMirror 6 editors for inject/mock bodies (delivered in plan 005)
+
+### Deferred (not approved — do not build)
+
+- A shareable recipe file format. Recipes become normal groups; those groups already export with the workspace
+- Answering a CORS preflight with a mock, instead of only adding headers to responses the server actually sends
+- A DevTools network log, per-request match list, or rule editor inside the panel (observability / a later UI slice)
+- Following the operating-system color scheme when the user has never chosen a theme
+
+## Remainder
+
+Slice 4 is the whole remainder. No workspace-ui acceptance criteria are still Draft.
 
 ## Browser support table
 
@@ -113,6 +132,9 @@ Recipes, DevTools panel, light theme, popup group toggles. The tester does not m
 - Firefox closes the popup when a file picker opens — import must run from a tab there
 - Site scoping on Firefox / Chrome < 145 uses `initiatorDomains`, so cross-site iframes on a scoped page aren't covered; the editor warns on those browsers only
 - Chrome allows request-header `append` only for an allowlist of headers; the editor flags other names
+- The popup shows 8 groups. A group switch writes storage immediately, so an editor with unsaved edits shows the existing "changed somewhere else" banner
+- The SPA recipe skips paths that contain a dot, and the CORS recipe does not invent an OPTIONS response
+- `chrome.devtools` exists only inside a DevTools page. Opening the panel HTML directly has nothing to inspect
 
 ## Out of scope
 
@@ -124,5 +146,6 @@ Recipes, DevTools panel, light theme, popup group toggles. The tester does not m
 - Slice 1: unit tests for import/report logic; real-browser smoke (`pnpm e2e:chrome`)
 - Slice 2: unit tests for editor operations, validation, preview and status; e2e creates a rule through the editor and confirms it fires; e2e re-import replaces instead of duplicating
 - Slice 3: unit tests for resolution precedence (order, on/off, site scope, resource type, mock-over-network, header stacking, inject vs redirect); e2e opens the tester, pastes a URL, and sees the winning rule
+- Slice 4: unit tests for recipe groups (schema + compiler, no self-redirect), popup group list, theme parse/apply, and the DevTools page-load view; e2e toggles a group from the popup, adds a localhost recipe, and switches theme; manifest contains `devtools_page`
 - A11y: keyboard-only pass over popup and editor
-- Theme: dark by default on first run
+- Theme: dark by default on first run; light only after the switch is turned on
