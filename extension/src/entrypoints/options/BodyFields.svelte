@@ -66,12 +66,12 @@
 
 <p class="note" role="note">
   {#if isFirefox}
-    Firefox rewrites the response in the browser. It does not use the debugger, so DevTools stays usable. If the page sets Subresource Integrity (<code>integrity</code>), the browser checks the new
-    bytes and can reject them. Detour does not remove that attribute. Use Allow response rewriting at the top of this page. Nothing is rewritten until you do.
+    Firefox rewrites the response in the browser. It does not use the debugger, so DevTools stays usable. Use Allow response rewriting at the top of this page. Nothing is rewritten until you do.
   {:else}
     Chrome attaches its debugger to open tabs while this rule is on. Chrome shows a “started debugging” banner, and opening DevTools on that tab disconnects the override until the next load. Cancelling
-    the banner leaves that tab alone until you change the rule. Subresource Integrity (<code>integrity</code>) can still reject the new bytes. Use Allow debugger at the top of this page. Nothing attaches until you do.
+    the banner leaves that tab alone until you change the rule. Use Allow debugger at the top of this page. Nothing attaches until you do.
   {/if}
+  After that, Detour sets <code>integrity</code> on script and stylesheet tags whose address matches an override to a SHA-384 hash of your file. The browser still checks that hash. Other files keep the page’s hashes. A script that sets <code>integrity</code> from JavaScript can still be rejected.
 </p>
 
 <style>

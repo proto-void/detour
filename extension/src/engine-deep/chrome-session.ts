@@ -2,6 +2,7 @@ import type { ReadBridgeFile } from '../local-bridge/read';
 import { contentTypeForRelative } from '../local-bridge/paths';
 import { fulfillRaw, hostnameOf, pickBodyRule, type HeaderEntry } from './decide';
 import type { BodyPlan, BodyRule } from './plan';
+import { DOCUMENT_BYTE_CAP, isRewritableHtml, tryRewriteHtmlBytes } from './sri';
 
 /** chrome.debugger, shaped so tests can pass a fake. Protocol 1.3. */
 export interface Debuggee {
@@ -55,6 +56,19 @@ const HTTP_TABS = ['http://*/*', 'https://*/*'];
 
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+function headerValue(headers: readonly HeaderEntry[] | undefined, name: string): string | undefined {
+  return headers?.find((header) => header.name.toLowerCase() === name)?.value;
+}
+
+/** CDP returns the response body as a string, base64 when it isn't already text. */
+function decodeCdpBody(body: string, base64Encoded: boolean | undefined): Uint8Array {
+  if (!base64Encoded) return new TextEncoder().encode(body);
+  const binary = atob(body);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
 const isHttp = (url: string | undefined) => url !== undefined && /^https?:/i.test(url);
 
 /**
@@ -73,6 +87,8 @@ export function createChromeBodySession(dbg: DebuggerApi, tabs: TabsApi, onMatch
   let plan: BodyPlan = { rules: [], patterns: [], broad: false, refused: [] };
   let planKey = '';
   let readFile: ReadBridgeFile | undefined;
+  /** Bytes already hashed into a document, reused for the script or stylesheet fulfill. */
+  const prepared = new Map<string, { bytes: Uint8Array; status?: number; phrase?: string; contentType?: string; noStore: boolean }>();
   const attached = new Set<number>();
   const cancelled = new Set<number>();
   const mainFrame = new Map<number, string>();
@@ -165,6 +181,43 @@ export function createChromeBodySession(dbg: DebuggerApi, tabs: TabsApi, onMatch
     await Promise.all(ids.map((tabId) => dbg.detach({ tabId }).catch(() => {})));
   }
 
+  async function rewriteDocument(
+    tabId: number,
+    requestId: string,
+    event: PausedEvent,
+    pageUrl: string,
+    pageHost: string,
+    finish: (method: 'Fetch.continueResponse' | 'Fetch.fulfillRequest', params: object) => Promise<boolean>,
+  ): Promise<void> {
+    let payload: { body?: string; base64Encoded?: boolean } | undefined;
+    try {
+      payload = (await dbg.sendCommand({ tabId }, 'Fetch.getResponseBody', { requestId })) as { body?: string; base64Encoded?: boolean };
+    } catch {
+      await finish('Fetch.continueResponse', { requestId });
+      return;
+    }
+    const body = payload?.body;
+    if (body === undefined || body.length > DOCUMENT_BYTE_CAP * 2) {
+      await finish('Fetch.continueResponse', { requestId });
+      return;
+    }
+    const original = decodeCdpBody(body, payload?.base64Encoded);
+    if (original.byteLength > DOCUMENT_BYTE_CAP) {
+      await finish('Fetch.continueResponse', { requestId });
+      return;
+    }
+    let rewritten: Uint8Array | undefined;
+    try {
+      rewritten = await tryRewriteHtmlBytes(original, headerValue(event.responseHeaders, 'content-type'), pageUrl, pageHost, plan.rules, async (rule) => (await bytesFor(rule))?.bytes);
+    } catch {
+      rewritten = undefined;
+    }
+    await finish(
+      'Fetch.fulfillRequest',
+      fulfillRaw(requestId, rewritten ?? original, event.responseStatusCode, event.responseStatusText, event.responseHeaders, headerValue(event.responseHeaders, 'content-type'), rewritten !== undefined),
+    );
+  }
+
   async function handlePaused(tabId: number, event: PausedEvent): Promise<void> {
     const requestId = event.requestId;
     if (!requestId) return;
@@ -191,7 +244,8 @@ export function createChromeBodySession(dbg: DebuggerApi, tabs: TabsApi, onMatch
     const pageHost = isDocument && isMainFrame !== false ? hostnameOf(url) : hostnameOf(tabUrls.get(tabId)) || hostnameOf(url);
     const rule = pickBodyRule(plan.rules, { url, resourceType: event.resourceType ?? 'Other', isMainFrame, pageHost });
     if (!rule) {
-      await finish('Fetch.continueResponse', { requestId });
+      if (isDocument && isRewritableHtml(headerValue(event.responseHeaders, 'content-type'))) await rewriteDocument(tabId, requestId, event, url, pageHost, finish);
+      else await finish('Fetch.continueResponse', { requestId });
       return;
     }
     const replacement = await bytesFor(rule);
@@ -215,14 +269,20 @@ export function createChromeBodySession(dbg: DebuggerApi, tabs: TabsApi, onMatch
   }
 
   async function bytesFor(rule: BodyRule): Promise<{ bytes: Uint8Array; status?: number; phrase?: string; contentType?: string; noStore: boolean } | undefined> {
+    const hit = prepared.get(rule.ruleId);
+    if (hit) return hit;
+    const store = (result: { bytes: Uint8Array; status?: number; phrase?: string; contentType?: string; noStore: boolean } | undefined) => {
+      if (result) prepared.set(rule.ruleId, result);
+      return result;
+    };
     if (!rule.bridgePath) {
-      return { bytes: new TextEncoder().encode(rule.body), status: undefined, phrase: undefined, contentType: rule.contentType, noStore: false };
+      return store({ bytes: new TextEncoder().encode(rule.body), status: undefined, phrase: undefined, contentType: rule.contentType, noStore: false });
     }
     if (!readFile) return undefined;
     try {
       const read = await readFile(rule.bridgePath);
       if (!read.ok) return undefined;
-      return { bytes: read.bytes, status: 200, phrase: 'OK', contentType: rule.contentType ?? read.contentType ?? contentTypeForRelative(rule.bridgePath), noStore: true };
+      return store({ bytes: read.bytes, status: 200, phrase: 'OK', contentType: rule.contentType ?? read.contentType ?? contentTypeForRelative(rule.bridgePath), noStore: true });
     } catch {
       return undefined;
     }
@@ -232,6 +292,7 @@ export function createChromeBodySession(dbg: DebuggerApi, tabs: TabsApi, onMatch
     /** Install `plan` (empty detaches). Returns short errors, never rule bodies. `read` is used for bridge paths and is not logged. */
     async apply(next: BodyPlan, read?: ReadBridgeFile): Promise<string[]> {
       readFile = read;
+      prepared.clear();
       const key = JSON.stringify(next.rules.map((rule) => [rule.ruleId, rule.body, rule.bridgePath, rule.contentType, rule.match, rule.resourceTypes, rule.pageDomains, rule.caseSensitive]));
       if (key !== planKey) cancelled.clear();
       planKey = key;
@@ -253,6 +314,7 @@ export function createChromeBodySession(dbg: DebuggerApi, tabs: TabsApi, onMatch
     async stop(): Promise<void> {
       plan = { rules: [], patterns: [], broad: false, refused: [] };
       planKey = '';
+      prepared.clear();
       await detachAll();
     },
   };

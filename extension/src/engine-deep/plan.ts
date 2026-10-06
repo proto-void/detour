@@ -21,11 +21,19 @@ export interface BodyRule {
   contentType?: string;
 }
 
-/** CDP Fetch.RequestPattern. `urlPattern` uses `*` / `?` wildcards. */
+/**
+ * CDP Fetch.RequestPattern. `urlPattern` uses `*` / `?` wildcards.
+ * `resourceType` pauses only documents so integrity can be rewritten without pausing every response.
+ * https://chromedevtools.github.io/devtools-protocol/tot/Fetch/#type-RequestPattern
+ */
 export interface FetchPattern {
   urlPattern: string;
   requestStage: 'Response';
+  resourceType?: 'Document';
 }
+
+/** A bare `*` pattern already pauses documents, so this is added only for narrow rules. */
+const DOCUMENT_PATTERN: FetchPattern = { urlPattern: '*', resourceType: 'Document', requestStage: 'Response' };
 
 export interface BodyPlan {
   rules: BodyRule[];
@@ -110,6 +118,7 @@ export function planBody(workspace: Workspace, options: { bridgeInPlace?: boolea
     }
   }
 
-  const patterns: FetchPattern[] = rules.length === 0 ? [] : broad ? [{ urlPattern: '*', requestStage: 'Response' }] : [...new Set(narrowed)].map((urlPattern) => ({ urlPattern, requestStage: 'Response' as const }));
+  const patterns: FetchPattern[] =
+    rules.length === 0 ? [] : broad ? [{ urlPattern: '*', requestStage: 'Response' }] : [...new Set(narrowed)].map((urlPattern) => ({ urlPattern, requestStage: 'Response' as const })).concat(DOCUMENT_PATTERN);
   return { rules, patterns, broad: rules.length > 0 && broad, refused };
 }

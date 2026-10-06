@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { utf8Base64 } from './decide';
+import { integrityMetadata } from './sri';
 import { createChromeBodySession, type DebuggerApi, type Debuggee, type TabInfo, type TabsApi } from './chrome-session';
 import { planBody } from './plan';
 import type { Workspace } from '../rule-model/schema';
@@ -10,6 +11,7 @@ function fakeDebugger() {
   const detachCalls: number[] = [];
   const commands: { tabId?: number; method: string; params?: object }[] = [];
   let failAttach = false;
+  const responseBodies: Record<string, { body: string; base64Encoded: boolean }> = {};
   const eventListeners: ((source: Debuggee, method: string, params?: object) => void)[] = [];
   const detachListeners: ((source: Debuggee, reason: string) => void)[] = [];
   const api: DebuggerApi = {
@@ -27,6 +29,10 @@ function fakeDebugger() {
       if (failAttach) throw new Error('Not attached');
       commands.push({ tabId: target.tabId, method, params });
       if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'main' } } };
+      if (method === 'Fetch.getResponseBody') {
+        const id = (params as { requestId?: string } | undefined)?.requestId ?? '';
+        return responseBodies[id] ?? { body: '', base64Encoded: false };
+      }
       return {};
     },
     onEvent: {
@@ -58,6 +64,9 @@ function fakeDebugger() {
     detachListeners,
     setFailAttach(value: boolean) {
       failAttach = value;
+    },
+    setBody(requestId: string, body: string, base64Encoded = false) {
+      responseBodies[requestId] = { body, base64Encoded };
     },
   };
 }
@@ -136,7 +145,7 @@ describe('chrome body session', () => {
     const errors = await session.apply(planBody(workspace('window.A = "LOCAL"')));
     expect(errors).toEqual([]);
     expect(dbg.attached).toEqual([1]);
-    expect(dbg.commands.some((command) => command.method === 'Fetch.enable' && JSON.stringify(command.params).includes('Response'))).toBe(true);
+    expect(dbg.commands.some((command) => command.method === 'Fetch.enable' && JSON.stringify(command.params).includes('"resourceType":"Document"'))).toBe(true);
 
     dbg.eventListeners[0]?.({ tabId: 1 }, 'Fetch.requestPaused', pause('https://cdn.example.com/app.js', 'Script'));
     dbg.eventListeners[0]?.({ tabId: 1 }, 'Fetch.requestPaused', pause('https://cdn.example.com/other.css', 'Stylesheet', { requestId: 'req-2' }));
@@ -206,6 +215,50 @@ describe('chrome body session', () => {
     dbg.eventListeners[0]?.({ tabId: 1 }, 'Fetch.requestPaused', pause('https://cdn.example.com/app.js', 'Script'));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(dbg.commands.some((command) => command.method === 'Fetch.fulfillRequest')).toBe(false);
+    expect(dbg.commands.map((command) => command.method)).toContain('Fetch.continueResponse');
+  });
+
+  it('rewrites integrity on a matching script tag and leaves the sibling hash', async () => {
+    const dbg = fakeDebugger();
+    const tabs = fakeTabs([{ id: 1, url: 'https://app.example.com/' }]);
+    const notes: unknown[] = [];
+    const session = createChromeBodySession(dbg.api, tabs.api, (note) => notes.push(note));
+    const body = 'window.A = "LOCAL"';
+    await session.apply(planBody(workspace(body)));
+    const html = '<script src="https://cdn.example.com/app.js" integrity="sha384-old"></script><script src="https://cdn.example.com/other.js" integrity="sha384-keep"></script>';
+    dbg.setBody('doc', utf8Base64(html), true);
+    dbg.eventListeners[0]?.(
+      { tabId: 1 },
+      'Fetch.requestPaused',
+      pause('https://app.example.com/', 'Document', {
+        requestId: 'doc',
+        responseHeaders: [
+          { name: 'Content-Type', value: 'text/html; charset=utf-8' },
+          { name: 'Content-Encoding', value: 'gzip' },
+        ],
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const fulfill = dbg.commands.find((command) => command.method === 'Fetch.fulfillRequest' && (command.params as { requestId: string }).requestId === 'doc');
+    const decoded = Buffer.from((fulfill?.params as { body: string }).body, 'base64').toString('utf8');
+    expect(decoded).toContain(`integrity="${await integrityMetadata(new TextEncoder().encode(body))}"`);
+    expect(decoded).toContain('integrity="sha384-keep"');
+    const headers = (fulfill?.params as { responseHeaders: { name: string; value: string }[] }).responseHeaders;
+    expect(headers.map((header) => header.name.toLowerCase())).not.toContain('content-encoding');
+    expect(headers).toContainEqual({ name: 'cache-control', value: 'no-store' });
+    expect(notes).toEqual([]);
+
+    dbg.commands.length = 0;
+    dbg.eventListeners[0]?.(
+      { tabId: 1 },
+      'Fetch.requestPaused',
+      pause('https://app.example.com/plain', 'Document', {
+        requestId: 'latin',
+        responseHeaders: [{ name: 'Content-Type', value: 'text/html; charset=windows-1252' }],
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(dbg.commands.some((command) => command.method === 'Fetch.getResponseBody')).toBe(false);
     expect(dbg.commands.map((command) => command.method)).toContain('Fetch.continueResponse');
   });
 

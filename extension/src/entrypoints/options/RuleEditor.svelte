@@ -211,7 +211,7 @@
       <Field
         id="{id}-path"
         label="File in the bridge folder"
-        hint="Relative to the folder you passed to detour bridge, like assets/app.js. Connect Local Bridge above, then save. After Allow debugger (Chrome) or Allow response rewriting (Firefox), Detour replaces the response and the address stays the same, so a Content-Security-Policy that blocks 127.0.0.1 still allows the file. Without that, the browser redirects to 127.0.0.1 and a strict policy can block it. Subresource Integrity can still reject the new bytes. Pasted text stays on Replace response body."
+        hint="Relative to the folder you passed to detour bridge, like assets/app.js. Connect Local Bridge above, then save. After Allow debugger (Chrome) or Allow response rewriting (Firefox), Detour replaces the response and the address stays the same, so a Content-Security-Policy that blocks 127.0.0.1 still allows the file. It also sets integrity on matching script and stylesheet tags to a SHA-384 hash of your file. The browser still checks that hash. Other files keep theirs. Without rewriting, the browser redirects to 127.0.0.1 and leaves the page’s hash in place, so the file can be blocked. Pasted text stays on Replace response body."
         error={errorFor('action.path', filePath)}
       >
         {#snippet children({ describedby, invalid })}

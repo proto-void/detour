@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createFirefoxBodyFilter, pipeReplacement, pipeReplacementBytes, type StreamFilter, type WebRequestApi, type WebRequestDetails } from './firefox-filter';
 import type { BodyRule } from './plan';
+import { integrityMetadata } from './sri';
 
 function fakeFilter(): StreamFilter & { written: Uint8Array[]; closed: boolean; disconnected: boolean } {
   const written: Uint8Array[] = [];
@@ -155,5 +156,33 @@ describe('firefox body filter', () => {
     expect(rewritten?.responseHeaders).toContainEqual({ name: 'content-type', value: 'text/javascript; charset=utf-8' });
     expect(rewritten?.responseHeaders).toContainEqual({ name: 'cache-control', value: 'no-store' });
     expect(JSON.stringify(rewritten).toLowerCase()).not.toContain('content-encoding');
+  });
+
+  it('updates a matching integrity hash in the document and leaves the sibling', async () => {
+    const web = fakeWebRequest();
+    const engine = createFirefoxBodyFilter(web.api);
+    engine.install([rule]);
+    web.before?.({ requestId: 'doc', url: 'https://app.example.com/', type: 'main_frame', tabId: 3, documentUrl: 'https://app.example.com/' });
+    const headers = web.headers?.({
+      requestId: 'doc',
+      url: 'https://app.example.com/',
+      type: 'main_frame',
+      documentUrl: 'https://app.example.com/',
+      responseHeaders: [
+        { name: 'Content-Type', value: 'text/html; charset=utf-8' },
+        { name: 'Content-Encoding', value: 'gzip' },
+      ],
+    });
+    expect(headers?.responseHeaders?.map((header) => header.name.toLowerCase())).not.toContain('content-encoding');
+    expect(headers?.responseHeaders).toContainEqual({ name: 'cache-control', value: 'no-store' });
+    const filter = web.filters.at(-1)!;
+    const html = '<script src="https://cdn.example.com/app.js" integrity="sha384-old"></script><script src="https://other.example.com/kept.js" integrity="sha384-keep"></script>';
+    filter.ondata?.({ data: new TextEncoder().encode(html).buffer });
+    filter.onstop?.();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const written = new TextDecoder().decode(filter.written[0]!);
+    expect(written).toContain(`integrity="${await integrityMetadata(new TextEncoder().encode(rule.body))}"`);
+    expect(written).toContain('integrity="sha384-keep"');
+    expect(filter.closed).toBe(true);
   });
 });

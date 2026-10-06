@@ -267,11 +267,11 @@ import RecipePicker from './RecipePicker.svelte';
   {#if needsBodyPermission}
     <div class="banner warning" role="status" data-testid="body-permission-banner">
       {#if isFirefox}
-        <p><strong>Response body rules are paused.</strong> Firefox needs permission to rewrite responses. DevTools keeps working. Pages that set <code>integrity</code> can still reject the new file.</p>
+        <p><strong>Response body rules are paused.</strong> Firefox needs permission to rewrite responses. DevTools keeps working. Until you allow this, the page’s integrity hash can reject your file.</p>
       {:else}
         <p>
-          <strong>Response body rules are paused.</strong> Allow debugger before Detour attaches. Chrome then shows a debugging banner, and DevTools on that tab will disconnect. Pages that set <code>integrity</code> can
-          still reject the new file.
+          <strong>Response body rules are paused.</strong> Allow debugger before Detour attaches. Chrome then shows a debugging banner, and DevTools on that tab will disconnect. Until you allow this, the page’s
+          integrity hash can reject your file.
         </p>
       {/if}
       <button type="button" class="btn" id="allow-body" onclick={allowBodyOverride}>{isFirefox ? 'Allow response rewriting' : 'Allow debugger'}</button>
@@ -280,11 +280,11 @@ import RecipePicker from './RecipePicker.svelte';
     <div class="banner warning" role="status" data-testid="bridge-inplace-banner">
       {#if isFirefox}
         <p>
-          <strong>Local files redirect to 127.0.0.1.</strong> A page that blocks that address in Content-Security-Policy will not load them. Allow response rewriting to keep the original URL and replace the body. Connect Local Bridge or the rule does nothing.
+          <strong>Local files redirect to 127.0.0.1.</strong> A page that blocks that address in Content-Security-Policy will not load them, and the page’s integrity hash can reject the file. Allow response rewriting to keep the original URL, replace the body, and update matching hashes. Connect Local Bridge or the rule does nothing.
         </p>
       {:else}
         <p>
-          <strong>Local files redirect to 127.0.0.1.</strong> A page that blocks that address in Content-Security-Policy will not load them. Allow debugger to keep the original URL and replace the body. Chrome then shows a debugging banner. Connect Local Bridge or the rule does nothing.
+          <strong>Local files redirect to 127.0.0.1.</strong> A page that blocks that address in Content-Security-Policy will not load them, and the page’s integrity hash can reject the file. Allow debugger to keep the original URL, replace the body, and update matching hashes. Chrome then shows a debugging banner. Connect Local Bridge or the rule does nothing.
         </p>
       {/if}
       <button type="button" class="btn" id="allow-body" onclick={allowBodyOverride}>{isFirefox ? 'Allow response rewriting' : 'Allow debugger'}</button>

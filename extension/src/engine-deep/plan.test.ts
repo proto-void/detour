@@ -24,7 +24,10 @@ describe('planBody', () => {
       ]),
     );
     expect(plan.rules.map((rule) => rule.ruleId)).toEqual(['b']);
-    expect(plan.patterns).toEqual([{ urlPattern: 'https://cdn.example.com/app.js', requestStage: 'Response' }]);
+    expect(plan.patterns).toEqual([
+      { urlPattern: 'https://cdn.example.com/app.js', requestStage: 'Response' },
+      { urlPattern: '*', resourceType: 'Document', requestStage: 'Response' },
+    ]);
     expect(plan.broad).toBe(false);
     expect(plan.refused).toEqual([]);
     expect(JSON.stringify(plan.patterns)).not.toContain('window.A');
@@ -43,7 +46,10 @@ describe('planBody', () => {
 
   it('escapes literal ? in a glob and refuses non-ASCII patterns', () => {
     const plan = planBody(ws([body('q', 'https://cdn.example.com/a.js?v=1'), body('bad', 'https://ünicode.example/*')]));
-    expect(plan.patterns).toEqual([{ urlPattern: 'https://cdn.example.com/a.js\\?v=1', requestStage: 'Response' }]);
+    expect(plan.patterns).toEqual([
+      { urlPattern: 'https://cdn.example.com/a.js\\?v=1', requestStage: 'Response' },
+      { urlPattern: '*', resourceType: 'Document', requestStage: 'Response' },
+    ]);
     expect(plan.refused).toEqual([expect.objectContaining({ ruleId: 'bad', reason: 'non-ascii-pattern' })]);
   });
 
@@ -59,7 +65,8 @@ describe('planBody', () => {
     const plan = planBody(ws([body('b', 'https://cdn.example.com/app.js', 'INLINE'), local]), { bridgeInPlace: true });
     expect(plan.rules.map((rule) => rule.ruleId)).toEqual(['b', 's']);
     expect(plan.rules[1]).toMatchObject({ bridgePath: 'assets/app.js', body: '' });
-    expect(plan.patterns.map((pattern) => pattern.urlPattern)).toEqual(['https://cdn.example.com/app.js']);
+    expect(plan.patterns.map((pattern) => pattern.urlPattern)).toEqual(['https://cdn.example.com/app.js', '*']);
+    expect(plan.patterns[1]).toMatchObject({ resourceType: 'Document' });
     const escaped = planBody(ws([{ ...local, action: { type: 'serveLocal', path: '../secret' } }]), { bridgeInPlace: true });
     expect(escaped.rules).toEqual([]);
     expect(escaped.refused).toEqual([expect.objectContaining({ reason: 'invalid-bridge-path' })]);
