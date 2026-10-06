@@ -139,6 +139,36 @@ try {
   check('global rule fires on other site', onIp.A, 'LOCAL');
   check('scoped rule stays off other sites', onIp.B, 'PROD');
 
+  const watched = await browser.newPage();
+  await watched.goto('http://localhost:8001/page.html', { waitUntil: 'load' });
+  const readBadge = () =>
+    popup.evaluate(async () => {
+      const tabs = await chrome.tabs.query({ url: 'http://localhost:8001/page.html' });
+      const tabId = tabs.find((tab) => tab.url === 'http://localhost:8001/page.html')?.id;
+      return tabId == null ? 'missing' : await chrome.action.getBadgeText({ tabId });
+    });
+  let badge = '';
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    badge = await readBadge();
+    if (Number(badge) >= 2) break;
+  }
+  check('badge counts matches on the tab', Number(badge) >= 2, true);
+  const logJson = await popup.evaluate(async () => JSON.stringify((await chrome.storage.session.get('matchLog')).matchLog ?? []));
+  check('match log records the script url', logJson.includes('http://localhost:8001/a.js'), true);
+  check('match log does not store an action body', logJson.includes('"body"'), false);
+  await popup.$eval('#show-badge', (el) => el.click());
+  await popup.waitForFunction(() => document.querySelector('#show-badge')?.getAttribute('aria-checked') === 'false', { timeout: 5000 });
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  const cleared = await popup.evaluate(async () => {
+    const tabs = await chrome.tabs.query({ url: 'http://localhost:8001/page.html' });
+    const tabId = tabs.find((tab) => tab.url === 'http://localhost:8001/page.html')?.id;
+    return tabId == null ? 'missing' : await chrome.action.getBadgeText({ tabId });
+  });
+  check('badge switch clears the count', cleared, '');
+  await popup.$eval('#show-badge', (el) => el.click());
+  await watched.close();
+
   const nav = await run('http://127.0.0.1:8001/old.html');
   check('main_frame page load redirected', [nav.title, nav.url], ['NEW', 'http://127.0.0.1:8002/new.html']);
 
@@ -167,6 +197,9 @@ try {
   const editorText = () => editor.evaluate(() => document.body.innerText);
   check('re-import kept 2 groups (no duplicates)', (await editor.$$('section.group')).length, 2);
   check('no iframe warning where topDomains is supported', /cross-site iframes/.test(await editorText()), false);
+  await editor.waitForFunction(() => /8001\/a\.js/.test(document.getElementById('log')?.textContent ?? ''), { timeout: 8000 });
+  const logText = await editor.$eval('#log', (el) => el.textContent);
+  check('match log is on the rules page', /Recent matches/.test(logText) && /8001\/a\.js/.test(logText), true);
   check('popup links to the rule tester', /Test a URL/.test(await popup.evaluate(() => document.body.innerText)), true);
 
   // Rule tester: the imported redirect for a.js should win; a loop must not.
