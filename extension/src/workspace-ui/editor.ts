@@ -15,6 +15,8 @@ import {
   type Rule,
   type Workspace,
 } from '../rule-model/schema';
+import type { PageFailure } from '../page-inject/failures';
+import type { CodeLanguage } from '../ui/codemirror';
 import { REASON_LABELS } from './report-view';
 
 type NewId = () => string;
@@ -224,6 +226,9 @@ export function validateRule(rule: Rule): RuleValidation {
     const errors = issuesByField(parsed.issues);
     if (rule.match.pattern.trim() === '') errors['match.pattern'] = 'Enter a URL pattern, e.g. https://cdn.example.com/*.js';
     if (rule.action.type === 'redirect' && rule.action.to.trim() === '') errors['action.to'] = 'Enter where matching requests should go';
+    if ((rule.action.type === 'injectJs' || rule.action.type === 'injectCss') && rule.action.source.kind === 'url' && rule.action.source.url.trim() === '') {
+      errors['action.source.url'] = 'Enter the URL to load, e.g. http://localhost:5173/dev.js';
+    }
     if (rule.resourceTypes?.length === 0) errors.resourceTypes = 'Pick at least one request type';
     return { errors, warnings: {} };
   }
@@ -357,6 +362,8 @@ export type RuleStatus =
   | { kind: 'detour-off' }
   | { kind: 'applied' }
   | { kind: 'refused'; label: string; message: string }
+  /** Registered, but a page reported a failure since the last apply. */
+  | { kind: 'failing'; message: string; page: string }
   | { kind: 'not-applied' };
 
 export interface StatusContext {
@@ -364,9 +371,28 @@ export interface StatusContext {
   saved: Workspace;
   /** A save happened and the background hasn't reported on it yet. */
   awaitingApply: boolean;
+  /** storage.session page failures, newest first. */
+  failures?: PageFailure[];
+  /** Inline JS can run (user scripts allowed). */
+  userScriptsReady?: boolean;
 }
 
-export function ruleStatus(draftRule: Rule, { report, saved, awaitingApply }: StatusContext): RuleStatus {
+export const isPageAction = (action: Action): boolean => action.type === 'injectJs' || action.type === 'injectCss' || action.type === 'mock';
+
+/** What the rule's pattern is tested against. */
+export const matchSubject = (action: Action): 'page' | 'request' => (action.type === 'injectJs' || action.type === 'injectCss' ? 'page' : 'request');
+
+export function codeLanguage(action: Action): CodeLanguage {
+  if (action.type === 'injectJs') return 'javascript';
+  if (action.type === 'injectCss') return 'css';
+  if (action.type === 'mock') {
+    const type = action.headers.find((h) => h.name.toLowerCase() === 'content-type')?.value ?? '';
+    return /json/i.test(type) ? 'json' : 'text';
+  }
+  return 'text';
+}
+
+export function ruleStatus(draftRule: Rule, { report, saved, awaitingApply, failures }: StatusContext): RuleStatus {
   const stored = findRule(saved, draftRule.id);
   if (!stored || JSON.stringify(stored.rule) !== JSON.stringify(draftRule)) return { kind: 'unsaved' };
   if (!stored.group.enabled) return { kind: 'off', because: 'group' };
@@ -376,6 +402,10 @@ export function ruleStatus(draftRule: Rule, { report, saved, awaitingApply }: St
   const refused = report.refused.find((r) => r.ruleId === draftRule.id);
   if (refused) return { kind: 'refused', label: REASON_LABELS[refused.reason], message: refused.message };
   if (report.applied.some((a) => a.ruleId === draftRule.id)) return { kind: 'applied' };
+  if (report.injected?.some((a) => a.ruleId === draftRule.id)) {
+    const failure = failures?.find((f) => f.ruleId === draftRule.id && f.at >= report.appliedAt);
+    return failure ? { kind: 'failing', message: failure.message, page: failure.page } : { kind: 'applied' };
+  }
   return { kind: 'not-applied' };
 }
 

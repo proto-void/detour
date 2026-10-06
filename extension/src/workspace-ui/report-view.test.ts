@@ -83,3 +83,11 @@ describe('summarizeRule for page actions', () => {
     expect(summarizeRule({ ...base, action } as never)).toBe(expected);
   });
 });
+
+describe('describeReport with page rules', () => {
+  it('lists injected rules as applied', () => {
+    const ws: Workspace = { groups: [{ id: 'g', name: 'G', enabled: true, rules: [{ id: 'm', enabled: true, match: { kind: 'glob', pattern: '*/api/*' }, action: { type: 'mock', method: 'ANY', status: 200, headers: [], body: '', delayMs: 0 } }] }] };
+    const report: ApplyReport = { appliedAt: 'x', applied: [], injected: [{ groupId: 'g', ruleId: 'm', kind: 'mock' }], refused: [], fallback: false, disabled: false, errors: [] };
+    expect(describeReport(report, ws)).toMatchObject({ state: 'active', applied: [{ ruleId: 'm', summary: 'Mock */api/* → 200' }] });
+  });
+});

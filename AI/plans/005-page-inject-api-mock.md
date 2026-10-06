@@ -30,7 +30,7 @@ New rule actions `injectJs`, `injectCss`, `mock`, compiled into browser registra
 - [x] T3 `planPage` (scoping, switches, refusals) — tests
 - [x] T4 Mock runtime (fetch + XHR, hold-until-config, abort, pass-through) — tests
 - [x] T5 Bridge + MAIN entrypoints, `syncPage`, background wiring, permissions, report merge — tests with fake APIs
-- [ ] T6 Editor UI: inject/mock fields, CodeMirror, failures, user-scripts banner
+- [x] T6 Editor UI: inject/mock fields, CodeMirror, failures, user-scripts banner
 - [ ] T7 Builds (chrome, firefox), manifest check
 - [ ] T8 e2e: inline JS at document_start (matching vs not), CSS applies, fetch + XHR mock, pass-through, toggles off, re-import keeps switches, name-only confirm
 - [ ] T9 KB write-back

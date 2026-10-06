@@ -58,7 +58,7 @@ export function summarizeRule(rule: Rule): string {
   }
 }
 
-/** Joins the id-only apply report with the workspace for display. Split rules appear once. */
+/** Joins the id-only apply report with the workspace for display. Split rules appear once; page rules count as applied. */
 export function describeReport(report: ApplyReport | undefined, workspace: Workspace | undefined): ReportView {
   if (!report) return { state: 'pending', applied: [], refused: [], errors: [] };
 
@@ -69,7 +69,7 @@ export function describeReport(report: ApplyReport | undefined, workspace: Works
     return hit ? { ruleId, groupName: hit.groupName, summary: summarizeRule(hit.rule) } : { ruleId, groupName: '', summary: `Rule ${ruleId} (no longer in workspace)` };
   };
 
-  const applied = [...new Set(report.applied.map((a) => a.ruleId))].map(row);
+  const applied = [...new Set([...report.applied, ...(report.injected ?? [])].map((a) => a.ruleId))].map(row);
   const refused = report.refused.map((r) => ({ ...row(r.ruleId), reason: r.reason, reasonLabel: REASON_LABELS[r.reason], message: r.message }));
   const state = report.errors.length > 0 ? 'error' : report.disabled ? 'disabled' : applied.length + refused.length === 0 ? 'empty' : 'active';
   return { state, applied, refused, errors: report.errors, appliedAt: report.appliedAt };

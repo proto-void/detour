@@ -4,6 +4,9 @@ import { RESOURCE_TYPES, type Rule, type Workspace } from '../rule-model/schema'
 import {
   addGroup,
   addRule,
+  codeLanguage,
+  isPageAction,
+  matchSubject,
   defaultAction,
   describeMatch,
   effectiveTypes,
@@ -268,4 +271,43 @@ describe('ruleStatus', () => {
 
 it('names export files by date', () => {
   expect(exportFileName(new Date('2026-10-06T23:00:00Z'))).toBe('detour-2026-10-06.json');
+});
+
+describe('page rules in the editor', () => {
+  const js: Rule = { id: 'p', enabled: true, match: { kind: 'glob', pattern: 'https://app/*' }, action: defaultAction('injectJs') };
+  const saved: Workspace = { groups: [{ id: 'g', name: 'G', enabled: true, rules: [js] }] };
+  const report: ApplyReport = { appliedAt: '2026-10-06T12:00:00.000Z', applied: [], injected: [{ groupId: 'g', ruleId: 'p', kind: 'js' }], refused: [], fallback: false, disabled: false, errors: [] };
+  const failure = (at: string) => ({ at, groupId: 'g', ruleId: 'p', page: 'https://app', message: 'CSP blocked it' });
+
+  it('counts injected rules as applied, and failing after a page reports a failure', () => {
+    const ctx = { report, saved, awaitingApply: false };
+    expect(ruleStatus(js, ctx)).toEqual({ kind: 'applied' });
+    expect(ruleStatus(js, { ...ctx, failures: [failure('2026-10-06T12:00:01.000Z')] })).toEqual({ kind: 'failing', message: 'CSP blocked it', page: 'https://app' });
+    expect(ruleStatus(js, { ...ctx, failures: [failure('2026-10-06T11:59:59.000Z')] })).toEqual({ kind: 'applied' });
+  });
+
+  it('picks the code language from the action', () => {
+    expect(codeLanguage(defaultAction('injectJs'))).toBe('javascript');
+    expect(codeLanguage(defaultAction('injectCss'))).toBe('css');
+    expect(codeLanguage(defaultAction('mock'))).toBe('json');
+    expect(codeLanguage({ type: 'mock', method: 'ANY', status: 200, headers: [{ name: 'Content-Type', value: 'text/html' }], body: '', delayMs: 0 })).toBe('text');
+  });
+
+  it('classifies what the pattern is tested against', () => {
+    expect([isPageAction(defaultAction('mock')), isPageAction(defaultAction('redirect'))]).toEqual([true, false]);
+    expect([matchSubject(defaultAction('injectCss')), matchSubject(defaultAction('mock'))]).toEqual(['page', 'request']);
+  });
+
+  it('explains empty sources and bad numbers', () => {
+    const emptyCode = validateRule(js);
+    expect(emptyCode.errors['action.source.code']).toBe('Enter some code');
+    const emptyUrl = validateRule({ ...js, action: { ...defaultAction('injectCss'), source: { kind: 'url', url: '' } } as Rule['action'] });
+    expect(emptyUrl.errors['action.source.url']).toBe('Enter the URL to load, e.g. http://localhost:5173/dev.js');
+    const nanStatus = validateRule({ ...js, action: { ...defaultAction('mock'), status: Number.NaN } as Rule['action'] });
+    expect(nanStatus.errors['action.status']).toBe('Enter a number');
+  });
+
+  it('skips DNR warnings for page rules', () => {
+    expect(validateRule({ ...js, match: { kind: 'glob', pattern: 'https://ü.example/*' }, action: { ...defaultAction('injectCss'), source: { kind: 'inline', code: 'a{}' } } as Rule['action'] }).warnings).toEqual({});
+  });
 });

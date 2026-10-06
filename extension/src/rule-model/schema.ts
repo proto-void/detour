@@ -58,7 +58,7 @@ export const RUN_AT = ['document_start', 'document_end', 'document_idle'] as con
 export const MOCK_METHODS = ['ANY', 'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const;
 
 const Integer = (min: number, max: number, label: string) =>
-  v.pipe(v.number(), v.integer(`${label} must be a whole number`), v.minValue(min, `${label} must be at least ${min}`), v.maxValue(max, `${label} must be at most ${max}`));
+  v.pipe(v.number('Enter a number'), v.integer(`${label} must be a whole number`), v.minValue(min, `${label} must be at least ${min}`), v.maxValue(max, `${label} must be at most ${max}`));
 
 export const ActionSchema = v.variant('type', [
   v.object({ type: v.literal('redirect'), to: NonEmpty }),

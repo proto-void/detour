@@ -11,6 +11,8 @@
     RESOURCE_TYPE_LABELS,
     setResourceType,
     describeRedirect,
+    isPageAction,
+    matchSubject,
     moveRule,
     previewMatch,
     removeRule,
@@ -23,6 +25,7 @@
   } from '../../workspace-ui/editor';
   import { summarizeRule } from '../../workspace-ui/report-view';
   import HeaderOps from './HeaderOps.svelte';
+  import PageActionFields from './PageActionFields.svelte';
 
   let {
     rule,
@@ -32,6 +35,7 @@
     validation,
     status,
     showAll,
+    userScriptsReady,
     edit,
   }: {
     rule: Rule;
@@ -41,6 +45,7 @@
     validation: RuleValidation;
     status: RuleStatus;
     showAll: boolean;
+    userScriptsReady: boolean;
     edit: (fn: (ws: Workspace) => Workspace) => void;
   } = $props();
 
@@ -50,6 +55,8 @@
   let sampleUrl = $state('');
   let advancedOpen = $state(false);
   const typesError = $derived(validation.errors.resourceTypes ?? '');
+  const pageRule = $derived(isPageAction(rule.action));
+  const subject = $derived(matchSubject(rule.action));
 
   $effect.pre(() => {
     if (rule.match.pattern === '' || (showAll && hasErrors)) expanded = true;
@@ -91,6 +98,7 @@
     'detour-off': '○ Detour is off',
     applied: '✓ Applied',
     refused: '✕ Refused',
+    failing: '⚠ Failing',
     'not-applied': '○ Not applied',
   };
 </script>
@@ -113,6 +121,8 @@
   </div>
   {#if status.kind === 'refused'}
     <p class="refusal">{status.message}</p>
+  {:else if status.kind === 'failing'}
+    <p class="refusal" data-testid="rule-failure">{status.message}{#if status.page} (on {status.page}){/if}</p>
   {/if}
 
   <div class="body" id="{id}-body" hidden={!expanded}>
@@ -127,7 +137,7 @@
       </Field>
       <Field
         id="{id}-pattern"
-        label="When the URL matches"
+        label={subject === 'page' ? 'On pages whose URL matches' : 'When the URL matches'}
         hint={describeMatch(rule.match, rule.caseSensitive)}
         error={errorFor('match.pattern', rule.match.pattern)}
         warning={validation.warnings['match.pattern'] ?? ''}
@@ -138,7 +148,13 @@
             type="text"
             spellcheck="false"
             autocomplete="off"
-            placeholder={rule.match.kind === 'glob' ? 'https://cdn.example.com/*.js' : '^https://cdn\\.example\\.com/(.*)$'}
+            placeholder={subject === 'page'
+              ? rule.match.kind === 'glob'
+                ? 'https://app.example.com/*'
+                : '^https://app\\.example\\.com/'
+              : rule.match.kind === 'glob'
+                ? 'https://cdn.example.com/*.js'
+                : '^https://cdn\\.example\\.com/(.*)$'}
             value={rule.match.pattern}
             aria-invalid={invalid}
             aria-describedby={describedby}
@@ -155,6 +171,9 @@
             <option value="redirect">Redirect to</option>
             <option value="block">Block the request</option>
             <option value="modifyHeaders">Change headers</option>
+            <option value="injectJs">Inject JavaScript</option>
+            <option value="injectCss">Inject CSS</option>
+            <option value="mock">Mock the response</option>
           </select>
         {/snippet}
       </Field>
@@ -180,9 +199,12 @@
 
     {#if rule.action.type === 'modifyHeaders'}
       <HeaderOps action={rule.action} ruleId={rule.id} {validation} {showAll} onchange={(action) => set({ action })} />
+    {:else if rule.action.type === 'injectJs' || rule.action.type === 'injectCss' || rule.action.type === 'mock'}
+      <PageActionFields action={rule.action} ruleId={rule.id} {validation} {showAll} {userScriptsReady} onchange={(action) => set({ action })} />
     {/if}
 
-    <div class="grid options">
+    <div class="grid options" class:single={pageRule}>
+      {#if !pageRule}
       <Field id="{id}-scope" label="Applies to" hint={requestScope(rule) === 'custom' ? 'Pick the request types under Advanced.' : ''}>
         {#snippet children({ describedby })}
           <select
@@ -201,6 +223,7 @@
           </select>
         {/snippet}
       </Field>
+      {/if}
       <Field id="{id}-note" label="Note (optional)">
         {#snippet children()}
           <input id="{id}-note" type="text" value={rule.note ?? ''} oninput={(e) => set({ note: e.currentTarget.value || undefined })} />
@@ -212,6 +235,7 @@
       </label>
     </div>
 
+    {#if !pageRule}
     <details class="advanced" bind:open={advancedOpen}>
       <summary>Advanced</summary>
       <fieldset class="types" aria-describedby={typesError ? `${id}-types-error` : undefined}>
@@ -229,6 +253,7 @@
       </fieldset>
       {#if typesError}<p id="{id}-types-error" class="type-error"><strong>Error:</strong> {typesError}</p>{/if}
     </details>
+    {/if}
 
     <div class="preview">
       <Field id="{id}-sample" label="Try a URL (not saved)">
@@ -239,7 +264,7 @@
       <output for="{id}-sample {id}-pattern" class="result" aria-live="polite" data-testid="preview">
         {#if preview.kind === 'match'}
           <strong>✓ Matches.</strong>
-          {#if preview.outcome === 'redirect'}It would go to <code>{preview.to}</code>{:else if preview.outcome === 'block'}It would be blocked.{:else}Its headers would change.{/if}
+          {#if preview.outcome === 'redirect'}It would go to <code>{preview.to}</code>{:else if preview.outcome === 'block'}It would be blocked.{:else if preview.outcome === 'modifyHeaders'}Its headers would change.{:else if preview.outcome === 'mock'}It would get the mocked response.{:else}The code would be injected into this page.{/if}
         {:else if preview.kind === 'no-match'}
           <strong>✕ Doesn't match.</strong>
         {:else if preview.kind === 'invalid'}
@@ -347,6 +372,10 @@
 
   .options {
     grid-template-columns: 16rem 1fr;
+  }
+
+  .options.single {
+    grid-template-columns: 1fr;
   }
 
   .check {

@@ -3,6 +3,8 @@
   import { browser } from 'wxt/browser';
   import { APPLY_REPORT_KEY, type ApplyReport } from '../../engine-core/apply';
   import { supportsTopDomains, type DnrApi } from '../../engine-core/dnr';
+  import { loadFailures, PAGE_FAILURES_KEY, type PageFailure } from '../../page-inject/failures';
+  import { RESYNC_MESSAGE } from '../../page-inject/sync';
   import type { Workspace } from '../../rule-model/schema';
   import { ENABLED_KEY, loadEnabled, loadWorkspace, saveEnabled, saveWorkspace, WORKSPACE_KEY } from '../../rule-model/storage';
   import { serializeExport } from '../../rule-model/transfer';
@@ -23,11 +25,47 @@
   let showAll = $state(false);
   let saving = $state(false);
   let changedElsewhere = $state(false);
+  let failures: PageFailure[] = $state.raw([]);
+  let userScriptsReady = $state(true);
 
   const validation = $derived(validateWorkspace(draft));
   const dirty = $derived(saved !== undefined && isDirty(draft, saved));
   const awaitingApply = $derived(isAwaitingApply(report, savedAt));
-  const statusContext = $derived({ report, saved: saved ?? { groups: [] }, awaitingApply });
+  const statusContext = $derived({ report, saved: saved ?? { groups: [] }, awaitingApply, failures, userScriptsReady });
+  const needsUserScripts = $derived(
+    (saved?.groups ?? []).some((g) => g.enabled && g.rules.some((r) => r.enabled && r.action.type === 'injectJs' && r.action.source.kind === 'inline')),
+  );
+  const isFirefox = import.meta.env.FIREFOX;
+
+  /** Chrome exposes the API before the toggle is on, but calls throw until it is. */
+  async function checkUserScripts() {
+    let ready = false;
+    try {
+      await (browser as unknown as { userScripts: { getScripts(): Promise<unknown> } }).userScripts.getScripts();
+      ready = true;
+    } catch {
+      ready = false;
+    }
+    if (ready && !userScriptsReady) await browser.runtime.sendMessage({ type: RESYNC_MESSAGE }).catch(() => {});
+    userScriptsReady = ready;
+    return ready;
+  }
+
+  async function allowUserScripts() {
+    if (isFirefox) {
+      // Must run straight from the click: permissions.request needs the user gesture.
+      const granted = await browser.permissions.request({ permissions: ['userScripts' as never] }).catch(() => false);
+      if (!granted) return announce('User scripts were not allowed.');
+    } else {
+      await browser.tabs.create({ url: `chrome://extensions/?id=${browser.runtime.id}` });
+      return;
+    }
+    announce((await checkUserScripts()) ? 'User scripts allowed. Applying rules…' : 'User scripts are still off.');
+  }
+
+  async function loadPageFailures() {
+    failures = await loadFailures(browser.storage.session);
+  }
   const ruleCount = $derived(draft.groups.reduce((n, g) => n + g.rules.length, 0));
 
   const edit = (fn: (ws: Workspace) => Workspace) => {
@@ -115,8 +153,11 @@
     void loadSaved();
     void loadReport();
     void loadEnabled(area).then((value) => (enabled = value));
+    void loadPageFailures();
+    void checkUserScripts();
 
     const onChanged = (changes: Record<string, unknown>, areaName: string) => {
+      if (areaName === 'session' && PAGE_FAILURES_KEY in changes) void loadPageFailures();
       if (areaName !== 'local') return;
       if (APPLY_REPORT_KEY in changes) void loadReport();
       if (ENABLED_KEY in changes) void loadEnabled(area).then((value) => (enabled = value));
@@ -134,10 +175,14 @@
       if (dirty) event.preventDefault();
     };
     window.addEventListener('beforeunload', beforeUnload);
+    // Back from chrome://extensions after flipping the toggle.
+    const onFocus = () => void checkUserScripts();
+    window.addEventListener('focus', onFocus);
 
     return () => {
       browser.storage.onChanged.removeListener(onChanged);
       window.removeEventListener('beforeunload', beforeUnload);
+      window.removeEventListener('focus', onFocus);
     };
   });
 </script>
@@ -163,6 +208,24 @@
     <div class="banner" role="status">
       <p><strong>Detour is off,</strong> so no rules are applied. Your edits are still saved.</p>
       <button type="button" class="btn" onclick={() => saveEnabled(area, true)}>Turn Detour on</button>
+    </div>
+  {/if}
+
+  {#if needsUserScripts && !userScriptsReady}
+    <div class="banner warning" role="status" data-testid="user-scripts-banner">
+      {#if isFirefox}
+        <p><strong>Inline JavaScript rules are paused.</strong> Firefox needs your permission for Detour to run user scripts (Firefox 136+).</p>
+        <button type="button" class="btn" onclick={allowUserScripts}>Allow user scripts</button>
+      {:else}
+        <p>
+          <strong>Inline JavaScript rules are paused.</strong> Chrome needs <em>Allow User Scripts</em> turned on in Detour’s extension details (Chrome 138+), or
+          <em>Developer mode</em> on <code>chrome://extensions</code> in older versions. Script URLs, CSS and mocks work without it.
+        </p>
+        <div class="banner-actions">
+          <button type="button" class="btn" onclick={allowUserScripts}>Open Detour’s settings</button>
+          <button type="button" class="btn" onclick={async () => announce((await checkUserScripts()) ? 'User scripts allowed. Applying rules…' : 'User scripts are still off.')}>Check again</button>
+        </div>
+      {/if}
     </div>
   {/if}
 
@@ -273,6 +336,11 @@
 
   .banner.warning {
     border-color: var(--warning);
+  }
+
+  .banner-actions {
+    display: flex;
+    gap: var(--space-2);
   }
 
   .banner.error {

@@ -143,6 +143,7 @@
             count={group.rules.length}
             validation={validation.rules[rule.id] ?? { errors: {}, warnings: {} }}
             status={ruleStatus(rule, statusContext)}
+            userScriptsReady={statusContext.userScriptsReady ?? true}
             {showAll}
             {edit}
           />
