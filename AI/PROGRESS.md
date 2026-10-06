@@ -25,18 +25,21 @@
 - [x] **Firefox check** (plans 003–006) on Firefox 157.0.1: headless temporary add-on, 43/43. Tab importer (RO export, file override skipped, port warning), editor create/save for redirect, block, headers, inject, and mock, Detour on/off, iframe warning (`RuleConditionKeys` null), CSS inject, fetch/XHR mock, inline JS after Allow user scripts, rule tester (win / no match / loop)
 - [x] **workspace-ui slice 4** Approved (Hamza, 2026-10-06) and built (plan 007): light theme (persisted, dark default), popup group switches (first 8, immediate save), three starter recipes (localhost/Vite, CORS headers, SPA fallback), DevTools panel that reuses the rule tester for a page load. 281 unit tests; Chrome + Firefox builds clean; `pnpm e2e:chrome` 52/52. Firefox 157 installed the add-on headlessly; BiDi could not open extension pages
 - [x] **engine-deep body override** Approved (Hamza, 2026-10-06) and built (plan 008, ADR-009): `overrideBody` via CDP Fetch on Chrome and `filterResponseData` on Firefox. RO `fileOverride` imports as that action. Allow debugger gates attach (`bodyEngineConsent`); Chrome `debugger` is install-time. 304 unit tests; Chrome + Firefox builds clean; `pnpm e2e:chrome` 57/57 (replaced script `LOCAL`, sibling `PROD`). Firefox 157 BiDi still cannot open extension pages, so the live filter path was not driven. Local Bridge stays Draft
+- [x] **observability** Approved for badge + match log (Hamza, 2026-10-06) and built (plan 009, ADR-010): per-tab toolbar count, session match log (newest 50, label + URL, no action bodies). Chromium `declarativeNetRequestFeedback`. Popup badge switch and options `#log`. 327 unit tests; Chrome + Firefox builds clean; `pnpm e2e:chrome` 62/62. Firefox UI e2e not driven (BiDi). Chrome `debugger` unchanged. Local Bridge stays Draft
 
 ## Next
 
-1. **Next spec to review/Approve:** `observability` (badge, match log) or `local-bridge` (still Draft). Workspace-ui and the body-override slice have no remaining acceptance criteria
-2. `distribution` approval unlocks CI (unit + build + `e2e:chrome`)
+1. `local-bridge` is still Draft. `distribution` approval unlocks CI (unit + build + `e2e:chrome`)
 
-## Open questions (slice 4 deferred, not blocking)
+## Open questions (not blocking)
 
 - Should recipes grow a shareable file format, or is "built-in packs that become normal groups" enough?
 - Should Allow CORS also answer the OPTIONS preflight, or only add headers to responses the server sends?
-- Is the DevTools panel's page-load result enough, or do you want a per-request list (that overlaps observability)?
 - SPA fallback always targets `/index.html` and skips paths that contain a dot. Is that the fallback you want?
+- The match log is a session list, not a DevTools network panel. Do you want a per-request list later?
+- Packed Chromium rows store the tab URL, not the subresource. Is that enough, or should packed builds stay limited to unpacked-style request URLs some other way?
+- Firefox does not record DNR matches (no feedback API; `webRequest` was not added). Is that gap acceptable?
+- Inline JS injections are not log rows. Worth a later note, or leave them to the apply report?
 
 ## Blocked
 

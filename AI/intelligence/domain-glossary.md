@@ -26,6 +26,8 @@
 | **Apply report** | `storage.local.applyReport` — applied DNR ids, `injected` page rules, `bodies` (armed override ids only), refusals, errors. No rule bodies |
 | **Page config** | `storage.local.pageConfig` — compiled mock/CSS/script-URL entries the bridge reads. Holds mock bodies locally; not telemetry |
 | **Page failure** | `storage.session.pageFailures` — last 50 runtime inject failures (origin + message, no bodies) |
+| **Match log** | `storage.session.matchLog` — newest 50 matches this session (rule label + URL). Local only; dropped when the session ends |
+| **showBadge** | `storage.local.showBadge`. Missing means the toolbar badge is on. Off clears the icon text and keeps the log |
 | **Import key** | Stable id inside an import so re-import can keep that group or rule's on/off state |
 | **User scripts** | Chrome/Firefox API for running user-supplied JS. Needs a toggle (Chrome) or optional permission (Firefox 136+) |
 | **Bridge** | Detour's isolated content script: CSS requests, script-URL tags, mock config handoff |

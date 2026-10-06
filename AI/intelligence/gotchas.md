@@ -162,3 +162,13 @@
 - `pageConfig` includes mock bodies (the bridge needs them). Failure records and `applyReport` do not. Do not add telemetry on `pageConfig`
 - CodeMirror 6 is imported only from the options page. The production chunk is about 435 KB; popup stays separate
 - User scripts are cleared on extension update. `runtime.onInstalled` re-runs `syncRules`. Firefox also re-syncs on `permissions.onAdded` / `onRemoved`
+
+## Match log and badge
+
+- `declarativeNetRequestFeedback` is the Chromium way to see which dynamic rule matched. It does not warn at install. Do not add `webRequest` to log matches: Chrome warns that it can read browsing history. Firefox 128 has no DNR feedback API, so Firefox DNR matches are absent from the log; page, mock, and body rows still record
+- `onRuleMatchedDebug` includes the request URL and only fires for an unpacked extension. `getMatchedRules` has rule id, tab id, and time, not the request URL, so a packed row stores the tab URL. Poll keys use the `dnr-poll:` prefix and are left out of the badge count once a debug row for that tab exists
+- Do not call `getMatchedRules` while clearing badges. Calling it for every tab (including non-http) wedged Chrome 154. Poll only the tab that finished loading, and race it at 4s so a slow call cannot block the badge. Turning the badge or Detour off clears text outside that queue
+- A tight loop of `action.getBadgeText` from an extension page can stall the service worker's `setBadgeText`. The Chrome smoke test reads the badge a few times with a gap
+- `tabs.onUpdated` often includes the URL again when `status` is `complete`. Reset the per-tab count on `loading` or a real URL change, not on complete, or the matches from that navigation fall outside the count. Match timestamps can precede `onUpdated` by a short time (`NAV_SLACK_MS` is 2s). The clock is in the service worker and resets when the worker restarts
+- The session log can hold request URLs, including tokens in a query string. It stays in `storage.session` on the device. Labels are the group name and match pattern. Never store or ship action bodies
+- Inline JS runs in the MAIN world and cannot message the extension, so those injections are not log rows. Options `h2` text is uppercased in `innerText` (`text-transform`); assert `textContent` for "Recent matches"

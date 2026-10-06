@@ -1,6 +1,6 @@
 # Browser matrix
 
-**Last verified:** 2026-10-06 (DNR quotas, domain conditions, page engines and body override on Chrome 154 e2e 57/57; Firefox 157 importer, editor, inject, mock, tester). Firefox 157 BiDi still cannot open `moz-extension://` pages, so the live `filterResponseData` path was not driven.
+**Last verified:** 2026-10-06 (DNR quotas, domain conditions, page engines, body override, badge and match log on Chrome 154 e2e 62/62; Firefox 157 importer, editor, inject, mock, tester). Firefox 157 BiDi still cannot open `moz-extension://` pages, so the live filter path and the Firefox match-log UI were not driven.
 
 ## Supported targets (product intent)
 
@@ -52,7 +52,17 @@ Mocks and URL/CSS injection do not need the user-scripts toggle. Inline JS rules
 | Out-of-process iframes | Not attached | n/a | — |
 | Service-worker scripts | Fetched like other scripts when the pattern matches | Not filtered (would need `webRequestFilterResponse.serviceWorkerScript`) | — |
 
-Verified on Chrome for Testing 154: after Allow debugger, one script body became the rule text and a sibling script did not (`pnpm e2e:chrome`, 57/57).
+Verified on Chrome for Testing 154: after Allow debugger, one script body became the rule text and a sibling script did not (`pnpm e2e:chrome`, 62/62, including the badge count and the options match log).
+
+## Badge and match log
+
+| Capability | Chrome / Edge / Brave 120+ | Firefox 128+ | Safari 17+ |
+|------------|----------------------------|--------------|------------|
+| Toolbar count | `action.setBadgeText` per tab. `declarativeNetRequestFeedback` (no install warning) | `action.setBadgeText`. No DNR feedback API | Not in this slice |
+| Which DNR rule matched | Unpacked: `onRuleMatchedDebug` (request URL). Packed: `getMatchedRules` (tab URL, no request URL) | Not recorded (`webRequest` was not added) | — |
+| Page, mock, body rows | Logged locally | Logged locally | — |
+
+Chrome `debugger` is unchanged. The log is `storage.session` only.
 
 ## Notes
 

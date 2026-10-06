@@ -24,7 +24,7 @@ Rules → RuleCompiler → Core DNR            (built: engine-core)
 | `engine-deep` | Body override: Chrome debugger Fetch, Firefox filterResponseData | `extension/src/engine-deep/` |
 | `local-bridge` | Node CLI loopback file server | — |
 | `workspace-ui` | Popup, options, recipes, tester, RO import | `extension/src/workspace-ui/` (logic) + `src/entrypoints/popup/` (slice 1) + `src/entrypoints/options/` (slice 2) |
-| `observability` | Badge, match log, errors (no rule-body telemetry) | — |
+| `observability` | Toolbar badge and session match log (no rule-body telemetry) | `extension/src/observability/` |
 | `distribution` | Stores, permissions narrative, CI artifacts | — |
 
 ## Core DNR data flow (as built)
@@ -90,8 +90,8 @@ enabled workspace
 
 | Surface | Entry | Holds |
 |---------|-------|-------|
-| Popup | `src/entrypoints/popup/` | global switch, first 8 group switches (immediate save), import, applied/refused report, "Recipes…" → `options.html#recipes`, "Test a URL…" → `options.html#tester`, "Edit rules…" → `runtime.openOptionsPage()`, Light theme switch |
-| Editor | `src/entrypoints/options/` (`options_ui`, `open_in_tab`) | groups/rules CRUD + reorder, switches, site scoping, request types (collapsed Advanced), inject/mock fields, CodeMirror 6 (options chunk only), validation, preview, Save/Discard, Export, user-scripts banner, rule tester, recipe picker, Light theme switch |
+| Popup | `src/entrypoints/popup/` | global switch, first 8 group switches (immediate save), import, applied/refused report, Badge switch (`storage.local.showBadge`, missing means on), "Match log…" → `options.html#log`, "Recipes…" → `options.html#recipes`, "Test a URL…" → `options.html#tester`, "Edit rules…" → `runtime.openOptionsPage()`, Light theme switch |
+| Editor | `src/entrypoints/options/` (`options_ui`, `open_in_tab`) | groups/rules CRUD + reorder, switches, site scoping, request types (collapsed Advanced), inject/mock fields, CodeMirror 6 (options chunk only), validation, preview, Save/Discard, Export, user-scripts banner, rule tester, recipe picker, Recent matches (`#log`), Light theme switch |
 | DevTools | `src/entrypoints/devtools/` + `devtools-panel/` | `devtools_page` creates a Detour panel. The panel runs `inspectPage` (page-load `resolveProbe`) for the inspected tab |
 | Shared | `src/ui/` | `base.css` tokens (dark default, `data-theme="light"`), `Switch`, `Field`, `ThemeToggle`, `announcer` (one live region per page) |
 | Logic | `src/workspace-ui/` | `import-flow`, `report-view`, `editor`, `popup`, `recipes`, `devtools`, `tester` (pure; all unit tested) |
@@ -104,6 +104,20 @@ enabled workspace
 - **DevTools** does not attach `chrome.debugger`. Outside a DevTools window the panel has no inspected page. `chrome.devtools` is only available there.
 - **Rule tester** (`workspace-ui/tester.ts`) resolves the editor draft, not a second matcher. Probe: URL, method (default GET), resource type (default page load), page URL (blank = the URL; ignored for a page load), subframe. Fetch/XHR: first matching mock wins and DNR does not run. Otherwise the earliest block, redirect, or body override wins (`previewMatch` for a redirect target). A note says Chrome may still redirect before the body is replaced. Header rules all apply; earlier set/remove wins per header; later appends still apply. Injects match the page URL and do not run when that page load is redirected or blocked. `compileRule` refusals and inline JS without user scripts are "matched, not applied". Notes when Detour is off or the draft is unsaved. Site scope uses the page host (top frame), not the initiatorDomains iframe gap.
 - Background (`src/entrypoints/background.ts`) is wiring only; logic is pure or takes injected `DnrApi` / `StorageAreaLike`.
+
+## Match log and badge (as built, ADR-010)
+
+```
+DNR onRuleMatchedDebug (unpacked Chromium) or getMatchedRules (packed fallback)
+  + page CSS / script-URL notes, mock CustomEvent (rule id + URL only), body fulfill/filter
+  → storage.session.matchLog (newest 50; label = group name + match pattern)
+  → action.setBadgeText per tab (count since navigation; empty when off or Detour is off)
+```
+
+- Chromium manifest adds `declarativeNetRequestFeedback` (no install warning). Firefox does not. Chrome `debugger` is unchanged.
+- DNR ids join `applyReport.applied`. Session ruleset rows are ignored. A poll row (`dnr-poll:` key, tab URL) is not counted again once a debug row has the request URL.
+- `tabs.onUpdated` with `status: 'complete'` does not reset the badge clock. A loading event or a changed URL does. The clock lives in the service worker.
+- Turning the badge or Detour off clears badge text without calling `getMatchedRules`. Compile errors stay on the apply report.
 
 ## rule-model shape
 
