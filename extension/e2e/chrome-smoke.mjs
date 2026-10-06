@@ -3,6 +3,7 @@
 // api-mock rules run in real pages.
 // Usage: pnpm build && CHROME=/path/to/chrome pnpm e2e:chrome
 // Needs Chrome for Testing or Chromium; branded Chrome 137+ ignores unpacked-extension loading flags.
+import { spawn } from 'node:child_process';
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -44,6 +45,8 @@ const prod = await serve(8001, {
   '/body.html': html('<!doctype html><title>body</title><script src="/replaced.js"></script><script src="/kept.js"></script>'),
   '/replaced.js': js('window.BODY = "PROD";'),
   '/kept.js': js('window.KEPT = "PROD";'),
+  '/bridge.html': html('<!doctype html><title>bridge</title><script src="/bridge.js"></script>'),
+  '/bridge.js': js('window.BRIDGE = "PROD";'),
 });
 const local = await serve(8002, {
   '/a.js': js('window.A = "LOCAL";'),
@@ -86,6 +89,7 @@ const check = (name, actual, expected) => {
 
 // While the body-override tab is open, Puppeteer must not attach to it: Chrome allows one debugger per tab.
 let shieldHttp = false;
+let bridgeProc;
 const browser = await puppeteer.launch({
   executablePath: CHROME,
   headless: true,
@@ -557,7 +561,66 @@ try {
   }, 'http://127.0.0.1:8001/body.html');
   check('replaced script body runs', replaced.BODY, 'LOCAL');
   check('unmatched script is untouched', replaced.KEPT, 'PROD');
+
+  // Local Bridge: a real CLI on 127.0.0.1, then a serveLocal rule redirects one script at a file on disk.
+  shieldHttp = false;
+  const bridgeDir = path.join(outDir, 'bridge-root');
+  fs.mkdirSync(bridgeDir);
+  fs.writeFileSync(path.join(bridgeDir, 'bridge.js'), 'window.BRIDGE = "DISK";\n');
+  const cli = path.resolve(import.meta.dirname, '../../cli/src/cli.ts');
+  bridgeProc = spawn(process.execPath, ['--experimental-strip-types', cli, 'bridge', bridgeDir, '--port', '8099'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let bridgeLog = '';
+  bridgeProc.stdout.on('data', (chunk) => {
+    bridgeLog += chunk;
+  });
+  bridgeProc.stderr.on('data', (chunk) => {
+    bridgeLog += chunk;
+  });
+  const token = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`bridge did not print a token\n${bridgeLog}`)), 8000);
+    const wait = () => {
+      const match = /token: ([0-9a-f]{64})/.exec(bridgeLog);
+      if (match) {
+        clearTimeout(timer);
+        resolve(match[1]);
+        return;
+      }
+      setTimeout(wait, 50);
+    };
+    wait();
+  });
+  await editor.bringToFront();
+  await editor.$eval('#bridge-port', (el) => {
+    el.value = '8099';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await editor.$eval('#bridge-token', (el, value) => {
+    el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, token);
+  await editor.click('#bridge-connect');
+  await editor.waitForFunction(() => (document.querySelector('[data-testid=bridge-status]')?.textContent ?? '').includes('Connected to'), { timeout: 8000 }).catch(async (e) => {
+    console.log('--- bridge connect failed ---\n' + bridgeLog + '\n' + (await editorText()));
+    throw e;
+  });
+  check('local bridge connected from the rules page', true, true);
+
+  await editor.click('#add-group');
+  await editor.keyboard.type('Local bridge');
+  const bridgeGroup = (await editor.$$('section.group')).at(-1);
+  const bridgeRule = await addPageRule(bridgeGroup, '*:8001/bridge.js', 'serveLocal');
+  await (await bridgeRule.$('input[id$="-path"]')).type('bridge.js');
+  await saveAndSettle();
+  await waitStatus(bridgeRule, 'Applied');
+  check('serve-local rule applied', await statusOf(bridgeRule), '✓ Applied');
+
+  const bridgePage = await browser.newPage();
+  await bridgePage.goto('http://127.0.0.1:8001/bridge.html', { waitUntil: 'load' });
+  const fromDisk = await bridgePage.evaluate(() => window.BRIDGE);
+  await bridgePage.close();
+  check('script is served from the bridge folder', fromDisk, 'DISK');
 } finally {
+  bridgeProc?.kill('SIGTERM');
   await browser.close();
   prod.close();
   local.close();
