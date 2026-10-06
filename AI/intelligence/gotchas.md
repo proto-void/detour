@@ -55,6 +55,7 @@
 
 ## Popup
 
+- The popup lists the first 8 groups. A switch writes `workspace` immediately (no Save). A dirty rules page then shows the "changed somewhere else" banner
 - Firefox closes the popup when a file picker opens, so the importer opens `popup.html?view=tab` in a tab there
 - `applyReport` holds ids only; the popup joins them with the workspace for labels, and split page-scoped rules show once
 - In an async DOM handler, `event.currentTarget` is `null` after the first `await`. Grab the element first. This bit the import picker: the reset threw, so choosing the same file again fired no `change`, and repeat imports silently did nothing
@@ -66,6 +67,18 @@
 - A DNR `regexSubstitution` replaces only the **first match** within the URL, not the whole URL. Glob rules are anchored `^…$`, so for them it's the whole URL anyway. A regex rule with `\1` keeps the unmatched prefix and suffix; the preview copies this
 - Save timing: take the timestamp **before** `storage.set`. The background can apply and write `applyReport` before the write promise resolves, and a later timestamp would leave status stuck on "Applying"
 - Imported rules with a custom `resourceTypes` list show under Advanced as "Custom…". The collapsed Advanced section has a checkbox per type. An empty list is a field error. Inject and mock ignore `resourceTypes`
+
+## Theme and DevTools
+
+- Missing `storage.local.theme` is dark, even when the OS is light. Only `theme: 'light'` switches palettes
+- `chrome.devtools` exists only on the devtools page and the panel it creates. Opening `devtools-panel.html` directly cannot see the inspected tab
+- Puppeteer's Firefox BiDi session (157.0.1) can `installExtension` on the unpacked build but refuses `browsingContext.navigate` to `moz-extension://` URLs, so the Firefox UI check cannot drive the popup that way
+
+## Recipes
+
+- The localhost recipe redirects both `http` and `https` for that host, all request types, including the page load. A path on the local origin is rejected
+- SPA fallback is one regex rule, `main_frame` only, and skips any path that contains a dot (so `/index.html` and files do not loop)
+- CORS adds response headers only. It does not answer an OPTIONS preflight
 
 ## Rule tester
 

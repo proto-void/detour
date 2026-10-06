@@ -1,6 +1,6 @@
 # Browser matrix
 
-**Last verified:** 2026-10-06 (DNR quotas, domain conditions, page engines on Chrome 154; Firefox 157 importer, editor, inject, mock, tester)
+**Last verified:** 2026-10-06 (DNR quotas, domain conditions, page engines on Chrome 154; Firefox 157 importer, editor, inject, mock, tester). Slice 4 UI (theme, popup group toggle, localhost recipe, devtools page) verified on Chrome 154 e2e 52/52. Firefox 157 build includes `devtools_page`; BiDi could not open `moz-extension://` pages, so that UI was not re-driven in Firefox.
 
 ## Supported targets (product intent)
 

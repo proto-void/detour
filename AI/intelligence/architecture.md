@@ -70,14 +70,18 @@ enabled workspace
 
 | Surface | Entry | Holds |
 |---------|-------|-------|
-| Popup | `src/entrypoints/popup/` | global switch, import, applied/refused report, "Edit rules…" → `runtime.openOptionsPage()`, "Test a URL…" → `options.html#tester` |
-| Editor | `src/entrypoints/options/` (`options_ui`, `open_in_tab`) | groups/rules CRUD + reorder, switches, site scoping, request types (collapsed Advanced), inject/mock fields, CodeMirror 6 (options chunk only), validation, preview, Save/Discard, Export, user-scripts banner, rule tester |
-| Shared | `src/ui/` | `base.css` tokens, `Switch`, `Field`, `announcer` (one live region per page) |
-| Logic | `src/workspace-ui/` | `import-flow`, `report-view`, `editor` (pure; all unit tested) |
+| Popup | `src/entrypoints/popup/` | global switch, first 8 group switches (immediate save), import, applied/refused report, "Recipes…" → `options.html#recipes`, "Test a URL…" → `options.html#tester`, "Edit rules…" → `runtime.openOptionsPage()`, Light theme switch |
+| Editor | `src/entrypoints/options/` (`options_ui`, `open_in_tab`) | groups/rules CRUD + reorder, switches, site scoping, request types (collapsed Advanced), inject/mock fields, CodeMirror 6 (options chunk only), validation, preview, Save/Discard, Export, user-scripts banner, rule tester, recipe picker, Light theme switch |
+| DevTools | `src/entrypoints/devtools/` + `devtools-panel/` | `devtools_page` creates a Detour panel. The panel runs `inspectPage` (page-load `resolveProbe`) for the inspected tab |
+| Shared | `src/ui/` | `base.css` tokens (dark default, `data-theme="light"`), `Switch`, `Field`, `ThemeToggle`, `announcer` (one live region per page) |
+| Logic | `src/workspace-ui/` | `import-flow`, `report-view`, `editor`, `popup`, `recipes`, `devtools`, `tester` (pure; all unit tested) |
 
 - Editor model: `draft` and `saved` are `$state.raw` workspaces, changed only through the immutable ops in `editor.ts`. Save = `saveWorkspace(draft)`. A rule's status is "Applying" until an `applyReport` with `appliedAt` ≥ the moment the save started arrives.
 - Validation has two levels. `errors` (schema) block Save. `warnings` (what the compiler would refuse, and Chrome's request-`append` allowlist) show at the field but don't block, so one refused rule never stops saving the rest.
-- If storage changes while the draft is dirty, the editor shows a banner instead of reloading; reloading is the user's choice.
+- If storage changes while the draft is dirty, the editor shows a banner instead of reloading; reloading is the user's choice. Popup group switches write the workspace immediately, so a dirty editor shows that banner.
+- **Theme:** `storage.local.theme === 'light'` or anything else (including missing) is dark. `applyTheme` sets `data-theme` before the page mounts. CodeMirror follows the same attribute.
+- **Recipes** (`workspace-ui/recipes.ts`) append a normal group to the editor draft. `buildRecipe` refuses input `parseWorkspace` or `compileRule` would refuse, including a host redirected at itself. Save applies them. No separate recipe file.
+- **DevTools** does not attach `chrome.debugger`. Outside a DevTools window the panel has no inspected page. `chrome.devtools` is only available there.
 - **Rule tester** (`workspace-ui/tester.ts`) resolves the editor draft, not a second matcher. Probe: URL, method (default GET), resource type (default page load), page URL (blank = the URL; ignored for a page load), subframe. Fetch/XHR: first matching mock wins and DNR does not run. Otherwise the earliest block or redirect wins (`previewMatch` for the target). Header rules all apply; earlier set/remove wins per header; later appends still apply. Injects match the page URL and do not run when that page load is redirected or blocked. `compileRule` refusals and inline JS without user scripts are "matched, not applied". Notes when Detour is off or the draft is unsaved. Site scope uses the page host (top frame), not the initiatorDomains iframe gap.
 - Background (`src/entrypoints/background.ts`) is wiring only; logic is pure or takes injected `DnrApi` / `StorageAreaLike`.
 

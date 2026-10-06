@@ -26,7 +26,7 @@
 - Refusals / import notices use a stable `reason`/`code` string plus a human message; never include rule bodies or file contents
 - Tests colocated as `*.test.ts`; fixtures in `__fixtures__/`; DNR fake in `src/test/fake-dnr.ts`; storage via `fakeBrowser` from `wxt/testing/fake-browser`
 - Match WXT + Svelte 5 idioms; no drive-by refactors
-- UI: dark default; accessibility for popup toggles
+- UI: dark default; light is an explicit `storage.local` `theme` value; accessibility for popup toggles (On/Off text, not color alone)
 
 ## Git
 

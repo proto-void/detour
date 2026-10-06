@@ -1,6 +1,6 @@
 # 007 — workspace-ui remainder
 
-**Status:** In progress  
+**Status:** Done  
 **Date:** 2026-10-06  
 **Spec:** [workspace-ui](../specs/workspace-ui.md) slice 4 — Approved (Hamza, 2026-10-06)
 
@@ -29,14 +29,22 @@ Recipe files, OPTIONS mocks, DevTools network log, OS color-scheme tracking, eng
 
 ## Tasks
 
-- [ ] T1 Spec approved, this plan, PROGRESS
-- [ ] T2 Light theme tokens, persistence, switches on popup and rules page
-- [ ] T3 Popup group toggles (immediate save)
-- [ ] T4 Built-in recipes on the rules page
-- [ ] T5 DevTools panel using the rule tester
-- [ ] T6 Typecheck, unit tests, Chrome + Firefox builds
-- [ ] T7 e2e: theme, popup group toggle, localhost recipe; manifest has `devtools_page`
-- [ ] T8 KB write-back
+- [x] T1 Spec approved, this plan, PROGRESS
+- [x] T2 Light theme tokens, persistence, switches on popup and rules page
+- [x] T3 Popup group toggles (immediate save)
+- [x] T4 Built-in recipes on the rules page
+- [x] T5 DevTools panel using the rule tester
+- [x] T6 Typecheck, unit tests, Chrome + Firefox builds
+- [x] T7 e2e: theme, popup group toggle, localhost recipe; manifest has `devtools_page`
+- [x] T8 KB write-back
+
+## Results (2026-10-06)
+
+- 281 unit tests pass (18 new: theme, popup groups, recipes, DevTools page view)
+- `tsc` + `svelte-check --fail-on-warnings` clean
+- Chrome and Firefox production builds clean. Both manifests set `devtools_page` to `devtools.html`
+- `pnpm e2e:chrome` 52/52 on Chrome for Testing 154: light theme persists, popup group off/on gates that group's redirect, localhost recipe redirects `127.0.0.1:9` to port 8002, devtools page declared, panel explains itself outside DevTools
+- Firefox 157.0.1 headless: temporary add-on installed (`detour@protovoid.com`). BiDi refused navigation to `moz-extension://` pages, so the new UI was not clicked in Firefox
 
 ## Verification
 

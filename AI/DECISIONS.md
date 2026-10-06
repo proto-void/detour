@@ -164,7 +164,8 @@ Resource Override gates groups by tab URL; DNR has no tab condition. The popup n
 ### Consequences
 
 - Two unrelated exports that share a file name (e.g. both `export.json`) replace each other. The summary makes this visible; matching by name is what makes "re-export after editing in RO" work
-- Switch flips need a Save; the editor makes unsaved state obvious
+- Switch flips in the editor need a Save; the editor makes unsaved state obvious
+- Amended 2026-10-06 (workspace-ui slice 4): popup group switches are the exception. They write that group's `enabled` flag immediately, the same way the global switch writes `enabled`. The editor treats the write as an external change
 - Amended 2026-10-06 (Hamza): re-import keeps each group's/rule's on/off state via `importKey`. A name-only match asks (Replace / Import as new / Cancel); identical content replaces silently
 
 ## ADR-008 — Page-world engines: userScripts for user code, packaged runtimes for the rest

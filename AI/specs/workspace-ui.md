@@ -94,15 +94,15 @@ Hamza approved these four items on 2026-10-06. The bullets below are the build c
 
 ### Acceptance criteria
 
-- [ ] **Popup group toggles:** the popup lists the first 8 groups in workspace order (the ones that win first) with a switch each. Flipping a switch saves that group's `enabled` flag immediately and the engines re-apply. Further groups are counted, with Edit rules for the rest. The global Enabled switch is unchanged
-- [ ] **Recipes:** the rules page has a built-in list. Adding one appends a group to the editor draft; Save applies it, same as any other edit. The popup links to that list. Built-ins:
+- [x] **Popup group toggles:** the popup lists the first 8 groups in workspace order (the ones that win first) with a switch each. Flipping a switch saves that group's `enabled` flag immediately and the engines re-apply. Further groups are counted, with Edit rules for the rest. The global Enabled switch is unchanged
+- [x] **Recipes:** the rules page has a built-in list. Adding one appends a group to the editor draft; Save applies it, same as any other edit. The popup links to that list. Built-ins:
   - Point a host at localhost (default `http://localhost:5173`, the Vite-shaped case). Two redirects, `http` and `https`, `host/*` → `origin/*`, all request types including page loads
   - Allow CORS: response `Access-Control-Allow-Origin`, `Allow-Methods`, and `Allow-Headers` on a glob (default every URL). Headers on real responses only
   - SPA fallback: page loads whose path has no dot go to `/index.html` on that origin. One regex rule, `main_frame` only
-- [ ] Recipes produce ordinary groups through the shared rule schema and compiler. They do not invent a second matcher
-- [ ] **Light theme:** a "Light theme" switch on the popup and the rules page. Off (the default when nothing is stored) is the current dark palette. On applies a light palette with the same text for state (On/Off, Applied, Refused). The choice is stored in `storage.local` under `theme` and shared by every Detour page, including the DevTools panel
-- [ ] **DevTools panel:** MV3 `devtools_page` adds a Detour panel (Chrome, Edge, Firefox). For the inspected page it shows the page URL and the rule-tester result for a page load of that URL (same `resolveProbe` precedence). It says when Detour is off. It can open the rules page. It does not attach the debugger
-- [ ] Dark, and light, stay keyboard accessible: native controls, visible focus, switches expose On/Off, results are text, no color-only state
+- [x] Recipes produce ordinary groups through the shared rule schema and compiler. They do not invent a second matcher
+- [x] **Light theme:** a "Light theme" switch on the popup and the rules page. Off (the default when nothing is stored) is the current dark palette. On applies a light palette with the same text for state (On/Off, Applied, Refused). The choice is stored in `storage.local` under `theme` and shared by every Detour page, including the DevTools panel
+- [x] **DevTools panel:** MV3 `devtools_page` adds a Detour panel (Chrome, Edge, Firefox). For the inspected page it shows the page URL and the rule-tester result for a page load of that URL (same `resolveProbe` precedence). It says when Detour is off. It can open the rules page. It does not attach the debugger
+- [x] Dark, and light, stay keyboard accessible: native controls, visible focus, switches expose On/Off, results are text, no color-only state
 - [x] CodeMirror 6 editors for inject/mock bodies (delivered in plan 005)
 
 ### Deferred (not approved — do not build)

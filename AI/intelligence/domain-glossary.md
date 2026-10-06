@@ -14,7 +14,7 @@
 | **Mock** | Intercept fetch/XHR in page world to return synthetic responses |
 | **Deep engine** | Chromium `chrome.debugger` / CDP path for body-level overrides |
 | **Local Bridge** | Optional Node CLI serving local files to the extension over loopback |
-| **Recipe** | Shareable starter pack of rules for a scenario (e.g. Vite) |
+| **Recipe** | Built-in starter group (localhost / Vite, CORS headers, SPA fallback). It becomes a normal group; there is no separate recipe file |
 | **Rule tester** | Options-page UI: paste a URL (optional method, resource type, page) and see which rule wins, using engine precedence |
 | **RO** | Resource Override (kylepaulsen) — upstream inspiration |
 | **SDD** | Spec-driven development — Draft → Approved before implementation |

@@ -23,12 +23,19 @@
 - [x] **page-inject** + **api-mock** Approved (Hamza, 2026-10-06) and built (plan 005, ADR-008): inline and URL JS/CSS, MAIN-world fetch/XHR mocks, CodeMirror 6 on the options page, apply-report refusals and session page failures. 239 unit tests; Chrome + Firefox builds clean; `pnpm e2e:chrome` 41/41 on Chrome for Testing 154
 - [x] **workspace-ui slice 3 (rule tester)** Approved (Hamza, 2026-10-06) and built (plan 006): paste a URL on the rules page (popup opens it) and see which rule wins, using engine precedence across redirect, block, headers, inject, and mock. 263 unit tests; Chrome + Firefox builds clean; `pnpm e2e:chrome` 45/45
 - [x] **Firefox check** (plans 003–006) on Firefox 157.0.1: headless temporary add-on, 43/43. Tab importer (RO export, file override skipped, port warning), editor create/save for redirect, block, headers, inject, and mock, Detour on/off, iframe warning (`RuleConditionKeys` null), CSS inject, fetch/XHR mock, inline JS after Allow user scripts, rule tester (win / no match / loop)
+- [x] **workspace-ui slice 4** Approved (Hamza, 2026-10-06) and built (plan 007): light theme (persisted, dark default), popup group switches (first 8, immediate save), three starter recipes (localhost/Vite, CORS headers, SPA fallback), DevTools panel that reuses the rule tester for a page load. 281 unit tests; Chrome + Firefox builds clean; `pnpm e2e:chrome` 52/52. Firefox 157 installed the add-on headlessly; BiDi could not open extension pages
 
 ## Next
 
-1. **workspace-ui slice 4** Approved (Hamza, 2026-10-06), plan 007 in progress: recipes, DevTools panel, light theme, popup group toggles
-2. `engine-deep` is next in engine build order if body override comes first
-3. `distribution` approval unlocks CI (unit + build + `e2e:chrome`)
+1. **Next spec to review/Approve:** `engine-deep` if body override comes first, otherwise `observability` (badge, match log). Workspace-ui has no remaining Draft acceptance criteria
+2. `distribution` approval unlocks CI (unit + build + `e2e:chrome`)
+
+## Open questions (slice 4 deferred, not blocking)
+
+- Should recipes grow a shareable file format, or is "built-in packs that become normal groups" enough?
+- Should Allow CORS also answer the OPTIONS preflight, or only add headers to responses the server sends?
+- Is the DevTools panel's page-load result enough, or do you want a per-request list (that overlaps observability)?
+- SPA fallback always targets `/index.html` and skips paths that contain a dot. Is that the fallback you want?
 
 ## Blocked
 
