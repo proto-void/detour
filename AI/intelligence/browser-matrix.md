@@ -1,6 +1,6 @@
 # Browser matrix
 
-**Last verified:** 2026-10-06 (DNR quotas, domain conditions, page engines on Chrome 154; Firefox 157 importer, editor, inject, mock, tester). Slice 4 UI (theme, popup group toggle, localhost recipe, devtools page) verified on Chrome 154 e2e 52/52. Firefox 157 build includes `devtools_page`; BiDi could not open `moz-extension://` pages, so that UI was not re-driven in Firefox.
+**Last verified:** 2026-10-06 (DNR quotas, domain conditions, page engines and body override on Chrome 154 e2e 57/57; Firefox 157 importer, editor, inject, mock, tester). Firefox 157 BiDi still cannot open `moz-extension://` pages, so the live `filterResponseData` path was not driven.
 
 ## Supported targets (product intent)
 
@@ -42,6 +42,17 @@ All three match subdomains too. Chrome for Testing 154 verified end to end (`pnp
 | fetch / XHR mock | Packaged MAIN script, `document_start`; no user-scripts toggle | Same | Verify |
 
 Mocks and URL/CSS injection do not need the user-scripts toggle. Inline JS rules are refused (`user-scripts-unavailable`) until it is on.
+
+## Body override
+
+| Capability | Chrome / Edge / Brave 120+ | Firefox 128+ | Safari 17+ |
+|------------|----------------------------|--------------|------------|
+| Replace response body | `chrome.debugger` + CDP Fetch at Response (`fulfillRequest`). `debugger` is install-time. Attach waits for Allow debugger | `filterResponseData` after optional `webRequest` + `webRequestBlocking` + `webRequestFilterResponse`, then Allow response rewriting | Unsupported; refused |
+| DevTools on that tab | Detaches the override until the next load | Stays usable | — |
+| Out-of-process iframes | Not attached | n/a | — |
+| Service-worker scripts | Fetched like other scripts when the pattern matches | Not filtered (would need `webRequestFilterResponse.serviceWorkerScript`) | — |
+
+Verified on Chrome for Testing 154: after Allow debugger, one script body became the rule text and a sibling script did not (`pnpm e2e:chrome`, 57/57).
 
 ## Notes
 

@@ -103,7 +103,7 @@
 ## `data:` redirects
 
 - RO mv3 file overrides use `data:` URLs, which hit **CSP**, opaque responses, and CORS mode limits (`no-cors` quirks; see RO #32)
-- Prefer Local Bridge `http://127.0.0.1` or extension-page / redirect-to-extension strategies over giant `data:` bodies
+- Body override (`overrideBody`, ADR-009) keeps the original URL. Local Bridge is still the path for files on disk. Do not emit giant `data:` bodies
 
 ## CORS / preflight
 
@@ -112,7 +112,7 @@
 
 ## SRI
 
-- Subresource Integrity blocks replaced scripts/styles (#45). This may need integrity-attribute stripping with clear user consent and a warning
+- Subresource Integrity blocks replaced scripts/styles (#45). Body override does not strip `integrity` in this slice; the editor says the page can still reject the new file
 
 ## Chrome 137+ extension loading
 
@@ -124,8 +124,24 @@
 
 ## Permissions UX
 
-- Deep engine requires debugger attach, which shows a scary prompt; never enable it silently
+- Body override does not attach on install. Chrome’s `debugger` permission is install-time: an optional grant cannot be accepted from a headless click (Chrome 154), and reading `chrome.debugger` before it exists crashes the service worker. Attach waits for Allow debugger (`storage.local.bodyEngineConsent`)
+- Chrome shows a “started debugging this browser” infobar. `--silent-debugger-extension-api` hides it for tests; it does not grant the permission
+- Only one debugger client owns a tab. Puppeteer and Detour cannot both attach. The Chrome smoke test grants consent at the end and opens the body page from the service worker so Puppeteer never attaches to it
+- Cancelling the infobar (`canceled_by_user`) leaves that tab detached until the body-rule plan changes. Opening DevTools detaches Detour (`onDetach`)
+- Firefox asks for `webRequest`, `webRequestBlocking`, and `webRequestFilterResponse` from Allow response rewriting. The listener is installed only while a body rule is armed
 - Optional host permissions should be progressive where store policies allow
+
+## Body override
+
+- Do not use a `data:` redirect. CSP, CORS, and opaque responses break it. `overrideBody` keeps the URL and replaces the bytes
+- CDP `Fetch.fulfillRequest` body is base64. `continueResponse` with only `requestId` leaves the response alone. Do not call `Fetch.getResponseBody`
+- Drop `content-encoding`, `content-length`, and `transfer-encoding` on the replacement or Chrome tries to gunzip the new bytes
+- A regex or bare `*` Fetch pattern pauses every response in the tab. Specific globs stay narrow. The editor warns
+- Subresource Integrity still checks the new bytes. This slice does not strip `integrity`
+- A DNR redirect for the same URL can move the request before Fetch sees the response. The tester notes the overlap; the compiler does not suppress either rule
+- Mocks still win for `xmlhttprequest` (the page answers first)
+- Out-of-process iframes are not auto-attached. Firefox does not filter service-worker script streams
+- `applyReport` lists armed body rules by id. It never stores the body. Import notices must not echo file contents either
 
 ## Firefox vs Chromium
 

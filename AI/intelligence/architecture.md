@@ -21,7 +21,7 @@ Rules → RuleCompiler → Core DNR            (built: engine-core)
 | `engine-core` | DNR compile/apply; urlFilter preference | `extension/src/engine-core/` |
 | `page-inject` | JS/CSS inject via scripting + userScripts | `extension/src/page-inject/` + `entrypoints/bridge.content.ts` |
 | `api-mock` | fetch/XHR mocks in the page's MAIN world | same module: `mock-runtime.ts` + `entrypoints/mock-main.content.ts` |
-| `engine-deep` | Chromium debugger body path | — |
+| `engine-deep` | Body override: Chrome debugger Fetch, Firefox filterResponseData | `extension/src/engine-deep/` |
 | `local-bridge` | Node CLI loopback file server | — |
 | `workspace-ui` | Popup, options, recipes, tester, RO import | `extension/src/workspace-ui/` (logic) + `src/entrypoints/popup/` (slice 1) + `src/entrypoints/options/` (slice 2) |
 | `observability` | Badge, match log, errors (no rule-body telemetry) | — |
@@ -66,6 +66,26 @@ enabled workspace
 - Runtime failures (CSP-blocked script URL, unreachable CSS URL) append to `storage.session.pageFailures` (last 50, page origin + message, no bodies). The editor shows them on the rule.
 - Permissions: `scripting` always; `userScripts` in Chrome `permissions`, Firefox `optional_permissions`. Content scripts are not listed in the manifest; `syncPage` registers them.
 
+## Body override (as built, ADR-009)
+
+```
+enabled workspace
+  → planBody → overrideBody rules (workspace order) + Fetch urlPatterns
+  → sync (inside syncRules), only when bodyEngineConsent is true and the browser permission is present:
+       Chrome: debugger.attach(tab, "1.3") on http(s) tabs, Fetch.enable at Response,
+               fulfillRequest (base64 UTF-8) on match, continueResponse otherwise
+       Firefox: blocking webRequest listener; filterResponseData only for a match
+  → applyReport.bodies = [{ groupId, ruleId }]  (ids only)
+     refused reason body-permission-denied when consent or permission is missing
+```
+
+- DNR compile skips `overrideBody`. Global off and an empty plan detach and clear the filter.
+- Chrome `debugger` is an install-time permission. The session is created only after consent, because the API is missing until the permission exists. Firefox `webRequest`, `webRequestBlocking`, and `webRequestFilterResponse` stay optional and are requested from Allow response rewriting.
+- First matching enabled rule wins. Omitted resource types match everything except `main_frame`. A document whose frame is unknown matches only when the rule lists both `main_frame` and `sub_frame`, so a page is not replaced by accident.
+- Replaced responses drop `content-encoding`, `content-length`, and `transfer-encoding`. Status and other headers stay. Optional content type replaces `Content-Type`.
+- Cancelling Chrome’s debugging banner leaves that tab detached until the body-rule plan changes. DevTools on the tab detaches Detour.
+- RO `fileOverride` maps to `overrideBody`. `fileInject` stays skipped.
+
 ## UI (workspace-ui)
 
 | Surface | Entry | Holds |
@@ -82,14 +102,14 @@ enabled workspace
 - **Theme:** `storage.local.theme === 'light'` or anything else (including missing) is dark. `applyTheme` sets `data-theme` before the page mounts. CodeMirror follows the same attribute.
 - **Recipes** (`workspace-ui/recipes.ts`) append a normal group to the editor draft. `buildRecipe` refuses input `parseWorkspace` or `compileRule` would refuse, including a host redirected at itself. Save applies them. No separate recipe file.
 - **DevTools** does not attach `chrome.debugger`. Outside a DevTools window the panel has no inspected page. `chrome.devtools` is only available there.
-- **Rule tester** (`workspace-ui/tester.ts`) resolves the editor draft, not a second matcher. Probe: URL, method (default GET), resource type (default page load), page URL (blank = the URL; ignored for a page load), subframe. Fetch/XHR: first matching mock wins and DNR does not run. Otherwise the earliest block or redirect wins (`previewMatch` for the target). Header rules all apply; earlier set/remove wins per header; later appends still apply. Injects match the page URL and do not run when that page load is redirected or blocked. `compileRule` refusals and inline JS without user scripts are "matched, not applied". Notes when Detour is off or the draft is unsaved. Site scope uses the page host (top frame), not the initiatorDomains iframe gap.
+- **Rule tester** (`workspace-ui/tester.ts`) resolves the editor draft, not a second matcher. Probe: URL, method (default GET), resource type (default page load), page URL (blank = the URL; ignored for a page load), subframe. Fetch/XHR: first matching mock wins and DNR does not run. Otherwise the earliest block, redirect, or body override wins (`previewMatch` for a redirect target). A note says Chrome may still redirect before the body is replaced. Header rules all apply; earlier set/remove wins per header; later appends still apply. Injects match the page URL and do not run when that page load is redirected or blocked. `compileRule` refusals and inline JS without user scripts are "matched, not applied". Notes when Detour is off or the draft is unsaved. Site scope uses the page host (top frame), not the initiatorDomains iframe gap.
 - Background (`src/entrypoints/background.ts`) is wiring only; logic is pure or takes injected `DnrApi` / `StorageAreaLike`.
 
 ## rule-model shape
 
 - `Workspace { groups: Group[] }`, `Group { id, name, enabled, pageDomains?, importedFrom?, importKey?, rules }` (`pageDomains` = run only on pages of these hosts + subdomains; `importedFrom { file, sha256 }` = provenance, so re-importing that file replaces the group, ADR-007), `Rule { id, enabled, match, action, resourceTypes?, caseSensitive?, note?, importKey? }`.
 - `match`: `glob` (whole URL, `*` = any run incl. `/`, lazy captures) or `regex` (unanchored, RE2 subset).
-- `action`: `redirect { to }` (glob: `*` in `to` = Nth captured wildcard; regex: `\1`–`\9`), `block`, `modifyHeaders { request[], response[] }` with `set | append | remove`, `injectJs` / `injectCss` `{ source: {kind:'inline',code} | {kind:'url',url}, runAt, allFrames, world? }`, `mock { method, status, headers[], body, delayMs }`. Inject match is the page URL; mock match is the request URL. `resourceTypes` is ignored for those actions.
+- `action`: `redirect { to }` (glob: `*` in `to` = Nth captured wildcard; regex: `\1`–`\9`), `block`, `modifyHeaders { request[], response[] }` with `set | append | remove`, `injectJs` / `injectCss` `{ source: {kind:'inline',code} | {kind:'url',url}, runAt, allFrames, world? }`, `mock { method, status, headers[], body, delayMs }`, `overrideBody { body, contentType? }` (inline UTF-8, 1 MB). Inject match is the page URL; mock and body match the request URL. `resourceTypes` is ignored for inject and mock.
 - `importKey` on groups and rules: stable identity inside an import (RO id, else position + type + match). Re-import copies `enabled` from the match.
 - **Priority**: flattened position over enabled rules; DNR `priority = n - index` (unique, ≥ 1). Block/redirect: the earliest matching rule wins. modifyHeaders: every matching rule applies, and on the same header the earlier rule wins.
 - Export file = storage envelope `{ v: 1, data }`. Import detects RO by array-shaped `data` / `ruleGroups`.
