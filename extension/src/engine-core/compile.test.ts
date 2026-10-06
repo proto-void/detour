@@ -225,3 +225,26 @@ describe('compileWorkspace', () => {
     expect(refused).toEqual([expect.objectContaining({ groupId: 'g3', ruleId: 'e', reason: 'invalid-redirect' })]);
   });
 });
+
+describe('page actions', () => {
+  it('are skipped by the DNR compiler (they run in the page, not the network)', () => {
+    const ws: Workspace = {
+      groups: [
+        {
+          id: 'g',
+          name: 'g',
+          enabled: true,
+          rules: [
+            { id: 'js', enabled: true, match: { kind: 'glob', pattern: '*' }, action: { type: 'injectJs', source: { kind: 'inline', code: 'x' }, runAt: 'document_start', allFrames: false, world: 'MAIN' } },
+            { id: 'mock', enabled: true, match: { kind: 'glob', pattern: '*/api/*' }, action: { type: 'mock', method: 'ANY', status: 200, headers: [], body: '', delayMs: 0 } },
+            { id: 'b', enabled: true, match: { kind: 'glob', pattern: '*ads*' }, action: { type: 'block' } },
+          ],
+        },
+      ],
+    };
+    const { candidates, refused } = compileWorkspace(ws);
+    expect(candidates.map((c) => c.ruleId)).toEqual(['b']);
+    expect(refused).toEqual([]);
+    expect(() => compileRule(ws.groups[0]!.rules[0]!)).toThrow(/not a network rule/);
+  });
+});

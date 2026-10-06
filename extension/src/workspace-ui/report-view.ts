@@ -45,6 +45,14 @@ export function summarizeRule(rule: Rule): string {
       const changes = rule.action.request.length + rule.action.response.length;
       return `Headers on ${pattern} (${changes} change${changes === 1 ? '' : 's'})`;
     }
+    case 'injectJs':
+    case 'injectCss': {
+      const what = rule.action.type === 'injectJs' ? 'JS' : 'CSS';
+      const from = rule.action.source.kind === 'url' ? ` from ${rule.action.source.url}` : '';
+      return `Inject ${what}${from} on ${pattern}`;
+    }
+    case 'mock':
+      return `Mock ${rule.action.method === 'ANY' ? '' : `${rule.action.method} `}${pattern} → ${rule.action.status}`;
   }
 }
 

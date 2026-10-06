@@ -20,7 +20,7 @@ Inject user-provided JavaScript and CSS into matched pages at configurable docum
 ## Acceptance criteria
 
 - [ ] Rule actions `injectJs` and `injectCss`, each with a source: **inline code** or **URL**. The rule's `match` is the **page URL** (glob/regex); the group's sites still apply
-- [ ] Timing `runAt`: `document_start` (default for JS), `document_end`, `document_idle` (default for CSS)
+- [ ] Timing `runAt`: `document_start` (default for JS and CSS, so styles land before first paint), `document_end`, `document_idle`
 - [ ] Frames: top frame only (default) or all frames (`allFrames`)
 - [ ] Inline JS world: `MAIN` (default; shares the page's globals) or isolated `USER_SCRIPT` (exempt from page CSP, can't see page variables)
 - [ ] Registration follows the global switch, group/rule switches and site scoping; re-registered on every workspace change

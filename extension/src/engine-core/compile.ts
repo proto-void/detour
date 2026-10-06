@@ -1,5 +1,5 @@
 import { countWildcards, globToRegexSource, matchesUrl } from '../rule-model/match';
-import type { HeaderOp, Rule, Workspace } from '../rule-model/schema';
+import { isDnrAction, type HeaderOp, type Rule, type Workspace } from '../rule-model/schema';
 import type { DnrAction, DnrCondition, DnrHeaderInfo } from './dnr';
 
 export type RefusalReason =
@@ -66,8 +66,10 @@ function isAbsoluteRedirect(target: string): boolean {
 const headerInfos = (ops: HeaderOp[]): DnrHeaderInfo[] =>
   ops.map((op) => (op.op === 'remove' ? { header: op.name, operation: 'remove' } : { header: op.name, operation: op.op, value: op.value }));
 
+/** Network (DNR) rules only; inject/mock rules are compiled by page-inject. */
 export function compileRule(rule: Rule): RuleResult {
   const { match, action } = rule;
+  if (!isDnrAction(action)) throw new Error(`compileRule: "${action.type}" is not a network rule`);
   const caseSensitive = rule.caseSensitive ?? false;
 
   if (!PRINTABLE_ASCII.test(match.pattern)) {
@@ -173,7 +175,7 @@ export function compileWorkspace(workspace: Workspace, options: CompileOptions =
   for (const group of workspace.groups) {
     if (!group.enabled) continue;
     for (const rule of group.rules) {
-      if (!rule.enabled) continue;
+      if (!rule.enabled || !isDnrAction(rule.action)) continue;
       const result = compileRule(rule);
       const ids = { groupId: group.id, ruleId: rule.id };
       if (!result.ok) {

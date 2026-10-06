@@ -88,3 +88,38 @@ describe('EnvelopeSchema', () => {
     expect(parseEnvelope({ v: 1, data: { groups: [] } })).toEqual({ ok: true, value: { v: 1, data: { groups: [] } } });
   });
 });
+
+describe('page actions (inject / mock)', () => {
+  const rule = (action: unknown) => ({ id: 'p', enabled: true, match: { kind: 'glob', pattern: 'https://app.example.com/*' }, action });
+
+  it('fills inject defaults and keeps code byte-for-byte', () => {
+    const parsed = parseRule(rule({ type: 'injectJs', source: { kind: 'inline', code: '  window.X = 1;\n' } }));
+    expect(parsed).toMatchObject({
+      ok: true,
+      value: { action: { type: 'injectJs', source: { code: '  window.X = 1;\n' }, runAt: 'document_start', allFrames: false, world: 'MAIN' } },
+    });
+    expect(parseRule(rule({ type: 'injectCss', source: { kind: 'url', url: 'http://localhost:5173/x.css' } }))).toMatchObject({
+      ok: true,
+      value: { action: { runAt: 'document_start', allFrames: false } },
+    });
+  });
+
+  it.each([
+    [{ type: 'injectJs', source: { kind: 'inline', code: '   ' } }, 'action.source.code: Enter some code'],
+    [{ type: 'injectCss', source: { kind: 'url', url: 'file:///x.css' } }, 'action.source.url: Must be an http:// or https:// URL'],
+    [{ type: 'injectJs', source: { kind: 'inline', code: 'x' }, runAt: 'later' }, 'action.runAt'],
+    [{ type: 'mock', status: 0 }, 'action.status: Status must be at least 200'],
+    [{ type: 'mock', status: 200.5 }, 'action.status: Status must be a whole number'],
+    [{ type: 'mock', delayMs: 60_000 }, 'action.delayMs: Delay must be at most 30000'],
+    [{ type: 'mock', method: 'TRACE' }, 'action.method'],
+    [{ type: 'mock', headers: [{ name: 'bad name', value: '' }] }, 'action.headers.0.name'],
+  ])('rejects %j', (action, message) => {
+    const parsed = parseRule(rule(action));
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.errors.join('\n')).toContain(message);
+  });
+
+  it('fills mock defaults', () => {
+    expect(parseRule(rule({ type: 'mock' }))).toMatchObject({ ok: true, value: { action: { method: 'ANY', status: 200, headers: [], body: '', delayMs: 0 } } });
+  });
+});

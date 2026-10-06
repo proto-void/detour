@@ -34,9 +34,59 @@ export const MatchSchema = v.variant('kind', [
   }),
 ]);
 
+const isHttpUrl = (text: string) => {
+  try {
+    return ['http:', 'https:'].includes(new URL(text).protocol);
+  } catch {
+    return false;
+  }
+};
+
+/** Code is kept byte-for-byte (no trimming); it only has to contain something. */
+const Code = v.pipe(
+  v.string(),
+  v.check((s) => s.trim() !== '', 'Enter some code'),
+  v.maxLength(1_000_000, 'Code is too large (1 MB max); serve it from a URL instead'),
+);
+
+export const InjectSourceSchema = v.variant('kind', [
+  v.object({ kind: v.literal('inline'), code: Code }),
+  v.object({ kind: v.literal('url'), url: v.pipe(NonEmpty, v.check(isHttpUrl, 'Must be an http:// or https:// URL')) }),
+]);
+
+export const RUN_AT = ['document_start', 'document_end', 'document_idle'] as const;
+export const MOCK_METHODS = ['ANY', 'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const;
+
+const Integer = (min: number, max: number, label: string) =>
+  v.pipe(v.number(), v.integer(`${label} must be a whole number`), v.minValue(min, `${label} must be at least ${min}`), v.maxValue(max, `${label} must be at most ${max}`));
+
 export const ActionSchema = v.variant('type', [
   v.object({ type: v.literal('redirect'), to: NonEmpty }),
   v.object({ type: v.literal('block') }),
+  v.object({
+    type: v.literal('injectJs'),
+    source: InjectSourceSchema,
+    runAt: v.optional(v.picklist(RUN_AT), 'document_start'),
+    /** false = top frame only. */
+    allFrames: v.optional(v.boolean(), false),
+    /** Inline code only: MAIN shares the page's globals; USER_SCRIPT is isolated and exempt from page CSP. */
+    world: v.optional(v.picklist(['MAIN', 'USER_SCRIPT']), 'MAIN'),
+  }),
+  v.object({
+    type: v.literal('injectCss'),
+    source: InjectSourceSchema,
+    runAt: v.optional(v.picklist(RUN_AT), 'document_start'),
+    allFrames: v.optional(v.boolean(), false),
+  }),
+  v.object({
+    type: v.literal('mock'),
+    method: v.optional(v.picklist(MOCK_METHODS), 'ANY'),
+    /** Fetch's Response accepts 200–599. */
+    status: v.optional(Integer(200, 599, 'Status'), 200),
+    headers: v.optional(v.array(v.object({ name: HeaderName, value: v.string() })), []),
+    body: v.optional(v.string(), ''),
+    delayMs: v.optional(Integer(0, 30_000, 'Delay'), 0),
+  }),
   v.pipe(
     v.object({
       type: v.literal('modifyHeaders'),
@@ -72,7 +122,7 @@ export const RuleSchema = v.object({
   enabled: v.boolean(),
   match: MatchSchema,
   action: ActionSchema,
-  /** Omitted = every type except main_frame (DNR default). */
+  /** Omitted = every type except main_frame (DNR default). Ignored by inject/mock actions. */
   resourceTypes: v.optional(v.pipe(v.array(v.picklist(RESOURCE_TYPES)), v.minLength(1, 'Use at least one resource type or omit the field'))),
   caseSensitive: v.optional(v.boolean()),
   note: v.optional(v.string()),
@@ -126,6 +176,13 @@ export const EnvelopeSchema = v.object({
 export type HeaderOp = v.InferOutput<typeof HeaderOpSchema>;
 export type Match = v.InferOutput<typeof MatchSchema>;
 export type Action = v.InferOutput<typeof ActionSchema>;
+export type InjectSource = v.InferOutput<typeof InjectSourceSchema>;
+export type DnrActionType = 'redirect' | 'block' | 'modifyHeaders';
+export type PageActionType = 'injectJs' | 'injectCss' | 'mock';
+
+/** Redirect/block/headers run in declarativeNetRequest; inject and mock run in the page. */
+export const isDnrAction = (action: Action): action is Extract<Action, { type: DnrActionType }> =>
+  action.type === 'redirect' || action.type === 'block' || action.type === 'modifyHeaders';
 export type ResourceType = (typeof RESOURCE_TYPES)[number];
 export type Rule = v.InferOutput<typeof RuleSchema>;
 export type ImportSource = v.InferOutput<typeof ImportSourceSchema>;

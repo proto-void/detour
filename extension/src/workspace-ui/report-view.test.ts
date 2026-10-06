@@ -71,3 +71,15 @@ describe('summarizeRule', () => {
     ).toBe('Headers on * (1 change)');
   });
 });
+
+describe('summarizeRule for page actions', () => {
+  const base = { id: 'x', enabled: true, match: { kind: 'glob' as const, pattern: 'https://app/*' } };
+  it.each([
+    [{ type: 'injectJs', source: { kind: 'inline', code: 'x' }, runAt: 'document_start', allFrames: false, world: 'MAIN' }, 'Inject JS on https://app/*'],
+    [{ type: 'injectCss', source: { kind: 'url', url: 'http://l/x.css' }, runAt: 'document_start', allFrames: false }, 'Inject CSS from http://l/x.css on https://app/*'],
+    [{ type: 'mock', method: 'POST', status: 201, headers: [], body: '', delayMs: 0 }, 'Mock POST https://app/* → 201'],
+    [{ type: 'mock', method: 'ANY', status: 200, headers: [], body: '', delayMs: 0 }, 'Mock https://app/* → 200'],
+  ])('%j', (action, expected) => {
+    expect(summarizeRule({ ...base, action } as never)).toBe(expected);
+  });
+});

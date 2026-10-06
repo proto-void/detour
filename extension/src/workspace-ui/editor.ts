@@ -4,6 +4,7 @@ import { compileRule, type RefusalReason } from '../engine-core/compile';
 import { compileMatcher, countWildcards } from '../rule-model/match';
 import {
   GroupSchema,
+  isDnrAction,
   RESOURCE_TYPES,
   RuleSchema,
   type Action,
@@ -87,6 +88,12 @@ export function defaultAction(type: Action['type']): Action {
       return { type };
     case 'modifyHeaders':
       return { type, request: [{ op: 'set', name: '', value: '' }], response: [] };
+    case 'injectJs':
+      return { type, source: { kind: 'inline', code: '' }, runAt: 'document_start', allFrames: false, world: 'MAIN' };
+    case 'injectCss':
+      return { type, source: { kind: 'inline', code: '' }, runAt: 'document_start', allFrames: false };
+    case 'mock':
+      return { type, method: 'GET', status: 200, headers: [{ name: 'content-type', value: 'application/json' }], body: '{}', delayMs: 0 };
   }
 }
 
@@ -222,8 +229,10 @@ export function validateRule(rule: Rule): RuleValidation {
   }
 
   const warnings: FieldMessages = {};
-  const compiled = compileRule(parsed.output);
-  if (!compiled.ok) warnings[REASON_FIELD[compiled.reason] ?? 'match.pattern'] = `${REASON_LABELS[compiled.reason]}: ${compiled.message}`;
+  if (isDnrAction(parsed.output.action)) {
+    const compiled = compileRule(parsed.output);
+    if (!compiled.ok) warnings[REASON_FIELD[compiled.reason] ?? 'match.pattern'] = `${REASON_LABELS[compiled.reason]}: ${compiled.message}`;
+  }
   if (rule.action.type === 'modifyHeaders') {
     rule.action.request.forEach((op, i) => {
       if (op.op === 'append' && !REQUEST_APPEND_HEADERS.has(op.name)) {
@@ -307,7 +316,7 @@ export type Preview =
   | { kind: 'invalid'; message: string }
   | { kind: 'no-match' }
   | { kind: 'match'; outcome: 'redirect'; to: string }
-  | { kind: 'match'; outcome: 'block' | 'modifyHeaders' };
+  | { kind: 'match'; outcome: 'block' | 'modifyHeaders' | 'injectJs' | 'injectCss' | 'mock' };
 
 /** Expands `\0`–`\9` and `\\` like DNR `regexSubstitution`. */
 function expandSubstitution(template: string, groups: RegExpExecArray): string {
