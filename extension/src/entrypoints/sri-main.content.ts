@@ -7,7 +7,8 @@ const INSTALLED = Symbol.for('detour.sri');
  * Runs before page scripts so a bundler that sets `integrity`, copies it with
  * `setAttributeNS`, inserts a tag with `innerHTML` / `outerHTML` / a shadow
  * root's `innerHTML` / `insertAdjacentHTML`, or inserts markup that can run
- * scripts (`createContextualFragment`, `setHTMLUnsafe` with `runScripts`), hits the hook.
+ * scripts (`createContextualFragment`, `setHTMLUnsafe`), hits the hook. A stylesheet
+ * in `setHTMLUnsafe` is rewritten even when that call does not run scripts.
  */
 export default defineContentScript({
   matches: ['<all_urls>'],

@@ -116,6 +116,7 @@ function createRealm(initial: string | null) {
       for (const node of nodes) this.appendChild(node);
     }
     unsafe: unknown = undefined;
+    unsafeOptions: unknown = undefined;
     get innerHTML() {
       return this.html;
     }
@@ -132,8 +133,9 @@ function createRealm(initial: string | null) {
     insertAdjacentHTML(_position: string, html: string) {
       this.adjacent = html;
     }
-    setHTMLUnsafe(html: unknown, _options?: unknown) {
+    setHTMLUnsafe(html: unknown, options?: unknown) {
       this.unsafe = html;
+      this.unsafeOptions = options;
     }
   }
   class Range {
@@ -152,8 +154,10 @@ function createRealm(initial: string | null) {
     set innerHTML(value: string) {
       this.markup = value;
     }
-    setHTMLUnsafe(html: unknown, _options?: unknown) {
+    options: unknown = undefined;
+    setHTMLUnsafe(html: unknown, options?: unknown) {
       this.html = html;
+      this.options = options;
     }
   }
   class HTMLScriptElement extends Element {
@@ -371,36 +375,75 @@ describe('installIntegrityPatch', () => {
     expect(huge.fragment).toBe(markup);
   });
 
-  it('rewrites setHTMLUnsafe only when runScripts is true', async () => {
+  it('rewrites setHTMLUnsafe for every runScripts value and leaves a sibling hash', async () => {
     const hash = await integrityMetadata(encoder.encode('window.SRI_UNSAFE = "LOCAL";'));
     const realm = createRealm(encodePatchList([patch({ integrity: hash, match: { kind: 'glob', pattern: '*:8001/sri-unsafe.js' } })]));
     installIntegrityPatch(realm.root);
     const markup = `<script src="/sri-unsafe.js" integrity="${BAD}"></script><script src="/sri-unsafe-bad.js" integrity="${BAD}"></script>`;
 
     const host = new realm.Element();
-    host.setHTMLUnsafe(markup, { runScripts: true });
+    const running = { runScripts: true };
+    host.setHTMLUnsafe(markup, running);
     expect(host.unsafe).toContain(`src="/sri-unsafe.js" integrity="${hash}"`);
     expect(host.unsafe).toContain(`src="/sri-unsafe-bad.js" integrity="${BAD}"`);
+    expect(host.unsafeOptions).toBe(running);
 
     const shadow = new realm.ShadowRoot();
-    shadow.setHTMLUnsafe(markup, { runScripts: true });
+    shadow.setHTMLUnsafe(markup, running);
     expect(shadow.html).toContain(`src="/sri-unsafe.js" integrity="${hash}"`);
     expect(shadow.html).toContain(`src="/sri-unsafe-bad.js" integrity="${BAD}"`);
+    expect(shadow.options).toBe(running);
 
     const omitted = new realm.Element();
     omitted.setHTMLUnsafe(markup);
-    expect(omitted.unsafe).toBe(markup);
+    expect(omitted.unsafe).toContain(`src="/sri-unsafe.js" integrity="${hash}"`);
+    expect(omitted.unsafe).toContain(`src="/sri-unsafe-bad.js" integrity="${BAD}"`);
+    expect(omitted.unsafeOptions).toBeUndefined();
+
     const off = new realm.Element();
-    off.setHTMLUnsafe(markup, { runScripts: false });
-    expect(off.unsafe).toBe(markup);
+    const inert = { runScripts: false };
+    off.setHTMLUnsafe(markup, inert);
+    expect(off.unsafe).toContain(`src="/sri-unsafe.js" integrity="${hash}"`);
+    expect(off.unsafe).toContain(`src="/sri-unsafe-bad.js" integrity="${BAD}"`);
+    expect(off.unsafeOptions).toBe(inert);
+
     const truthy = new realm.Element();
-    truthy.setHTMLUnsafe(markup, { runScripts: 'true' });
-    expect(truthy.unsafe).toBe(markup);
+    const stringFlag = { runScripts: 'true' };
+    truthy.setHTMLUnsafe(markup, stringFlag);
+    expect(truthy.unsafe).toContain(`src="/sri-unsafe.js" integrity="${hash}"`);
+    expect(truthy.unsafe).toContain(`src="/sri-unsafe-bad.js" integrity="${BAD}"`);
+    expect(truthy.unsafeOptions).toBe(stringFlag);
 
     const trusted = { toString: () => markup };
     const typed = new realm.Element();
-    typed.setHTMLUnsafe(trusted, { runScripts: true });
+    typed.setHTMLUnsafe(trusted, running);
     expect(typed.unsafe).toBe(trusted);
+    expect(typed.unsafeOptions).toBe(running);
+  });
+
+  it('rewrites a stylesheet in setHTMLUnsafe when scripts are off and leaves a sibling hash', async () => {
+    const hash = await integrityMetadata(encoder.encode('html{--sri-unsafe-css:local}'));
+    const realm = createRealm(encodePatchList([patch({ integrity: hash, resourceTypes: ['stylesheet'], match: { kind: 'glob', pattern: '*:8001/sri-unsafe-css.css' } })]));
+    installIntegrityPatch(realm.root);
+    const markup = `<link rel="stylesheet" href="/sri-unsafe-css.css" integrity="${BAD}"><link rel="stylesheet" href="/sri-unsafe-css-bad.css" integrity="${BAD}">`;
+
+    const omitted = new realm.Element();
+    omitted.setHTMLUnsafe(markup);
+    expect(omitted.unsafe).toContain(`href="/sri-unsafe-css.css" integrity="${hash}"`);
+    expect(omitted.unsafe).toContain(`href="/sri-unsafe-css-bad.css" integrity="${BAD}"`);
+
+    const shadow = new realm.ShadowRoot();
+    const inert = { runScripts: false };
+    shadow.setHTMLUnsafe(markup, inert);
+    expect(shadow.html).toContain(`href="/sri-unsafe-css.css" integrity="${hash}"`);
+    expect(shadow.html).toContain(`href="/sri-unsafe-css-bad.css" integrity="${BAD}"`);
+    expect(shadow.options).toBe(inert);
+
+    const unlisted = createRealm(null);
+    installIntegrityPatch(unlisted.root);
+    const plain = new unlisted.Element();
+    plain.setHTMLUnsafe(markup);
+    expect(plain.unsafe).toBe(markup);
   });
 
   it('rewrites integrity in outerHTML and ShadowRoot.innerHTML, and leaves a sibling hash', async () => {
