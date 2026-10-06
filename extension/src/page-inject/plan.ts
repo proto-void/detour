@@ -6,6 +6,10 @@ import type { UrlTest } from './page-match';
 export const PAGE_CONFIG_KEY = 'pageConfig';
 export const USER_SCRIPT_PREFIX = 'detour-';
 
+/** Shown when an inline JS rule matches but the user-scripts API can't run it. */
+export const USER_SCRIPTS_UNAVAILABLE_MESSAGE =
+  'Inline JavaScript needs user scripts: turn on "Allow User Scripts" for Detour (Chrome) or grant the permission (Firefox 136+)';
+
 type RunAt = 'document_start' | 'document_end' | 'document_idle';
 type Ids = { groupId: string; ruleId: string };
 
@@ -114,7 +118,7 @@ export function planPage(workspace: Workspace, { userScripts }: PlanOptions): Pa
             plan.refused.push({
               ...ids,
               reason: 'user-scripts-unavailable',
-              message: 'Inline JavaScript needs user scripts: turn on "Allow User Scripts" for Detour (Chrome) or grant the permission (Firefox 136+)',
+              message: USER_SCRIPTS_UNAVAILABLE_MESSAGE,
             });
             continue;
           } else {
