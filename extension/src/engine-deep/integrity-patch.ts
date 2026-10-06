@@ -154,6 +154,8 @@ export interface PatchRoot {
   HTMLLinkElement: new (...args: never[]) => object;
   Element: { prototype: object };
   Node: { prototype: object };
+  Range?: { prototype: object };
+  ShadowRoot?: { prototype: object };
 }
 
 const INSTALLED = Symbol.for('detour.sri.installed');
@@ -161,7 +163,8 @@ const INSTALLED = Symbol.for('detour.sri.installed');
 /**
  * MAIN-world hook. Substitutes a published hash when the page assigns `integrity`
  * to a matching script or stylesheet, and when that hash is carried in a string
- * passed to `innerHTML` or `insertAdjacentHTML`. Other assignments are written through.
+ * passed to `innerHTML`, `insertAdjacentHTML`, `createContextualFragment`, or
+ * `setHTMLUnsafe` with `runScripts: true`. Other assignments are written through.
  */
 export function installIntegrityPatch(root: PatchRoot): void {
   const marked = root as unknown as Record<symbol, boolean>;
@@ -273,6 +276,12 @@ export function installIntegrityPatch(root: PatchRoot): void {
   };
   hookMarkupSetter(root.Element.prototype, 'innerHTML', rewriteMarkupValue);
   hookMarkupMethod(root.Element.prototype, 'insertAdjacentHTML', rewriteMarkupValue);
+  // createContextualFragment parses with scripting mode Fragment, so inserted scripts run.
+  hookMarkupArgument(root.Range?.prototype, 'createContextualFragment', rewriteMarkupValue);
+  // setHTMLUnsafe runs scripts only when runScripts is strictly true. The default is inert.
+  const rewriteWhenScriptsRun = (html: unknown, options: unknown): unknown => (scriptsWillRun(options) ? rewriteMarkupValue(html) : html);
+  hookUnsafeHtml(root.Element.prototype, rewriteWhenScriptsRun);
+  hookUnsafeHtml(root.ShadowRoot?.prototype, rewriteWhenScriptsRun);
 
   if (root.document.readyState && root.document.readyState !== 'loading') {
     snapshot();
@@ -413,6 +422,40 @@ function hookMarkupSetter(proto: object, name: 'innerHTML', rewrite: (value: unk
     });
   } catch {
     /* A non-configurable setter leaves the page's markup unchanged. */
+  }
+}
+
+/** Spec default is false. A string, a number, or an omitted flag does not execute scripts. */
+function scriptsWillRun(options: unknown): boolean {
+  if (!options || typeof options !== 'object') return false;
+  return (options as { runScripts?: unknown }).runScripts === true;
+}
+
+function hookMarkupArgument(proto: object | undefined, name: 'createContextualFragment', rewrite: (value: unknown) => unknown) {
+  if (!proto) return;
+  const desc = Object.getOwnPropertyDescriptor(proto, name);
+  const native = desc?.value as ((this: object, html: unknown) => unknown) | undefined;
+  if (typeof native !== 'function') return;
+  try {
+    (proto as Record<string, unknown>)[name] = function (this: object, html: unknown) {
+      return native.call(this, rewrite(html));
+    };
+  } catch {
+    /* A non-configurable method leaves the page's markup unchanged. */
+  }
+}
+
+function hookUnsafeHtml(proto: object | undefined, rewrite: (html: unknown, options: unknown) => unknown) {
+  if (!proto) return;
+  const desc = Object.getOwnPropertyDescriptor(proto, 'setHTMLUnsafe');
+  const native = desc?.value as ((this: object, html: unknown, options?: unknown) => unknown) | undefined;
+  if (typeof native !== 'function') return;
+  try {
+    (proto as { setHTMLUnsafe: (html: unknown, options?: unknown) => unknown }).setHTMLUnsafe = function (this: object, html: unknown, options?: unknown) {
+      return native.call(this, rewrite(html, options), options);
+    };
+  } catch {
+    /* A non-configurable method leaves the page's markup unchanged. */
   }
 }
 
