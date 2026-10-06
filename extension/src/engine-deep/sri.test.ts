@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BodyRule } from './plan';
+import { decodePatchList, SRI_META_NAME } from './integrity-patch';
 import { DOCUMENT_BYTE_CAP, integrityMetadata, isRewritableHtml, loadRuleBytes, rewriteDocumentIntegrity } from './sri';
 
 const encoder = new TextEncoder();
@@ -85,7 +86,22 @@ describe('rewriteDocumentIntegrity', () => {
     const armed = rule();
     const html = '<!-- <script src="https://cdn.example.com/app.js" integrity="sha384-old"></script> --><script>var x = "integrity=sha384-old"</script><p>ok</p>';
     const next = await rewriteDocumentIntegrity(html, page, 'app.example.com', [armed], load([armed]));
-    expect(next).toBe(html);
+    expect(next).toContain('<!-- <script src="https://cdn.example.com/app.js" integrity="sha384-old"></script> -->');
+    expect(next).toContain('var x = "integrity=sha384-old"');
+    expect(next).toContain(`name="${SRI_META_NAME}"`);
+    expect(next).not.toContain(armed.body);
+  });
+
+  it('publishes the hash list when the page has no integrity attribute', async () => {
+    const armed = rule();
+    const html = '<!doctype html><title>t</title><script src="https://cdn.example.com/app.js"></script>';
+    const next = await rewriteDocumentIntegrity(html, page, 'app.example.com', [armed], load([armed]));
+    expect(next.startsWith(`<!doctype html><meta name="${SRI_META_NAME}"`)).toBe(true);
+    const encoded = /content="([^"]+)"/.exec(next)?.[1] ?? '';
+    const patches = decodePatchList(encoded);
+    expect(patches).toHaveLength(1);
+    expect(patches[0]?.integrity).toBe(await integrityMetadata(encoder.encode(armed.body)));
+    expect(JSON.stringify(patches)).not.toContain(armed.body);
   });
 
   it('leaves the published hash when the file cannot be read', async () => {

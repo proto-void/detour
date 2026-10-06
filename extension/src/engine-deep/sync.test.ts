@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { syncRules } from '../engine-core/apply';
+import type { PageApi } from '../page-inject/sync';
 import { createFakeDnr } from '../test/fake-dnr';
 import { saveEnabled, saveWorkspace } from '../rule-model/storage';
 import type { Workspace } from '../rule-model/schema';
@@ -92,6 +93,48 @@ describe('createBodyEngine', () => {
     expect(armed.refused).toEqual([]);
     expect(JSON.stringify(armed)).not.toContain(secret);
     expect(dbg.attaches).toBe(1);
+  });
+
+  it('registers the page integrity hook only while a body rule is armed', async () => {
+    const dbg = quietDebugger();
+    let consented = false;
+    const engine = createBodyEngine({
+      browser: 'chrome',
+      permissions: { async contains() { return true; } },
+      consent: async () => consented,
+      chrome: () => ({ debugger: dbg.api, tabs: dbg.tabs }),
+    });
+    const ids = new Set<string>();
+    const page = {
+      scripting: {
+        async getRegisteredContentScripts({ ids: filter }: { ids?: string[] } = {}) {
+          return [...ids].filter((id) => !filter || filter.includes(id)).map((id) => ({ id }));
+        },
+        async registerContentScripts(scripts: { id: string }[]) {
+          for (const script of scripts) ids.add(script.id);
+        },
+        async unregisterContentScripts({ ids: filter }: { ids?: string[] } = {}) {
+          for (const id of filter ?? [...ids]) ids.delete(id);
+        },
+      },
+    } as PageApi;
+    const area = fakeBrowser.storage.local;
+    const { dnr } = createFakeDnr();
+    await saveEnabled(area, true);
+    await saveWorkspace(area, workspace);
+
+    await syncRules(dnr, area, fixedNow, page, engine);
+    expect([...ids]).not.toContain('detour-sri');
+
+    consented = true;
+    const armed = await syncRules(dnr, area, fixedNow, page, engine);
+    expect(armed.bodies).toEqual([{ groupId: 'g', ruleId: 'b' }]);
+    expect([...ids]).toContain('detour-sri');
+    expect(JSON.stringify(armed)).not.toContain(secret);
+
+    consented = false;
+    await syncRules(dnr, area, fixedNow, page, engine);
+    expect([...ids]).not.toContain('detour-sri');
   });
 
   it('detaches when Detour is off', async () => {

@@ -1,3 +1,4 @@
+import { syncSriRuntime } from '../engine-deep/sri-runtime';
 import type { BodyEngine, BridgeInPlaceSession } from '../engine-deep/sync';
 import { loadBridgeSession, probeBridge, workspaceNeedsBridge, type BridgeSession } from '../local-bridge/session';
 import { planPage, type InjectedKind } from '../page-inject/plan';
@@ -154,6 +155,10 @@ export async function syncRules(
     if (body) {
       const result = await body.sync(loaded.value, enabled, inPlace ? { bridge: inPlace, allowed: true } : undefined);
       report = { ...report, bodies: result.bodies, refused: [...report.refused, ...result.refused], errors: [...report.errors, ...result.errors] };
+      if (page) {
+        const hookError = await syncSriRuntime(page.scripting, result.bodies.length > 0);
+        if (hookError) report = { ...report, errors: [...report.errors, `Couldn't register the integrity hook: ${hookError}`] };
+      }
     }
   }
   await area.set({ [APPLY_REPORT_KEY]: report });

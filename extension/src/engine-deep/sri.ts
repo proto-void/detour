@@ -1,5 +1,6 @@
 import type { ReadBridgeFile } from '../local-bridge/read';
-import { pickBodyRule } from './decide';
+import { hostOnDomains } from '../page-inject/page-match';
+import { encodePatchList, hashForAssignment, injectPatchMeta, subresourceKind, type IntegrityPatch } from './integrity-patch';
 import type { BodyRule } from './plan';
 
 /**
@@ -52,7 +53,7 @@ export async function loadRuleBytes(rule: BodyRule, readFile: ReadBridgeFile | u
 
 /**
  * Bytes to fulfill in place of this HTML, or undefined when the document should
- * pass through unchanged (not HTML, too big, not valid UTF-8, or no tag changed).
+ * pass through unchanged (not HTML, too big, not valid UTF-8, or nothing to publish).
  */
 export async function tryRewriteHtmlBytes(
   bytes: Uint8Array,
@@ -75,9 +76,30 @@ export async function tryRewriteHtmlBytes(
 }
 
 /**
+ * Hashes for rules whose bytes could be read. A failed read is omitted so the page's hash stays.
+ * The same `load` result is what the body engine fulfills.
+ */
+export async function integrityPatches(rules: readonly BodyRule[], load: (rule: BodyRule) => Promise<Uint8Array | undefined>): Promise<IntegrityPatch[]> {
+  const patches: IntegrityPatch[] = [];
+  for (const rule of rules) {
+    const bytes = await load(rule);
+    if (!bytes) continue;
+    patches.push({
+      match: rule.match,
+      caseSensitive: rule.caseSensitive,
+      ...(rule.resourceTypes && { resourceTypes: rule.resourceTypes }),
+      ...(rule.pageDomains && { pageDomains: rule.pageDomains }),
+      integrity: await integrityMetadata(bytes),
+    });
+  }
+  return patches;
+}
+
+/**
  * Replace `integrity` on script and stylesheet tags whose URL matches an armed
- * rule. The parser snapshots that attribute when it prepares the element, so the
- * new hash has to be in the document bytes.
+ * rule, and embed that hash list for assignments page JavaScript makes later.
+ * The parser snapshots the attribute when it prepares the element, so a tag's
+ * hash has to be in the document bytes.
  * https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
  */
 export async function rewriteDocumentIntegrity(
@@ -87,16 +109,14 @@ export async function rewriteDocumentIntegrity(
   rules: readonly BodyRule[],
   load: (rule: BodyRule) => Promise<Uint8Array | undefined>,
 ): Promise<string> {
-  if (html.length > DOCUMENT_BYTE_CAP || !/integrity/i.test(html)) return html;
-  const hashes = new Map<string, string | undefined>();
-  const hashFor = async (rule: BodyRule): Promise<string | undefined> => {
-    if (hashes.has(rule.ruleId)) return hashes.get(rule.ruleId);
-    const bytes = await load(rule);
-    const hash = bytes ? await integrityMetadata(bytes) : undefined;
-    hashes.set(rule.ruleId, hash);
-    return hash;
-  };
+  if (html.length > DOCUMENT_BYTE_CAP) return html;
+  const patches = (await integrityPatches(rules, load)).filter((patch) => !patch.pageDomains || hostOnDomains(pageHost, patch.pageDomains));
+  const next = /integrity/i.test(html) ? rewriteTags(html, pageUrl, pageHost, patches) : html;
+  if (patches.length === 0) return next;
+  return injectPatchMeta(next, encodePatchList(patches));
+}
 
+function rewriteTags(html: string, pageUrl: string, pageHost: string, patches: readonly IntegrityPatch[]): string {
   const parts: string[] = [];
   let i = 0;
   while (i < html.length) {
@@ -129,7 +149,7 @@ export async function rewriteDocumentIntegrity(
       break;
     }
     const raw = html.slice(i, end);
-    const hash = await hashForTag(name, raw, pageUrl, pageHost, rules, hashFor);
+    const hash = hashForTag(name, raw, pageUrl, pageHost, patches);
     parts.push(hash ? replaceAttribute(raw, 'integrity', hash) : raw);
     i = end;
     if (name === 'script') {
@@ -141,17 +161,10 @@ export async function rewriteDocumentIntegrity(
   return parts.join('');
 }
 
-async function hashForTag(
-  name: 'script' | 'link',
-  raw: string,
-  pageUrl: string,
-  pageHost: string,
-  rules: readonly BodyRule[],
-  hashFor: (rule: BodyRule) => Promise<string | undefined>,
-): Promise<string | undefined> {
+function hashForTag(name: 'script' | 'link', raw: string, pageUrl: string, pageHost: string, patches: readonly IntegrityPatch[]): string | undefined {
   if (attributeValue(raw, 'integrity') === undefined) return undefined;
-  const kind = resourceKind(name, raw);
   const ref = name === 'link' ? attributeValue(raw, 'href') : attributeValue(raw, 'src');
+  const kind = subresourceKind(name, { rel: attributeValue(raw, 'rel'), as: attributeValue(raw, 'as'), hasUrl: Boolean(ref) });
   if (!kind || !ref) return undefined;
   let absolute: string;
   try {
@@ -159,21 +172,7 @@ async function hashForTag(
   } catch {
     return undefined;
   }
-  const rule = pickBodyRule(rules, { url: absolute, resourceType: kind, pageHost });
-  if (!rule) return undefined;
-  return hashFor(rule);
-}
-
-function resourceKind(name: 'script' | 'link', raw: string): 'script' | 'stylesheet' | undefined {
-  if (name === 'script') return attributeValue(raw, 'src') ? 'script' : undefined;
-  if (!attributeValue(raw, 'href')) return undefined;
-  const rel = (attributeValue(raw, 'rel') ?? '').toLowerCase().split(/\s+/);
-  const as = (attributeValue(raw, 'as') ?? '').toLowerCase();
-  if (rel.includes('stylesheet')) return 'stylesheet';
-  if (rel.includes('modulepreload')) return 'script';
-  if (rel.includes('preload') && as === 'script') return 'script';
-  if (rel.includes('preload') && (as === 'style' || as === 'stylesheet')) return 'stylesheet';
-  return undefined;
+  return hashForAssignment(patches, absolute, kind, pageHost);
 }
 
 function tagAt(html: string, index: number, name: string): boolean {

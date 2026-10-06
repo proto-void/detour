@@ -183,6 +183,8 @@ describe('firefox body filter', () => {
     const written = new TextDecoder().decode(filter.written[0]!);
     expect(written).toContain(`integrity="${await integrityMetadata(new TextEncoder().encode(rule.body))}"`);
     expect(written).toContain('integrity="sha384-keep"');
+    expect(written).toContain('name="detour-sri"');
+    expect(written).not.toContain(rule.body);
     expect(filter.closed).toBe(true);
   });
 });

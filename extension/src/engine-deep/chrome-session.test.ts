@@ -243,6 +243,8 @@ describe('chrome body session', () => {
     const decoded = Buffer.from((fulfill?.params as { body: string }).body, 'base64').toString('utf8');
     expect(decoded).toContain(`integrity="${await integrityMetadata(new TextEncoder().encode(body))}"`);
     expect(decoded).toContain('integrity="sha384-keep"');
+    expect(decoded).toContain('name="detour-sri"');
+    expect(decoded).not.toContain(body);
     const headers = (fulfill?.params as { responseHeaders: { name: string; value: string }[] }).responseHeaders;
     expect(headers.map((header) => header.name.toLowerCase())).not.toContain('content-encoding');
     expect(headers).toContainEqual({ name: 'cache-control', value: 'no-store' });
