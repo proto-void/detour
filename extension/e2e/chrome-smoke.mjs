@@ -37,6 +37,8 @@ const sriKept = 'window.SRI_KEPT = "OK";';
 const sriBad = 'window.SRI_BAD = "NO";';
 const sriJsProd = 'window.SRI_JS = "PROD";';
 const sriJsBad = 'window.SRI_JS_BAD = "NO";';
+const sriHtmlProd = 'window.SRI_HTML = "PROD";';
+const sriHtmlBad = 'window.SRI_HTML_BAD = "NO";';
 const page = html('<!doctype html><title>t</title><script src="/a.js"></script><script src="/b.js"></script><script src="/c.js"></script>');
 
 const prod = await serve(8001, {
@@ -75,6 +77,23 @@ const prod = await serve(8001, {
   ),
   '/sri-js.js': js(sriJsProd),
   '/sri-js-bad.js': js(sriJsBad),
+  // The hash lives in a markup string. Fragment parsing does not run the scripts, so the page
+  // copies the parsed attributes with setAttributeNS, which Detour does not hook.
+  '/sri-html.html': html(`<!doctype html><title>sri-html</title><div id="slot"></div><script>
+var slot = document.getElementById('slot');
+var bad = 'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+slot.insertAdjacentHTML('beforeend', '<script src="/sri-html.js" integrity="${sha384(sriHtmlProd)}" crossorigin="anonymous"><' + '/script><script src="/sri-html-bad.js" integrity="' + bad + '" crossorigin="anonymous"><' + '/script>');
+slot.querySelectorAll('script').forEach(function (old) {
+  var next = document.createElement('script');
+  for (var i = 0; i < old.attributes.length; i++) {
+    var attr = old.attributes[i];
+    next.setAttributeNS(null, attr.name, attr.value);
+  }
+  old.replaceWith(next);
+});
+</script>`),
+  '/sri-html.js': js(sriHtmlProd),
+  '/sri-html-bad.js': js(sriHtmlBad),
 });
 const local = await serve(8002, {
   '/a.js': js('window.A = "LOCAL";'),
@@ -558,6 +577,7 @@ try {
   await waitStatus(bodyRule, 'Applied');
   check('body rule shows applied', await statusOf(bodyRule), '✓ Applied');
   check('body editor says page JavaScript integrity is updated', (await editorText()).includes('page JavaScript'), true);
+  check('body editor says markup integrity is updated', (await editorText()).includes('insertAdjacentHTML'), true);
 
   shieldPaths.push('/body.html');
   const workerTarget = await browser.waitForTarget((t) => t.type() === 'service_worker' && t.url().includes(id), { timeout: 10000 });
@@ -673,6 +693,49 @@ try {
   check('sibling whose JavaScript integrity does not match stays blocked', sriJsPage.SRI_JS_BAD, undefined);
   check('integrity list is on the page', sriJsPage.meta.length > 0, true);
   check('integrity list does not include the override source', sriJsPage.meta.includes('window.SRI_JS = "LOCAL"'), false);
+
+  const sriHtmlRule = await addPageRule(sriGroup, '*:8001/sri-html.js', 'overrideBody');
+  await typeCode(sriHtmlRule, 'window.SRI_HTML = "LOCAL";');
+  await saveAndSettle();
+  await waitStatus(sriHtmlRule, 'Applied');
+  shieldPaths.push('/sri-html.html');
+  const sriHtmlPage = await sriWorker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () =>
+        new Promise((resolve) => {
+          const started = Date.now();
+          const tick = () => {
+            const value = { SRI_HTML: window.SRI_HTML, SRI_HTML_BAD: window.SRI_HTML_BAD };
+            if (value.SRI_HTML !== undefined || Date.now() - started > 3000) resolve(value);
+            else setTimeout(tick, 50);
+          };
+          tick();
+        }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/sri-html.html');
+  check('insertAdjacentHTML with a production integrity hash runs the override', sriHtmlPage.SRI_HTML, 'LOCAL');
+  check('sibling inserted in that markup stays blocked', sriHtmlPage.SRI_HTML_BAD, undefined);
   shieldPaths.length = 0;
 
   // Local Bridge: consent is already on, so serveLocal is fulfilled in place (the URL stays on port 8001).
