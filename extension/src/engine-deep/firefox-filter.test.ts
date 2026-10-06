@@ -90,11 +90,14 @@ describe('firefox body filter', () => {
 
   it('filters only matching requests and removes the listener when cleared', () => {
     const web = fakeWebRequest();
-    const engine = createFirefoxBodyFilter(web.api);
+    const notes: { ruleId: string; url: string; tabId: number }[] = [];
+    const engine = createFirefoxBodyFilter(web.api, (note) => notes.push(note));
     engine.install([rule]);
-    web.before?.({ requestId: '1', url: 'https://cdn.example.com/app.js', type: 'script', documentUrl: 'https://app.example.com/' });
+    web.before?.({ requestId: '1', url: 'https://cdn.example.com/app.js', type: 'script', tabId: 4, documentUrl: 'https://app.example.com/' });
     web.before?.({ requestId: '2', url: 'https://cdn.example.com/app.css', type: 'stylesheet', documentUrl: 'https://app.example.com/' });
     expect(web.filters).toHaveLength(1);
+    expect(notes).toEqual([{ groupId: 'g', ruleId: 'b', url: 'https://cdn.example.com/app.js', tabId: 4 }]);
+    expect(JSON.stringify(notes)).not.toContain('LOCAL');
     web.filters[0]!.onstop?.();
     expect(new TextDecoder().decode(web.filters[0]!.written[0]!)).toBe('window.A = "LOCAL"');
 

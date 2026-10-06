@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { browser } from 'wxt/browser';
   import { APPLY_REPORT_KEY, type ApplyReport } from '../../engine-core/apply';
+  import { SHOW_BADGE_KEY } from '../../observability/log';
   import type { Workspace } from '../../rule-model/schema';
   import { loadEnabled, loadWorkspace, saveEnabled, saveWorkspace } from '../../rule-model/storage';
   import { popupGroupList, withGroupEnabled } from '../../workspace-ui/popup';
@@ -15,6 +16,7 @@
   const inTab = new URLSearchParams(location.search).get('view') === 'tab';
 
   let enabled = $state(true);
+  let showBadge = $state(true);
   let workspace: Workspace | undefined = $state();
   let report: ApplyReport | undefined = $state();
   const view = $derived(describeReport(report, workspace));
@@ -38,6 +40,17 @@
     const loaded = await loadWorkspace(area);
     workspace = loaded.ok ? loaded.value : undefined;
     report = (await area.get(APPLY_REPORT_KEY))[APPLY_REPORT_KEY] as ApplyReport | undefined;
+    showBadge = (await area.get(SHOW_BADGE_KEY))[SHOW_BADGE_KEY] !== false;
+  }
+
+  async function setShowBadge(next: boolean) {
+    showBadge = next;
+    await area.set({ [SHOW_BADGE_KEY]: next });
+  }
+
+  async function openLog() {
+    await browser.tabs.create({ url: browser.runtime.getURL('/options.html#log') });
+    if (!inTab) window.close();
   }
 
   async function setEnabled(next: boolean) {
@@ -92,6 +105,10 @@
   {/if}
   <ImportPanel {area} {inTab} />
   <ReportView {view} />
+  <div class="tools">
+    <Switch id="show-badge" checked={showBadge} label="Badge" labelVisible onchange={setShowBadge} />
+    <button type="button" class="btn" onclick={openLog}>Match log…</button>
+  </div>
   <footer>
     <ThemeToggle {area} />
     <button type="button" class="btn" onclick={openRecipes}>Recipes…</button>
@@ -167,5 +184,12 @@
 
   footer :global(.switch-wrap) {
     margin-right: auto;
+  }
+
+  .tools {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
   }
 </style>

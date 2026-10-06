@@ -60,7 +60,14 @@ const isHttp = (url: string | undefined) => url !== undefined && /^https?:/i.tes
  * registered immediately so a service-worker restart still receives Fetch events.
  * https://developer.chrome.com/docs/extensions/reference/api/debugger
  */
-export function createChromeBodySession(dbg: DebuggerApi, tabs: TabsApi) {
+export interface BodyMatchNote {
+  groupId: string;
+  ruleId: string;
+  url: string;
+  tabId: number;
+}
+
+export function createChromeBodySession(dbg: DebuggerApi, tabs: TabsApi, onMatch?: (note: BodyMatchNote) => void) {
   let plan: BodyPlan = { rules: [], patterns: [], broad: false, refused: [] };
   let planKey = '';
   const attached = new Set<number>();
@@ -159,12 +166,14 @@ export function createChromeBodySession(dbg: DebuggerApi, tabs: TabsApi) {
     const requestId = event.requestId;
     if (!requestId) return;
     const url = event.request?.url ?? '';
-    const finish = async (method: 'Fetch.continueResponse' | 'Fetch.fulfillRequest', params: object) => {
+    const finish = async (method: 'Fetch.continueResponse' | 'Fetch.fulfillRequest', params: object): Promise<boolean> => {
       try {
         await dbg.sendCommand({ tabId }, method, params);
+        return true;
       } catch (e) {
         if (method === 'Fetch.fulfillRequest') await dbg.sendCommand({ tabId }, 'Fetch.continueResponse', { requestId }).catch(() => {});
         else console.error('Detour: could not continue a paused response', messageOf(e));
+        return false;
       }
     };
 
@@ -182,7 +191,8 @@ export function createChromeBodySession(dbg: DebuggerApi, tabs: TabsApi) {
       await finish('Fetch.continueResponse', { requestId });
       return;
     }
-    await finish('Fetch.fulfillRequest', fulfillParams(requestId, rule, event.responseStatusCode, event.responseStatusText, event.responseHeaders));
+    const replaced = await finish('Fetch.fulfillRequest', fulfillParams(requestId, rule, event.responseStatusCode, event.responseStatusText, event.responseHeaders));
+    if (replaced) onMatch?.({ groupId: rule.groupId, ruleId: rule.ruleId, url, tabId });
   }
 
   return {

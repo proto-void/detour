@@ -9,6 +9,7 @@ import { createBodyEngine, type PermissionQuery } from '../engine-deep/sync';
 import { fetchText, handleBridgeMessage, type Sender } from '../page-inject/background-handlers';
 import { RESYNC_MESSAGE, type PageApi } from '../page-inject/sync';
 import { ENABLED_KEY, WORKSPACE_KEY } from '../rule-model/storage';
+import { startMatchLog, type ActionBadgeApi, type MatchLogDeps } from '../observability/install';
 
 export default defineBackground(() => {
   const dnr = browser.declarativeNetRequest as unknown as DnrApi;
@@ -26,6 +27,14 @@ export default defineBackground(() => {
   };
 
   const firefox = import.meta.env.FIREFOX;
+  const matches = startMatchLog({
+    dnr: dnr as unknown as MatchLogDeps['dnr'],
+    action: browser.action as unknown as ActionBadgeApi,
+    local: area,
+    session: browser.storage.session,
+    tabs: browser.tabs as unknown as MatchLogDeps['tabs'],
+    storageEvents: browser.storage.onChanged,
+  });
   const bodyEngine = createBodyEngine({
     browser: firefox ? 'firefox' : 'chrome',
     permissions: browser.permissions as unknown as PermissionQuery,
@@ -43,6 +52,9 @@ export default defineBackground(() => {
             }
           },
         }),
+    onMatch: (note) => {
+      void matches.note({ ...note, source: 'body' });
+    },
   });
 
   const refresh = createCoalescer(async () => {
@@ -76,6 +88,9 @@ export default defineBackground(() => {
       session: browser.storage.session,
       insertCSS: (details) => browser.scripting.insertCSS(details),
       fetchText,
+      onMatch: (match) => {
+        void matches.note(match);
+      },
     }).catch((e) => console.error('Detour: page message failed', e));
   });
 });

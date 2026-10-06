@@ -1,6 +1,6 @@
 import type { Refusal } from '../engine-core/compile';
 import type { Workspace } from '../rule-model/schema';
-import { createChromeBodySession, type ChromeBodySession, type DebuggerApi, type TabsApi } from './chrome-session';
+import { createChromeBodySession, type BodyMatchNote, type ChromeBodySession, type DebuggerApi, type TabsApi } from './chrome-session';
 import { createFirefoxBodyFilter, type FirefoxBodyFilter, type WebRequestApi } from './firefox-filter';
 import { BODY_PERMISSION_MESSAGE, bodyPermissions } from './permissions';
 import { planBody } from './plan';
@@ -36,16 +36,18 @@ export function createBodyEngine(options: {
    */
   chrome?: () => { debugger: DebuggerApi; tabs: TabsApi } | undefined;
   firefox?: { webRequest: WebRequestApi };
+  /** A body was replaced. Ids and the request URL only — never the new body. */
+  onMatch?: (note: BodyMatchNote) => void;
 }): BodyEngine {
   let chrome: ChromeBodySession | undefined;
-  const firefox: FirefoxBodyFilter | undefined = options.firefox ? createFirefoxBodyFilter(options.firefox.webRequest) : undefined;
+  const firefox: FirefoxBodyFilter | undefined = options.firefox ? createFirefoxBodyFilter(options.firefox.webRequest, options.onMatch) : undefined;
   const names = bodyPermissions(options.browser);
 
   const chromeSession = (): ChromeBodySession | undefined => {
     if (chrome) return chrome;
     const api = options.chrome?.();
     if (!api?.debugger.onEvent) return undefined;
-    chrome = createChromeBodySession(api.debugger, api.tabs);
+    chrome = createChromeBodySession(api.debugger, api.tabs, options.onMatch);
     return chrome;
   };
 

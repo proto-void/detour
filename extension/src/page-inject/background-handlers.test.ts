@@ -65,6 +65,28 @@ describe('handleBridgeMessage', () => {
     expect(await handleBridgeMessage(null, sender, d)).toBe(false);
     expect(await handleBridgeMessage({ type: 'detour:failure', ruleId: 'script' }, sender, d)).toBe(false);
   });
+
+  it('reports a CSS match without the stylesheet text', async () => {
+    const notes: unknown[] = [];
+    const d = deps({ onMatch: (match) => notes.push(match) });
+    await handleBridgeMessage({ type: 'detour:insertCss', ruleId: 'inline' }, sender, d);
+    expect(notes).toEqual([{ groupId: 'g', ruleId: 'inline', url: 'https://app.test/secret/path?q=1', tabId: 7, source: 'page' }]);
+    expect(JSON.stringify(notes)).not.toContain('color:red');
+  });
+
+  it('reports a mock match from the rule id and request URL', async () => {
+    const notes: unknown[] = [];
+    const local = memoryArea({
+      pageConfig: {
+        ...config,
+        mocks: [{ groupId: 'g', ruleId: 'm', request: page, method: 'GET', status: 200, headers: [], body: '{"nope":true}', delayMs: 0 }],
+      },
+    });
+    const d = deps({ local, onMatch: (match) => notes.push(match) });
+    await handleBridgeMessage({ type: 'detour:matched', source: 'mock', ruleId: 'm', url: 'https://app.test/api' }, sender, d);
+    expect(notes).toEqual([{ groupId: 'g', ruleId: 'm', url: 'https://app.test/api', tabId: 7, source: 'mock' }]);
+    expect(JSON.stringify(notes)).not.toContain('nope');
+  });
 });
 
 describe('recordFailure', () => {

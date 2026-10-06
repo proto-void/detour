@@ -12,8 +12,9 @@
   import ThemeToggle from '../../ui/ThemeToggle.svelte';
   import { BODY_CONSENT_KEY, bodyPermissions, workspaceHasBodyRules } from '../../engine-deep/permissions';
   import { addGroup, exportFileName, isAwaitingApply, isDirty, newGroup, validateWorkspace } from '../../workspace-ui/editor';
-  import GroupCard from './GroupCard.svelte';
-  import RecipePicker from './RecipePicker.svelte';
+import GroupCard from './GroupCard.svelte';
+import MatchLog from './MatchLog.svelte';
+import RecipePicker from './RecipePicker.svelte';
   import RuleTester from './RuleTester.svelte';
 
   const area = browser.storage.local;
@@ -314,6 +315,8 @@
   {/if}
 
     {#if saved}
+    <MatchLog area={browser.storage.session} />
+
     <RuleTester workspace={draft} {enabled} {dirty} userScripts={userScriptsReady} />
 
     <RecipePicker

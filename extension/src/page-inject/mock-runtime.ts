@@ -4,6 +4,8 @@ import { siteHost, testUrl } from './page-match';
 /** DOM events between the isolated bridge and this MAIN-world runtime. Details are JSON strings. */
 export const CONFIG_EVENT = '__detour_mock_config';
 export const READY_EVENT = '__detour_mock_ready';
+/** MAIN → isolated bridge. Detail is `{ ruleId, url }` only — never the mock body. */
+export const MATCH_EVENT = '__detour_mock_matched';
 
 const NULL_BODY = new Set([204, 205, 304]);
 const headerPairs = (m: MockEntry): [string, string][] => m.headers.map((h) => [h.name, h.value]);
@@ -35,7 +37,7 @@ const abortError = (signal: AbortSignal) => signal.reason ?? new DOMException('T
  * Patches `fetch` and `XMLHttpRequest` in `win`. Matching requests get the first matching mock;
  * everything else goes to the native implementation with the original arguments.
  */
-export function installMocks(win: MockWindow, { holdMs = 1000 }: { holdMs?: number } = {}): MockRuntime {
+export function installMocks(win: MockWindow, { holdMs = 1000, onMatch }: { holdMs?: number; onMatch?: (ruleId: string, url: string) => void } = {}): MockRuntime {
   let mocks: MockEntry[] | undefined;
   let release!: () => void;
   const ready = new Promise<void>((resolve) => (release = resolve));
@@ -87,6 +89,7 @@ export function installMocks(win: MockWindow, { holdMs = 1000 }: { holdMs?: numb
 
     return decide(url, method).then(async (mock) => {
       if (!mock) return passThrough();
+      onMatch?.(mock.ruleId, url);
       await wait(mock.delayMs, signal);
       const body = NULL_BODY.has(mock.status) || method === 'HEAD' ? null : mock.body;
       const response = new win.Response(body, { status: mock.status, headers: headerPairs(mock) });
@@ -96,7 +99,7 @@ export function installMocks(win: MockWindow, { holdMs = 1000 }: { holdMs?: numb
   } as typeof globalThis.fetch;
 
   // XMLHttpRequest ----------------------------------------------------------------------------
-  if (win.XMLHttpRequest) patchXhr(win, win.XMLHttpRequest.prototype, { decide, resolveUrl });
+  if (win.XMLHttpRequest) patchXhr(win, win.XMLHttpRequest.prototype, { decide, resolveUrl, onMatch });
 
   return {
     ready,
@@ -119,9 +122,10 @@ interface XhrState {
 interface XhrDeps {
   decide: (url: string, method: string) => Promise<MockEntry | undefined>;
   resolveUrl: (url: string) => string;
+  onMatch?: (ruleId: string, url: string) => void;
 }
 
-function patchXhr(win: MockWindow, proto: XMLHttpRequest, { decide, resolveUrl }: XhrDeps) {
+function patchXhr(win: MockWindow, proto: XMLHttpRequest, { decide, resolveUrl, onMatch }: XhrDeps) {
   const states = new WeakMap<XMLHttpRequest, XhrState>();
   const native = {
     open: proto.open,
@@ -151,6 +155,7 @@ function patchXhr(win: MockWindow, proto: XMLHttpRequest, { decide, resolveUrl }
   };
 
   const respond = (xhr: XMLHttpRequest, state: XhrState, entry: MockEntry) => {
+    onMatch?.(entry.ruleId, state.url);
     const headers = new win.Headers(headerPairs(entry));
     const mock: NonNullable<XhrState['mock']> = (state.mock = { entry, readyState: 1, status: 0, headers });
     fire(xhr, 'loadstart');

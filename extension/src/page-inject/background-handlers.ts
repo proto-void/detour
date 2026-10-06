@@ -15,12 +15,16 @@ export interface HandlerDeps {
   insertCSS(details: { target: { tabId: number; frameIds: number[] }; css: string }): Promise<void>;
   fetchText(url: string): Promise<string>;
   now?: () => Date;
+  /** Rule id and URL only. Called after a page or mock match, never with a body. */
+  onMatch?(match: { groupId: string; ruleId: string; url: string; tabId: number; source: 'page' | 'mock' }): void;
 }
 
 const isBridgeMessage = (m: unknown): m is BridgeMessage => {
   const msg = m as Partial<Record<string, unknown>> | null;
   if (typeof msg?.ruleId !== 'string') return false;
-  return msg.type === 'detour:insertCss' || (msg.type === 'detour:failure' && typeof msg.message === 'string');
+  if (msg.type === 'detour:insertCss') return true;
+  if (msg.type === 'detour:failure') return typeof msg.message === 'string';
+  return msg.type === 'detour:matched' && (msg.source === 'page' || (msg.source === 'mock' && typeof msg.url === 'string'));
 };
 
 const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -29,6 +33,15 @@ const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e)
 export async function handleBridgeMessage(message: unknown, sender: Sender, deps: HandlerDeps): Promise<boolean> {
   if (!isBridgeMessage(message)) return false;
   const config = (await deps.local.get(PAGE_CONFIG_KEY))[PAGE_CONFIG_KEY] as PageConfig | undefined;
+  if (message.type === 'detour:matched') {
+    const pool = message.source === 'mock' ? (config?.mocks ?? []) : [...(config?.styles ?? []), ...(config?.scripts ?? [])];
+    const entry = pool.find((row) => row.ruleId === message.ruleId);
+    const url = message.source === 'mock' ? message.url : sender.url;
+    if (entry && url && sender.tab?.id !== undefined) {
+      deps.onMatch?.({ groupId: entry.groupId, ruleId: entry.ruleId, url, tabId: sender.tab.id, source: message.source });
+    }
+    return true;
+  }
   const entries = [...(config?.styles ?? []), ...(config?.scripts ?? [])];
   const entry = entries.find((e) => e.ruleId === message.ruleId);
   if (!entry) return true; // rule removed since the page loaded
@@ -50,6 +63,7 @@ export async function handleBridgeMessage(message: unknown, sender: Sender, deps
   }
   try {
     await deps.insertCSS({ target: { tabId: sender.tab.id, frameIds: [sender.frameId ?? 0] }, css });
+    if (sender.url) deps.onMatch?.({ groupId: entry.groupId, ruleId: entry.ruleId, url: sender.url, tabId: sender.tab.id, source: 'page' });
   } catch (e) {
     await fail(`Couldn't insert CSS: ${errorMessage(e)}`);
   }

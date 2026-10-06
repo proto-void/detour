@@ -1,4 +1,4 @@
-import { CONFIG_EVENT, installMocks, READY_EVENT, type MockWindow } from '../page-inject/mock-runtime';
+import { CONFIG_EVENT, installMocks, MATCH_EVENT, READY_EVENT, type MockWindow } from '../page-inject/mock-runtime';
 
 const INSTALLED = Symbol.for('detour.mocks');
 
@@ -13,7 +13,11 @@ export default defineContentScript({
     const marked = window as unknown as Record<symbol, boolean>;
     if (marked[INSTALLED]) return;
     marked[INSTALLED] = true;
-    const runtime = installMocks(window as unknown as MockWindow);
+    const runtime = installMocks(window as unknown as MockWindow, {
+      onMatch(ruleId, url) {
+        document.dispatchEvent(new CustomEvent(MATCH_EVENT, { detail: JSON.stringify({ ruleId, url: url.slice(0, 2000) }) }));
+      },
+    });
     document.addEventListener(CONFIG_EVENT, (event) => {
       try {
         runtime.setConfig(JSON.parse(String((event as CustomEvent).detail)));

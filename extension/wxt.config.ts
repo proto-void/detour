@@ -12,7 +12,14 @@ export default defineConfig({
     // still requires the user's "Allow User Scripts" toggle, Firefox only allows it as optional.
     // debugger is install-time on Chrome because an optional debugger grant cannot be accepted headlessly,
     // and the API is missing until it is granted. Attach still waits for bodyEngineConsent (the Allow button).
-    permissions: ['declarativeNetRequest', 'storage', 'unlimitedStorage', 'scripting', ...(browser === 'firefox' ? [] : ['userScripts', 'debugger'])],
+    // declarativeNetRequestFeedback: match badge and log. It shows no install warning. Firefox has no such API.
+    permissions: [
+      'declarativeNetRequest',
+      'storage',
+      'unlimitedStorage',
+      'scripting',
+      ...(browser === 'firefox' ? [] : ['userScripts', 'debugger', 'declarativeNetRequestFeedback']),
+    ],
     // redirect and modifyHeaders need host access to the request URL and initiator; injection needs the page.
     host_permissions: ['<all_urls>'],
     ...(browser === 'firefox'

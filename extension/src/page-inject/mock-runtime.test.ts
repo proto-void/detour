@@ -103,6 +103,14 @@ describe('fetch', () => {
     expect(network).not.toHaveBeenCalled();
   });
 
+  it('reports the matched rule id and URL, not the mock body', async () => {
+    const seen: { ruleId: string; url: string }[] = [];
+    installMocks(win, { onMatch: (ruleId, url) => seen.push({ ruleId, url }) }).setConfig([entry()]);
+    await win.fetch('https://app.test/api/items');
+    expect(seen).toEqual([{ ruleId: 'r', url: 'https://app.test/api/items' }]);
+    expect(JSON.stringify(seen)).not.toContain('mocked');
+  });
+
   it('passes non-matching requests through with the original arguments', async () => {
     installMocks(win).setConfig([entry()]);
     const init = { method: 'POST', body: 'x' };

@@ -131,7 +131,8 @@ describe('chrome body session', () => {
       { id: 1, url: 'https://app.example.com/' },
       { id: 2, url: 'chrome://extensions' },
     ]);
-    const session = createChromeBodySession(dbg.api, tabs.api);
+    const notes: { groupId: string; ruleId: string; url: string; tabId: number }[] = [];
+    const session = createChromeBodySession(dbg.api, tabs.api, (note) => notes.push(note));
     const errors = await session.apply(planBody(workspace('window.A = "LOCAL"')));
     expect(errors).toEqual([]);
     expect(dbg.attached).toEqual([1]);
@@ -146,6 +147,8 @@ describe('chrome body session', () => {
     expect(fulfill?.params).toMatchObject({ requestId: 'req-1', responseCode: 200, body: utf8Base64('window.A = "LOCAL"') });
     expect(JSON.stringify((fulfill?.params as { responseHeaders: { name: string }[] }).responseHeaders).toLowerCase()).not.toContain('content-encoding');
     expect(continued.map((command) => (command.params as { requestId: string }).requestId)).toEqual(['req-2']);
+    expect(notes).toEqual([{ groupId: 'g', ruleId: 'b', url: 'https://cdn.example.com/app.js', tabId: 1 }]);
+    expect(JSON.stringify(notes)).not.toContain('LOCAL');
   });
 
   it('detaches when the plan is cleared and stays off a tab the user cancelled', async () => {

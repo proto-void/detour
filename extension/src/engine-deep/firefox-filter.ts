@@ -18,6 +18,7 @@ export interface WebRequestDetails {
   requestId: string;
   url: string;
   type: string;
+  tabId?: number;
   documentUrl?: string;
   originUrl?: string;
 }
@@ -72,7 +73,7 @@ export function pipeReplacement(filter: StreamFilter, body: string): void {
  * Installs blocking listeners only while rules are armed. Unmatched requests
  * never get a stream filter, so Firefox serves them unchanged.
  */
-export function createFirefoxBodyFilter(webRequest: WebRequestApi) {
+export function createFirefoxBodyFilter(webRequest: WebRequestApi, onMatch?: (note: { groupId: string; ruleId: string; url: string; tabId: number }) => void) {
   let rules: readonly BodyRule[] = [];
 
   const onBeforeRequest = (details: WebRequestDetails) => {
@@ -82,6 +83,7 @@ export function createFirefoxBodyFilter(webRequest: WebRequestApi) {
     if (!rule) return;
     try {
       pipeReplacement(webRequest.filterResponseData(details.requestId), rule.body);
+      onMatch?.({ groupId: rule.groupId, ruleId: rule.ruleId, url: details.url, tabId: details.tabId ?? -1 });
     } catch (e) {
       console.error('Detour: could not filter a response', e instanceof Error ? e.message : e);
     }

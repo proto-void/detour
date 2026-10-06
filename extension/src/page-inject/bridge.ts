@@ -1,11 +1,12 @@
-import { CONFIG_EVENT, READY_EVENT } from './mock-runtime';
+import { CONFIG_EVENT, MATCH_EVENT, READY_EVENT } from './mock-runtime';
 import { siteHost, testUrl } from './page-match';
 import type { PageConfig, ScriptUrlEntry, StyleEntry } from './plan';
 
 /** Bridge → background. The background looks rules up in `pageConfig`; messages never carry code. */
 export type BridgeMessage =
   | { type: 'detour:insertCss'; ruleId: string }
-  | { type: 'detour:failure'; ruleId: string; message: string };
+  | { type: 'detour:failure'; ruleId: string; message: string }
+  | { type: 'detour:matched'; source: 'page' | 'mock'; ruleId: string; url?: string };
 
 type RunAt = StyleEntry['runAt'];
 
@@ -39,6 +40,15 @@ export function runBridge(env: BridgeEnv): void {
   let config: PageConfig | undefined;
   const pushMocks = () => doc.dispatchEvent(new CustomEvent(CONFIG_EVENT, { detail: JSON.stringify(config?.mocks ?? []) }));
   doc.addEventListener(READY_EVENT, pushMocks);
+  doc.addEventListener(MATCH_EVENT, (event) => {
+    try {
+      const detail = JSON.parse(String((event as CustomEvent).detail)) as { ruleId?: unknown; url?: unknown };
+      if (typeof detail.ruleId !== 'string' || typeof detail.url !== 'string') return;
+      void env.send({ type: 'detour:matched', source: 'mock', ruleId: detail.ruleId, url: detail.url.slice(0, 2000) }).catch(() => {});
+    } catch {
+      /* a page can dispatch this event; ignore anything that isn't ours */
+    }
+  });
 
   const applies = (entry: StyleEntry | ScriptUrlEntry) => (entry.allFrames || env.isTop) && testUrl(entry.page, location.href, siteHost(location));
   const fail = (ruleId: string, message: string) => void env.send({ type: 'detour:failure', ruleId, message }).catch(() => {});
@@ -69,7 +79,12 @@ export function runBridge(env: BridgeEnv): void {
     for (const style of config.styles.filter(applies)) {
       at(doc, style.runAt, () => void env.send({ type: 'detour:insertCss', ruleId: style.ruleId }).catch(() => {}));
     }
-    for (const script of config.scripts.filter(applies)) at(doc, script.runAt, () => insertScript(script));
+    for (const script of config.scripts.filter(applies)) {
+      at(doc, script.runAt, () => {
+        insertScript(script);
+        void env.send({ type: 'detour:matched', source: 'page', ruleId: script.ruleId }).catch(() => {});
+      });
+    }
   });
   // Live: mocks switch on/off without reload. CSS and scripts change on the next load.
   env.onConfigChange((next) => {
