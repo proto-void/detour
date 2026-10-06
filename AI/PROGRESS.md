@@ -33,12 +33,12 @@
 - [x] **Page-world integrity** Approved (Hamza, 2026-10-07) and built (plan 014, ADR-015): a MAIN-world `document_start` hook, registered only while a body rule is armed, substitutes the same SHA-384 when page JavaScript assigns `integrity`. It does not clear hashes. The list in the page has no rule body. 376 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 77/77 on Chrome for Testing 155 (override runs, non-matching sibling stays blocked). Firefox document path is unit-tested. Not pushed
 - [x] **Markup integrity** Approved (Hamza, 2026-10-07) and built (plan 015, ADR-016): the same hook rewrites `integrity` in a string assigned to `innerHTML` or passed to `insertAdjacentHTML` before the browser parses it. Other hashes in the string stay. A non-string is passed through. 381 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 80/80 on Chrome for Testing 155 (override runs, sibling in that markup stays blocked). Firefox document path is unit-tested. Not pushed
 - [x] **Script-running markup** Approved (Hamza, 2026-10-07) and built (plan 016, ADR-017): the same hook rewrites `integrity` in a string passed to `createContextualFragment`, and in a string passed to `setHTMLUnsafe` only when `runScripts` is true. Other hashes in the string stay. A non-string is passed through. `runScripts` omitted or false leaves the string unchanged. 384 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 85/85 on Chrome for Testing 155 (both calls run the override, non-matching siblings stay blocked). Firefox document path is unit-tested. Not pushed
+- [x] **Inert markup** Approved (Hamza, 2026-10-07) and built (plan 017, ADR-018): the same hook rewrites `integrity` in a string assigned to `outerHTML` or `ShadowRoot.innerHTML`, and substitutes it when `setAttributeNS` sets HTML `integrity` on a script or stylesheet link. Other hashes stay. A non-string is passed through. A foreign namespace is left unchanged. 387 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 92/92 on Chrome for Testing 155 (`setAttributeNS` runs the override, both stylesheets are accepted, non-matching siblings stay blocked). Firefox document path is unit-tested. Not pushed
 
 ## Next
 
-1. Plan 017: rewrite `integrity` for `outerHTML`, `ShadowRoot.innerHTML`, and `setAttributeNS` (Approved, Hamza, 2026-10-07)
-2. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
-3. npm publish of `@detour/cli` is still out of scope
+1. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
+2. npm publish of `@detour/cli` is still out of scope
 
 ## Open questions (not blocking)
 
@@ -51,6 +51,7 @@
 - Inline JS injections are not log rows. Worth a later note, or leave them to the apply report?
 - `setHTMLUnsafe` with `runScripts` omitted or false leaves the page's hashes in place. A stylesheet in that inert call can still be rejected. Worth rewriting those strings too?
 - `Document.parseHTMLUnsafe` is not hooked. Scripting is disabled on the document it creates. A page that later moves those nodes into a live document can still keep the page's hash. Worth a later pass?
+- `setAttributeNode` and `setAttributeNodeNS` are not hooked. A page that moves an `Attr` node that way can keep the page's hash. Worth a later pass?
 
 ## Blocked
 

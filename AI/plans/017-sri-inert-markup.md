@@ -1,6 +1,6 @@
 # 017 — Inert markup integrity
 
-**Status:** In progress  
+**Status:** Done  
 **Date:** 2026-10-07  
 **Spec:** [engine-deep](../specs/engine-deep.md) — inert markup slice Approved (Hamza, 2026-10-07)
 
@@ -23,12 +23,19 @@ The document rewrite (ADR-014), the property hook (ADR-015), the inert markup ho
 ## Tasks
 
 - [x] T1 Spec Approved, this plan, ADR-018
-- [ ] T2 Hook: `outerHTML` and `ShadowRoot.innerHTML` rewrite before the native setter; a non-string is passed through; no list leaves the page hash
-- [ ] T3 Hook: `setAttributeNS` substitutes `integrity` on a matching script or stylesheet link; a non-matching URL and a foreign namespace stay
-- [ ] T4 Rules-page copy
-- [ ] T5 Unit tests, typecheck, Chrome + Firefox builds
-- [ ] T6 Chrome e2e: at least one of these paths runs the override or accepts a stylesheet; a non-matching resource stays blocked
-- [ ] T7 KB write-back
+- [x] T2 Hook: `outerHTML` and `ShadowRoot.innerHTML` rewrite before the native setter; a non-string is passed through; no list leaves the page hash
+- [x] T3 Hook: `setAttributeNS` substitutes `integrity` on a matching script or stylesheet link; a non-matching URL and a foreign namespace stay
+- [x] T4 Rules-page copy
+- [x] T5 Unit tests, typecheck, Chrome + Firefox builds
+- [x] T6 Chrome e2e: at least one of these paths runs the override or accepts a stylesheet; a non-matching resource stays blocked
+- [x] T7 KB write-back
+
+## Results (2026-10-07)
+
+- 387 extension tests; typecheck clean; chrome-mv3 and firefox-mv3 builds clean (`content-scripts/sri-main.js` in both)
+- Chrome for Testing 155: `pnpm e2e:chrome` 92/92. `*:8001/sri-ns.js` ran `window.SRI_NS = "LOCAL"` after `setAttributeNS` with the production hash, set before `src`. A sibling stayed blocked. `*:8001/sri-outer.css` applied `--sri-outer: local` after `outerHTML` with the production hash. A sibling stylesheet in that string stayed blocked. `*:8001/sri-shadow.css` applied `--sri-shadow: local` after `ShadowRoot.innerHTML` with the production hash. A sibling stylesheet in that shadow root stayed blocked
+- Firefox document rewrite is unit-tested. BiDi still cannot open extension pages
+- Not pushed
 
 ## Out of scope
 
