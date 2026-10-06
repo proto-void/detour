@@ -34,6 +34,11 @@
     if (!inTab) window.close();
   }
 
+  async function openTester() {
+    await browser.tabs.create({ url: browser.runtime.getURL('/options.html#tester') });
+    if (!inTab) window.close();
+  }
+
   onMount(() => {
     void refresh();
     const onChanged = (_: unknown, areaName: string) => {
@@ -52,6 +57,7 @@
   <ImportPanel {area} {inTab} />
   <ReportView {view} />
   <footer>
+    <button type="button" class="btn" onclick={openTester}>Test a URL…</button>
     <button type="button" class="btn" onclick={openEditor}>Edit rules…</button>
   </footer>
 </main>
@@ -87,6 +93,7 @@
   footer {
     display: flex;
     justify-content: flex-end;
+    gap: var(--space-2);
     padding-top: var(--space-3);
     border-top: 1px solid var(--border);
   }

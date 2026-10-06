@@ -11,6 +11,7 @@
   import { announce, live } from '../../ui/announcer.svelte';
   import { addGroup, exportFileName, isAwaitingApply, isDirty, newGroup, validateWorkspace } from '../../workspace-ui/editor';
   import GroupCard from './GroupCard.svelte';
+  import RuleTester from './RuleTester.svelte';
 
   const area = browser.storage.local;
   const topDomainsSupported = supportsTopDomains(browser.declarativeNetRequest as unknown as DnrApi);
@@ -27,6 +28,7 @@
   let changedElsewhere = $state(false);
   let failures: PageFailure[] = $state.raw([]);
   let userScriptsReady = $state(true);
+  let testerFocused = $state(false);
 
   const validation = $derived(validateWorkspace(draft));
   const dirty = $derived(saved !== undefined && isDirty(draft, saved));
@@ -142,6 +144,14 @@
   }
 
   $effect(() => {
+    if (testerFocused || !saved || location.hash !== '#tester') return;
+    const input = document.getElementById('tester-url');
+    if (!input) return;
+    testerFocused = true;
+    input.focus();
+  });
+
+  $effect(() => {
     if (!awaitingApply && savedAt !== undefined && report) {
       const refused = report.refused.length;
       announce(refused > 0 ? `Rules applied. ${refused} refused; see the rules marked Refused.` : 'Rules applied.');
@@ -252,7 +262,9 @@
     </div>
   {/if}
 
-  {#if saved}
+    {#if saved}
+    <RuleTester workspace={draft} {enabled} {dirty} userScripts={userScriptsReady} />
+
     <p class="muted intro">
       {draft.groups.length} group{draft.groups.length === 1 ? '' : 's'}, {ruleCount} rule{ruleCount === 1 ? '' : 's'}. Rules higher in the list win when several match the same request.
     </p>
