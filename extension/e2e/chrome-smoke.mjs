@@ -28,17 +28,19 @@ const serve = (port, routes) =>
 
 const js = (text) => ({ type: 'text/javascript', text });
 const html = (text) => ({ type: 'text/html', text });
-const page = html('<!doctype html><title>t</title><script src="/a.js"></script><script src="/b.js"></script>');
+const page = html('<!doctype html><title>t</title><script src="/a.js"></script><script src="/b.js"></script><script src="/c.js"></script>');
 
 const prod = await serve(8001, {
   '/page.html': page,
   '/a.js': js('window.A = "PROD";'),
   '/b.js': js('window.B = "PROD";'),
+  '/c.js': js('window.C = "PROD";'),
   '/old.html': html('<title>OLD</title>'),
 });
 const local = await serve(8002, {
   '/a.js': js('window.A = "LOCAL";'),
   '/b.js': js('window.B = "LOCAL";'),
+  '/c.js': js('window.C = "LOCAL";'),
   '/new.html': html('<title>NEW</title>'),
 });
 
@@ -99,7 +101,7 @@ try {
   const run = async (url) => {
     const p = await browser.newPage();
     await p.goto(url, { waitUntil: 'load' });
-    const r = await p.evaluate(() => ({ A: window.A, B: window.B, title: document.title, url: location.href }));
+    const r = await p.evaluate(() => ({ A: window.A, B: window.B, C: window.C, title: document.title, url: location.href }));
     await p.close();
     return r;
   };
@@ -125,6 +127,59 @@ try {
   await popup.waitForFunction(() => /\d+ applied/.test(document.body.innerText), { timeout: 10000 });
   const on = await run('http://localhost:8001/page.html');
   check('switch on restores redirects', [on.A, on.B], ['LOCAL', 'LOCAL']);
+
+  // Re-importing the same file replaces its groups instead of duplicating them.
+  await (await popup.$('input[type=file]')).uploadFile(exportPath);
+  await popup.waitForFunction(() => document.body.innerText.includes('Replaced 2 groups'), { timeout: 10000 }).catch(async (e) => {
+    console.log('--- popup at re-import ---\n' + (await popup.evaluate(() => document.body.innerText)));
+    throw e;
+  });
+  check('re-import reports replacement', true, true);
+
+  const editor = await browser.newPage();
+  await editor.goto(`chrome-extension://${id}/options.html`);
+  await editor.waitForSelector('.group');
+  const editorText = () => editor.evaluate(() => document.body.innerText);
+  check('re-import kept 2 groups (no duplicates)', (await editor.$$('section.group')).length, 2);
+  check('no iframe warning where topDomains is supported', /cross-site iframes/.test(await editorText()), false);
+
+  // Create a group and a rule through the editor, then confirm the rule fires.
+  await editor.click('#add-group');
+  await editor.keyboard.type('E2E group');
+  const groups = await editor.$$('section.group');
+  const mine = groups[groups.length - 1];
+  await (await mine.$('button[id$="-add-rule"]')).click();
+  const pattern = await mine.$('input[id$="-pattern"]');
+  await pattern.type('*:8001/c.js');
+  await editor.click('button.primary');
+  await editor.waitForFunction(() => document.body.innerText.includes('Enter where matching requests should go'), { timeout: 5000 });
+  check('save blocked with a field error for the empty target', await editor.evaluate(() => document.activeElement?.id.endsWith('-to')), true);
+
+  await (await mine.$('input[id$="-to"]')).type('http://127.0.0.1:8002/c.js');
+  await (await mine.$('input[id$="-sample"]')).type('http://localhost:8001/c.js');
+  const preview = await mine.$eval('[data-testid=preview]', (el) => el.textContent.replace(/\s+/g, ' ').trim());
+  check('live preview shows the redirect target', preview, 'Matches. It would go to http://127.0.0.1:8002/c.js'.replace(/^/, '✓ '));
+
+  await editor.click('button.primary');
+  const lastStatus = () => mine.$$eval('[data-testid=rule-status]', (els) => els[els.length - 1].textContent.trim());
+  await editor.waitForFunction(
+    () => [...document.querySelectorAll('[data-testid=rule-status]')].at(-1)?.textContent.includes('Applied'),
+    { timeout: 10000 },
+  );
+  check('editor shows the new rule as applied', await lastStatus(), '✓ Applied');
+  check('save state settles', (await editor.$eval('[data-testid=save-state]', (el) => el.textContent.trim())), '✓ All changes saved');
+  check('rule created in the editor fires', (await run('http://localhost:8001/page.html')).C, 'LOCAL');
+
+  // Per-rule switch: off + save stops the redirect.
+  await (await mine.$('article.rule button[role=switch]')).click();
+  await editor.click('button.primary');
+  await editor.waitForFunction(() => [...document.querySelectorAll('[data-testid=rule-status]')].at(-1)?.textContent.includes('Off'), { timeout: 10000 });
+  await editor.waitForFunction(() => document.querySelector('[data-testid=save-state]')?.textContent.includes('All changes saved'), { timeout: 10000 });
+  check('rule switched off in the editor stops firing', (await run('http://localhost:8001/page.html')).C, 'PROD');
+
+  await editor.setViewport({ width: 1100, height: 900 });
+  await editor.screenshot({ path: path.join(outDir, 'editor.png'), fullPage: true });
+  console.log('screenshot', path.join(outDir, 'editor.png'));
 
   await popup.setViewport({ width: 400, height: 600 });
   await popup.screenshot({ path: path.join(outDir, 'popup.png'), fullPage: true });
