@@ -23,7 +23,7 @@ const serve = (port, routes) =>
     const server = http.createServer((req, res) => {
       const body = routes[new URL(req.url, 'http://x').pathname];
       if (!body) return res.writeHead(404).end('nope');
-      res.writeHead(200, { 'content-type': body.type, 'access-control-allow-origin': '*' }).end(body.text);
+      res.writeHead(200, { 'content-type': body.type, 'access-control-allow-origin': '*', ...(body.headers ?? {}) }).end(body.text);
     });
     server.listen(port, '127.0.0.1', () => resolve(server));
   });
@@ -47,6 +47,13 @@ const prod = await serve(8001, {
   '/kept.js': js('window.KEPT = "PROD";'),
   '/bridge.html': html('<!doctype html><title>bridge</title><script src="/bridge.js"></script>'),
   '/bridge.js': js('window.BRIDGE = "PROD";'),
+  // script-src 'self' allows this origin (port 8001) and blocks the bridge on another port.
+  '/csp-bridge.html': {
+    type: 'text/html',
+    text: '<!doctype html><title>csp</title><script src="/csp-bridge.js"></script>',
+    headers: { 'content-security-policy': "script-src 'self'" },
+  },
+  '/csp-bridge.js': js('window.CSP_BRIDGE = "PROD";'),
 });
 const local = await serve(8002, {
   '/a.js': js('window.A = "LOCAL";'),
@@ -87,8 +94,8 @@ const check = (name, actual, expected) => {
   console.log(`${ok ? 'PASS' : 'FAIL'} ${name}: ${JSON.stringify(actual)}${ok ? '' : ` (expected ${JSON.stringify(expected)})`}`);
 };
 
-// While the body-override tab is open, Puppeteer must not attach to it: Chrome allows one debugger per tab.
-let shieldHttp = false;
+// While a body-override tab is open, Puppeteer must not attach to it: Chrome allows one debugger per tab.
+const shieldPaths = [];
 let bridgeProc;
 const browser = await puppeteer.launch({
   executablePath: CHROME,
@@ -103,9 +110,9 @@ const browser = await puppeteer.launch({
     ...(process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] : []),
   ],
   targetFilter: (target) => {
-    if (!shieldHttp) return true;
+    if (shieldPaths.length === 0) return true;
     const url = target.url();
-    if (url.includes('/body.html')) return false;
+    if (shieldPaths.some((part) => url.includes(part))) return false;
     if (url === 'about:blank' || url === '') return false;
     return true;
   },
@@ -530,7 +537,7 @@ try {
   await waitStatus(bodyRule, 'Applied');
   check('body rule shows applied', await statusOf(bodyRule), '✓ Applied');
 
-  shieldHttp = true;
+  shieldPaths.push('/body.html');
   const workerTarget = await browser.waitForTarget((t) => t.type() === 'service_worker' && t.url().includes(id), { timeout: 10000 });
   const worker = await workerTarget.worker();
   const replaced = await worker.evaluate(async (url) => {
@@ -561,12 +568,14 @@ try {
   }, 'http://127.0.0.1:8001/body.html');
   check('replaced script body runs', replaced.BODY, 'LOCAL');
   check('unmatched script is untouched', replaced.KEPT, 'PROD');
+  shieldPaths.length = 0;
 
-  // Local Bridge: a real CLI on 127.0.0.1, then a serveLocal rule redirects one script at a file on disk.
-  shieldHttp = false;
+  // Local Bridge: consent is already on, so serveLocal is fulfilled in place (the URL stays on port 8001).
+  shieldPaths.push('/bridge.html', '/csp-bridge.html');
   const bridgeDir = path.join(outDir, 'bridge-root');
   fs.mkdirSync(bridgeDir);
   fs.writeFileSync(path.join(bridgeDir, 'bridge.js'), 'window.BRIDGE = "DISK";\n');
+  fs.writeFileSync(path.join(bridgeDir, 'csp-bridge.js'), 'window.CSP_BRIDGE = "DISK";\n');
   const cli = path.resolve(import.meta.dirname, '../../cli/src/cli.ts');
   bridgeProc = spawn(process.execPath, ['--experimental-strip-types', cli, 'bridge', bridgeDir, '--port', '8099'], { stdio: ['ignore', 'pipe', 'pipe'] });
   let bridgeLog = '';
@@ -610,15 +619,54 @@ try {
   const bridgeGroup = (await editor.$$('section.group')).at(-1);
   const bridgeRule = await addPageRule(bridgeGroup, '*:8001/bridge.js', 'serveLocal');
   await (await bridgeRule.$('input[id$="-path"]')).type('bridge.js');
+  const cspRule = await addPageRule(bridgeGroup, '*:8001/csp-bridge.js', 'serveLocal');
+  await (await cspRule.$('input[id$="-path"]')).type('csp-bridge.js');
   await saveAndSettle();
   await waitStatus(bridgeRule, 'Applied');
+  await waitStatus(cspRule, 'Applied');
   check('serve-local rule applied', await statusOf(bridgeRule), '✓ Applied');
 
-  const bridgePage = await browser.newPage();
-  await bridgePage.goto('http://127.0.0.1:8001/bridge.html', { waitUntil: 'load' });
-  const fromDisk = await bridgePage.evaluate(() => window.BRIDGE);
-  await bridgePage.close();
-  check('script is served from the bridge folder', fromDisk, 'DISK');
+  const bridgeWorkerTarget = await browser.waitForTarget((t) => t.type() === 'service_worker' && t.url().includes(id), { timeout: 10000 });
+  const bridgeWorker = await bridgeWorkerTarget.worker();
+  const readBridgePage = (url) =>
+    bridgeWorker.evaluate(async (pageUrl) => {
+      const tab = await chrome.tabs.create({ url: pageUrl, active: false });
+      const waitComplete = async () => {
+        const current = await chrome.tabs.get(tab.id);
+        if (current.status === 'complete') return;
+        await new Promise((resolve) => {
+          const listener = (tabId, info) => {
+            if (tabId === tab.id && info.status === 'complete') {
+              chrome.tabs.onUpdated.removeListener(listener);
+              resolve();
+            }
+          };
+          chrome.tabs.onUpdated.addListener(listener);
+        });
+      };
+      await waitComplete();
+      await chrome.tabs.reload(tab.id);
+      await waitComplete();
+      const [injected] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        world: 'MAIN',
+        func: () => ({
+          BRIDGE: window.BRIDGE,
+          CSP_BRIDGE: window.CSP_BRIDGE,
+          urls: performance.getEntriesByType('resource').map((entry) => entry.name),
+        }),
+      });
+      await chrome.tabs.remove(tab.id);
+      return injected.result;
+    }, url);
+
+  const fromDisk = await readBridgePage('http://127.0.0.1:8001/bridge.html');
+  check('script is served from the bridge folder', fromDisk.BRIDGE, 'DISK');
+  check('in-place serve keeps the original script URL', fromDisk.urls.includes('http://127.0.0.1:8001/bridge.js') && !fromDisk.urls.some((item) => item.includes(':8099')), true);
+
+  const fromCsp = await readBridgePage('http://127.0.0.1:8001/csp-bridge.html');
+  check('CSP that blocks the bridge port still runs the disk script', fromCsp.CSP_BRIDGE, 'DISK');
+  check('CSP page never requested the bridge port', fromCsp.urls.some((item) => item.includes(':8099')), false);
 } finally {
   bridgeProc?.kill('SIGTERM');
   await browser.close();
