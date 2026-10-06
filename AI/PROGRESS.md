@@ -31,12 +31,12 @@
 - [x] **local-bridge in-place** Approved (Hamza, 2026-10-07) and built (plan 012, ADR-013): when Allow debugger / Allow response rewriting is on, `serveLocal` keeps the original URL and the extension reads the file from the bridge. Otherwise it still redirects. 18 CLI tests, 351 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 68/68 (disk script on a `script-src 'self'` page). Firefox live filter still not driven (BiDi). Not pushed
 - [x] **SRI hashes** Approved (Hamza, 2026-10-07) and built (plan 013, ADR-014): while a body rule is armed, UTF-8 HTML gets a SHA-384 `integrity` of the override on matching script and stylesheet tags. Other tags keep the page's hashes. Redirect mode does not rewrite the document. 363 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 72/72 on Chrome for Testing 155 (override runs, valid sibling runs, bad sibling stays blocked, in-place disk file runs). Firefox document path is unit-tested. Not pushed
 - [x] **Page-world integrity** Approved (Hamza, 2026-10-07) and built (plan 014, ADR-015): a MAIN-world `document_start` hook, registered only while a body rule is armed, substitutes the same SHA-384 when page JavaScript assigns `integrity`. It does not clear hashes. The list in the page has no rule body. 376 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 77/77 on Chrome for Testing 155 (override runs, non-matching sibling stays blocked). Firefox document path is unit-tested. Not pushed
+- [x] **Markup integrity** Approved (Hamza, 2026-10-07) and built (plan 015, ADR-016): the same hook rewrites `integrity` in a string assigned to `innerHTML` or passed to `insertAdjacentHTML` before the browser parses it. Other hashes in the string stay. A non-string is passed through. 381 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 80/80 on Chrome for Testing 155 (override runs, sibling in that markup stays blocked). Firefox document path is unit-tested. Not pushed
 
 ## Next
 
-1. **Markup integrity** (plan 015, Approved Hamza 2026-10-07): rewrite `integrity` in `innerHTML` / `insertAdjacentHTML` strings while a body rule is armed. In progress
-2. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
-3. npm publish of `@detour/cli` is still out of scope
+1. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
+2. npm publish of `@detour/cli` is still out of scope
 
 ## Open questions (not blocking)
 
@@ -47,7 +47,7 @@
 - Packed Chromium rows store the tab URL, not the subresource. Is that enough, or should packed builds stay limited to unpacked-style request URLs some other way?
 - Firefox does not record DNR matches (no feedback API; `webRequest` was not added). Is that gap acceptable?
 - Inline JS injections are not log rows. Worth a later note, or leave them to the apply report?
-- `innerHTML` and `insertAdjacentHTML` are plan 015 (in progress). `outerHTML`, `setAttributeNS`, `ShadowRoot.innerHTML`, `createContextualFragment`, and `setHTMLUnsafe` are still not hooked
+- `outerHTML`, `setAttributeNS`, `ShadowRoot.innerHTML`, `createContextualFragment`, and `setHTMLUnsafe` are still not hooked. The last two can execute a script whose hash is still the one in the markup. Worth a later pass?
 
 ## Blocked
 

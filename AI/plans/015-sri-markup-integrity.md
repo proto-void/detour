@@ -1,6 +1,6 @@
 # 015 — Markup integrity
 
-**Status:** In progress  
+**Status:** Done  
 **Date:** 2026-10-07  
 **Spec:** [engine-deep](../specs/engine-deep.md) — markup slice Approved (Hamza, 2026-10-07)
 
@@ -22,12 +22,19 @@ The document rewrite (ADR-014) and the property hook (ADR-015) stay. This slice 
 ## Tasks
 
 - [x] T1 Spec Approved, this plan, ADR-016
-- [ ] T2 Pure rewrite: matching script, sibling hash, comment, script text, over the 2 MiB cap, empty list
-- [ ] T3 Hook: `innerHTML` and `insertAdjacentHTML` rewrite before the native call; a non-string is passed through; no list leaves the page hash
-- [ ] T4 Rules-page copy
-- [ ] T5 Unit tests, typecheck, Chrome + Firefox builds
-- [ ] T6 Chrome e2e: `insertAdjacentHTML` with a production hash runs the override; a non-matching sibling stays blocked
-- [ ] T7 KB write-back
+- [x] T2 Pure rewrite: matching script, sibling hash, comment, script text, over the 2 MiB cap, empty list
+- [x] T3 Hook: `innerHTML` and `insertAdjacentHTML` rewrite before the native call; a non-string is passed through; no list leaves the page hash
+- [x] T4 Rules-page copy
+- [x] T5 Unit tests, typecheck, Chrome + Firefox builds
+- [x] T6 Chrome e2e: `insertAdjacentHTML` with a production hash runs the override; a non-matching sibling stays blocked
+- [x] T7 KB write-back
+
+## Results (2026-10-07)
+
+- 381 extension tests; typecheck clean; chrome-mv3 and firefox-mv3 builds clean (`content-scripts/sri-main.js` in both)
+- Chrome for Testing 155: `pnpm e2e:chrome` 80/80. `*:8001/sri-html.js` ran `window.SRI_HTML = "LOCAL"` after the page passed the production hash to `insertAdjacentHTML`. A sibling in that string, whose hash did not match, did not run. The fragment parser does not execute those scripts, so the page copied the parsed attributes with `setAttributeNS`, which this slice does not hook
+- Firefox document rewrite is unit-tested. BiDi still cannot open extension pages
+- Not pushed
 
 ## Out of scope
 

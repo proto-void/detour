@@ -5,7 +5,7 @@
 **Approved by:** Hamza (2026-10-07) — localhost HTTP bridge, then in-place body (his “in-place bridge read”)  
 **Build order:** 6  
 **Depends on:** rule-model, engine-core, engine-deep (in-place slice)  
-**Related:** [engine-deep](engine-deep.md) (inline `overrideBody` and the fulfill path), [rule-model](rule-model.md), [000-capability-map](000-capability-map.md), [ADR-001](../DECISIONS.md), [ADR-002](../DECISIONS.md), [ADR-012](../DECISIONS.md), [ADR-013](../DECISIONS.md), [ADR-015](../DECISIONS.md)
+**Related:** [engine-deep](engine-deep.md) (inline `overrideBody` and the fulfill path), [rule-model](rule-model.md), [000-capability-map](000-capability-map.md), [ADR-001](../DECISIONS.md), [ADR-002](../DECISIONS.md), [ADR-012](../DECISIONS.md), [ADR-013](../DECISIONS.md), [ADR-015](../DECISIONS.md), [ADR-016](../DECISIONS.md)
 
 ## Objective
 
@@ -57,7 +57,7 @@ Resource Override `fileOverride` still imports as inline `overrideBody`. Those e
 | Firefox | 128 ESR+ | In-place via `filterResponseData` when Allow response rewriting is on. Otherwise the same redirect. |
 | Safari | 17+ | Not verified. |
 
-A page with a Content-Security-Policy that does not allow `http://127.0.0.1` blocks the redirect. In-place keeps the original URL, so that policy still applies to the production address. While that in-place rule is armed, HTML documents get a SHA-384 `integrity` of the file for matching script and stylesheet tags ([ADR-014](../DECISIONS.md)). The same hash is used when page JavaScript assigns `integrity` ([ADR-015](../DECISIONS.md)). The redirect path does not rewrite the document, so the page's hash can still reject the file. Inline `overrideBody` uses the same hash update.
+A page with a Content-Security-Policy that does not allow `http://127.0.0.1` blocks the redirect. In-place keeps the original URL, so that policy still applies to the production address. While that in-place rule is armed, HTML documents get a SHA-384 `integrity` of the file for matching script and stylesheet tags ([ADR-014](../DECISIONS.md)). The same hash is used when page JavaScript assigns `integrity` ([ADR-015](../DECISIONS.md)) or passes the tag to `innerHTML` / `insertAdjacentHTML` ([ADR-016](../DECISIONS.md)). The redirect path does not rewrite the document, so the page's hash can still reject the file. Inline `overrideBody` uses the same hash update.
 
 ## Limits and gotchas
 

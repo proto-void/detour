@@ -47,8 +47,8 @@ Hamza approved **engine-deep** for body override on 2026-10-06. Local Bridge sta
 - [x] The rules page says Detour updates that hash, that other files keep theirs, and that a redirect with rewriting off does not change the page
 - [x] While those rules are armed, the rewritten HTML carries the same hash list (match, resource types, sites, SHA-384 — no rule body). A MAIN-world `document_start` hook, registered only then, substitutes that hash when page JavaScript sets `integrity` on a script or stylesheet link whose URL matches. A URL that does not match keeps the value the page assigned
 - [x] The hook does not remove `integrity`. A missing hash leaves the page's value. Rewriting off does not register the hook
-- [ ] While those rules are armed, assigning `innerHTML` or calling `insertAdjacentHTML` with a string rewrites `integrity` on a script or stylesheet tag in that string whose URL matches an armed override. The rewrite happens before the browser parses the string. A tag in that string that does not match keeps the hash the page wrote
-- [ ] A value that is not a string is passed to the original setter or method unchanged. Markup with no hash list, or longer than 2 MiB, is left unchanged. The hook still does not clear `integrity`
+- [x] While those rules are armed, assigning `innerHTML` or calling `insertAdjacentHTML` with a string rewrites `integrity` on a script or stylesheet tag in that string whose URL matches an armed override. The rewrite happens before the browser parses the string. A tag in that string that does not match keeps the hash the page wrote
+- [x] A value that is not a string is passed to the original setter or method unchanged. Markup with no hash list, or longer than 2 MiB, is left unchanged. The hook still does not clear `integrity`
 
 ## Browser support table
 
@@ -88,7 +88,7 @@ Hamza approved **engine-deep** for body override on 2026-10-06. Local Bridge sta
 ## Verification
 
 - Unit tests: planning, match, header rewrite, Chrome session (attach / fulfill / continue / detach / cancel), Firefox filter, permission refusal, RO import, tester, document integrity rewrite (matching tag, sibling tag, failed read, non-HTML)
-- Chrome smoke: a script whose `integrity` is the hash of the production file runs the override; a sibling with a valid hash still runs; a sibling with a bad hash stays blocked. Verified 2026-10-07, Chrome for Testing 155, `pnpm e2e:chrome` 77/77, including an in-place bridge file whose page hash was for the production bytes, and a page that set `integrity` from JavaScript after parse (override ran, non-matching sibling stayed blocked)
+- Chrome smoke: a script whose `integrity` is the hash of the production file runs the override; a sibling with a valid hash still runs; a sibling with a bad hash stays blocked. Verified 2026-10-07, Chrome for Testing 155, `pnpm e2e:chrome` 80/80, including an in-place bridge file whose page hash was for the production bytes, a page that set `integrity` from JavaScript after parse (override ran, non-matching sibling stayed blocked), and a page that passed the production hash to `insertAdjacentHTML` (override ran, sibling in that string stayed blocked)
 - `pnpm test`, `pnpm typecheck`, `pnpm build`, `pnpm build:firefox`
 - Chrome smoke: one script body changes and a sibling script does not. Verified 2026-10-06, Chrome for Testing 154, `pnpm e2e:chrome` 57/57, after Allow debugger
 - Firefox headless: Firefox 157.0.1 installs the temporary add-on, then BiDi refuses `moz-extension://` navigation, so the Allow click and a live `filterResponseData` path were not driven. Firefox filter behavior is unit-tested
