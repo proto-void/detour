@@ -163,8 +163,9 @@ const INSTALLED = Symbol.for('detour.sri.installed');
 /**
  * MAIN-world hook. Substitutes a published hash when the page assigns `integrity`
  * to a matching script or stylesheet, and when that hash is carried in a string
- * passed to `innerHTML`, `insertAdjacentHTML`, `createContextualFragment`, or
- * `setHTMLUnsafe` with `runScripts: true`. Other assignments are written through.
+ * passed to `innerHTML`, `outerHTML`, `ShadowRoot.innerHTML`, `insertAdjacentHTML`,
+ * `createContextualFragment`, or `setHTMLUnsafe` with `runScripts: true`, and when
+ * `setAttributeNS` sets HTML `integrity`. Other assignments are written through.
  */
 export function installIntegrityPatch(root: PatchRoot): void {
   const marked = root as unknown as Record<symbol, boolean>;
@@ -245,6 +246,30 @@ export function installIntegrityPatch(root: PatchRoot): void {
     } as (name: string, value: string) => void;
   }
 
+  // setAttributeNS does not call setAttribute. Copying a parser attribute uses it.
+  const setAttrNsDesc = Object.getOwnPropertyDescriptor(root.Element.prototype, 'setAttributeNS');
+  const nativeSetAttributeNS = setAttrNsDesc?.value as ((this: object, namespace: string | null, name: string, value: string) => void) | undefined;
+  if (typeof nativeSetAttributeNS === 'function') {
+    (root.Element.prototype as { setAttributeNS: (namespace: string | null, name: string, value: string) => void }).setAttributeNS = function (
+      this: object,
+      namespace: string | null,
+      name: string,
+      value: string,
+    ) {
+      const tag = tagOf(this);
+      const local = htmlUrlAttribute(name);
+      if (!applying && tag && isHtmlNamespace(namespace) && local === 'integrity') {
+        remembered.set(this, String(value));
+        apply(this);
+        return;
+      }
+      if (!applying && tag && isHtmlNamespace(namespace) && (local === 'src' || local === 'href')) {
+        apply(this, local === 'src' ? { src: String(value) } : { href: String(value) });
+      }
+      return nativeSetAttributeNS.call(this, namespace, name, value);
+    };
+  }
+
   // The integrity setter writes the chosen hash itself. Calling the native setter afterwards would put the page's hash back.
   hookAssign(root.HTMLScriptElement.prototype, 'integrity', (node, value) => {
     remembered.set(node, String(value));
@@ -275,6 +300,8 @@ export function installIntegrityPatch(root: PatchRoot): void {
     return rewriteMarkupIntegrity(value, root.location.href, siteHost(root.location), list);
   };
   hookMarkupSetter(root.Element.prototype, 'innerHTML', rewriteMarkupValue);
+  hookMarkupSetter(root.Element.prototype, 'outerHTML', rewriteMarkupValue);
+  hookMarkupSetter(root.ShadowRoot?.prototype, 'innerHTML', rewriteMarkupValue);
   hookMarkupMethod(root.Element.prototype, 'insertAdjacentHTML', rewriteMarkupValue);
   // createContextualFragment parses with scripting mode Fragment, so inserted scripts run.
   hookMarkupArgument(root.Range?.prototype, 'createContextualFragment', rewriteMarkupValue);
@@ -405,7 +432,24 @@ export function rewriteMarkupIntegrity(markup: string, pageUrl: string, pageHost
   return rewriteTags(markup, pageUrl, pageHost, patches);
 }
 
-function hookMarkupSetter(proto: object, name: 'innerHTML', rewrite: (value: unknown) => unknown) {
+const HTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
+
+/** Null, omitted, or empty is no namespace. The HTML namespace is the same attribute. */
+function isHtmlNamespace(namespace: unknown): boolean {
+  return namespace == null || namespace === '' || namespace === HTML_NAMESPACE;
+}
+
+/** `integrity`, `src`, or `href`, with an optional prefix. Other names stay with the browser. */
+function htmlUrlAttribute(qualifiedName: unknown): 'integrity' | 'src' | 'href' | undefined {
+  if (typeof qualifiedName !== 'string') return undefined;
+  const match = /^(?:[A-Za-z_][\w.-]*:)?(integrity|src|href)$/i.exec(qualifiedName);
+  const local = match?.[1]?.toLowerCase();
+  if (local === 'integrity' || local === 'src' || local === 'href') return local;
+  return undefined;
+}
+
+function hookMarkupSetter(proto: object | undefined, name: 'innerHTML' | 'outerHTML', rewrite: (value: unknown) => unknown) {
+  if (!proto) return;
   const desc = Object.getOwnPropertyDescriptor(proto, name);
   if (!desc?.set || !desc.get) return;
   const nativeSet = desc.set;

@@ -62,7 +62,7 @@
     <p data-testid="bridge-status">Connected to {session.rootLabel} on 127.0.0.1:{session.port}.</p>
     <p class="muted">Listens on this computer only. If a rule says the bridge is not running, start <code>detour bridge &lt;folder&gt;</code> again and connect the new token.</p>
     <p class="muted">
-      After Allow debugger (Chrome) or Allow response rewriting (Firefox), matching files are served in place and the page address does not change. Detour then sets integrity on a matching script or stylesheet to a hash of your file, including when page JavaScript sets that attribute, passes the tag to innerHTML or insertAdjacentHTML, or inserts markup that runs scripts with createContextualFragment or setHTMLUnsafe. Until then, the browser redirects to 127.0.0.1, which a strict Content-Security-Policy can block, and the page’s hash stays in place.
+      After Allow debugger (Chrome) or Allow response rewriting (Firefox), matching files are served in place and the page address does not change. Detour then sets integrity on a matching script or stylesheet to a hash of your file, including when page JavaScript sets that attribute or copies it with setAttributeNS, passes the tag to innerHTML, outerHTML, a shadow root's innerHTML, or insertAdjacentHTML, or inserts markup that runs scripts with createContextualFragment or setHTMLUnsafe. Until then, the browser redirects to 127.0.0.1, which a strict Content-Security-Policy can block, and the page’s hash stays in place.
     </p>
     <button type="button" class="btn" id="bridge-disconnect" onclick={disconnect}>Disconnect</button>
   {:else}

@@ -103,6 +103,9 @@ function createRealm(initial: string | null) {
     setAttribute(name: string, value: string) {
       this.attrs[name.toLowerCase()] = String(value);
     }
+    setAttributeNS(_namespace: string | null, name: string, value: string) {
+      this.attrs[String(name).toLowerCase()] = String(value);
+    }
     getAttribute(name: string) {
       return this.attrs[name.toLowerCase()] ?? null;
     }
@@ -118,6 +121,13 @@ function createRealm(initial: string | null) {
     }
     set innerHTML(value: string) {
       this.html = value;
+    }
+    outer = '';
+    get outerHTML() {
+      return this.outer;
+    }
+    set outerHTML(value: string) {
+      this.outer = value;
     }
     insertAdjacentHTML(_position: string, html: string) {
       this.adjacent = html;
@@ -135,6 +145,13 @@ function createRealm(initial: string | null) {
   }
   class ShadowRoot {
     html: unknown = undefined;
+    markup = '';
+    get innerHTML() {
+      return this.markup;
+    }
+    set innerHTML(value: string) {
+      this.markup = value;
+    }
     setHTMLUnsafe(html: unknown, _options?: unknown) {
       this.html = html;
     }
@@ -384,5 +401,95 @@ describe('installIntegrityPatch', () => {
     const typed = new realm.Element();
     typed.setHTMLUnsafe(trusted, { runScripts: true });
     expect(typed.unsafe).toBe(trusted);
+  });
+
+  it('rewrites integrity in outerHTML and ShadowRoot.innerHTML, and leaves a sibling hash', async () => {
+    const hash = await integrityMetadata(encoder.encode('html{--sri-outer:local}'));
+    const realm = createRealm(encodePatchList([patch({ integrity: hash, resourceTypes: ['stylesheet'], match: { kind: 'glob', pattern: '*:8001/sri-outer.css' } })]));
+    installIntegrityPatch(realm.root);
+    const markup = `<link rel="stylesheet" href="/sri-outer.css" integrity="${BAD}"><link rel="stylesheet" href="/sri-outer-bad.css" integrity="${BAD}">`;
+    const host = new realm.Element();
+    host.outerHTML = markup;
+    expect(host.outerHTML).toContain(`href="/sri-outer.css" integrity="${hash}"`);
+    expect(host.outerHTML).toContain(`href="/sri-outer-bad.css" integrity="${BAD}"`);
+
+    const shadow = new realm.ShadowRoot();
+    shadow.innerHTML = markup;
+    expect(shadow.innerHTML).toContain(`href="/sri-outer.css" integrity="${hash}"`);
+    expect(shadow.innerHTML).toContain(`href="/sri-outer-bad.css" integrity="${BAD}"`);
+  });
+
+  it('passes a non-string through outerHTML and shadow innerHTML, and keeps the page hash without a list', () => {
+    const realm = createRealm(null);
+    installIntegrityPatch(realm.root);
+    const host = new realm.Element();
+    const trusted = { toString: () => `<link rel="stylesheet" href="/sri-outer.css" integrity="${BAD}">` };
+    host.outerHTML = trusted as unknown as string;
+    expect(host.outerHTML).toBe(trusted as unknown as string);
+
+    const shadow = new realm.ShadowRoot();
+    shadow.innerHTML = trusted as unknown as string;
+    expect(shadow.innerHTML).toBe(trusted as unknown as string);
+
+    const plain = new realm.Element();
+    plain.outerHTML = `<link rel="stylesheet" href="/sri-outer.css" integrity="${BAD}">`;
+    expect(plain.outerHTML).toContain(`integrity="${BAD}"`);
+
+    const listed = createRealm(encodePatchList([patch({ resourceTypes: ['stylesheet'], match: { kind: 'glob', pattern: '*:8001/sri-outer.css' } })]));
+    installIntegrityPatch(listed.root);
+    const huge = new listed.Element();
+    const markup = `${'x'.repeat(MARKUP_BYTE_CAP)}<link rel="stylesheet" href="/sri-outer.css" integrity="${BAD}">`;
+    huge.outerHTML = markup;
+    expect(huge.outerHTML).toBe(markup);
+  });
+
+  it('substitutes integrity set with setAttributeNS and leaves a foreign namespace and a sibling', async () => {
+    const hash = await integrityMetadata(encoder.encode('window.SRI_NS = "LOCAL";'));
+    const realm = createRealm(encodePatchList([patch({ integrity: hash, match: { kind: 'glob', pattern: '*:8001/sri-ns.js' } })]));
+    installIntegrityPatch(realm.root);
+    const matched = new realm.HTMLScriptElement();
+    matched.setAttributeNS(null, 'integrity', BAD);
+    matched.setAttributeNS(null, 'src', '/sri-ns.js');
+    expect(matched.getAttribute('integrity')).toBe(hash);
+
+    const copied = new realm.HTMLScriptElement();
+    copied.setAttributeNS(null, 'src', 'http://127.0.0.1:8001/sri-ns.js');
+    copied.setAttributeNS(null, 'integrity', BAD);
+    expect(copied.getAttribute('integrity')).toBe(hash);
+
+    const xhtml = new realm.HTMLScriptElement();
+    xhtml.setAttributeNS('http://www.w3.org/1999/xhtml', 'html:integrity', BAD);
+    xhtml.setAttributeNS(null, 'src', '/sri-ns.js');
+    expect(xhtml.getAttribute('integrity')).toBe(hash);
+
+    const sibling = new realm.HTMLScriptElement();
+    sibling.setAttributeNS(null, 'src', '/sri-ns-bad.js');
+    sibling.setAttributeNS(null, 'integrity', BAD);
+    expect(sibling.getAttribute('integrity')).toBe(BAD);
+
+    const foreign = new realm.HTMLScriptElement();
+    foreign.setAttributeNS(null, 'src', '/sri-ns.js');
+    foreign.setAttributeNS('http://www.w3.org/2000/svg', 'integrity', BAD);
+    expect(foreign.getAttribute('integrity')).toBe(BAD);
+
+    const label = new realm.HTMLScriptElement();
+    label.setAttributeNS(null, 'id', 'kept');
+    expect(label.getAttribute('id')).toBe('kept');
+
+    const css = await integrityMetadata(encoder.encode('css'));
+    const styles = createRealm(encodePatchList([patch({ integrity: css, resourceTypes: ['stylesheet'], match: { kind: 'glob', pattern: '*:8001/app.css' } })]));
+    installIntegrityPatch(styles.root);
+    const link = new styles.HTMLLinkElement();
+    link.setAttributeNS('', 'rel', 'stylesheet');
+    link.setAttributeNS(null, 'href', 'http://127.0.0.1:8001/app.css');
+    link.setAttributeNS(null, 'integrity', BAD);
+    expect(link.getAttribute('integrity')).toBe(css);
+
+    const bare = createRealm(null);
+    installIntegrityPatch(bare.root);
+    const pageHash = new bare.HTMLScriptElement();
+    pageHash.setAttributeNS(null, 'src', '/sri-ns.js');
+    pageHash.setAttributeNS(null, 'integrity', BAD);
+    expect(pageHash.getAttribute('integrity')).toBe(BAD);
   });
 });
