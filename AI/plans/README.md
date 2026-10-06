@@ -16,6 +16,7 @@ Implementation plans live **only** here. Numbered `NNN-short-name.md`.
 | [009-observability-badge-log.md](009-observability-badge-log.md) | Done |
 | [010-distribution-ci-packaging.md](010-distribution-ci-packaging.md) | Done |
 | [011-local-bridge.md](011-local-bridge.md) | Done |
+| [012-local-bridge-inplace.md](012-local-bridge-inplace.md) | Done |
 
 New plans only for **Approved** specs (`spec-workflow` gate).
 

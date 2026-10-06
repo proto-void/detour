@@ -293,6 +293,35 @@ MV3 cannot read an arbitrary folder. ADR-001 called the bridge a Node CLI over l
 
 ### Consequences
 
-- A Content-Security-Policy that blocks `http://127.0.0.1` can reject the redirected file. Keeping the original URL would mean the body engine, which this slice does not do.
-- The page under test can see the token in DevTools. Restarting the CLI rotates it.
+- A Content-Security-Policy that blocks `http://127.0.0.1` can reject the redirected file. [ADR-013](#adr-013--servelocal-keeps-the-url-when-response-rewriting-is-allowed) later serves that file in place when the body engine is allowed.
+- The page under test can see the token in DevTools when the rule redirects. Restarting the CLI rotates it.
 - `localhost` → `::1` will not connect. Use `127.0.0.1`.
+
+---
+
+## ADR-013 — serveLocal keeps the URL when response rewriting is allowed
+
+**Status:** Accepted  
+**Date:** 2026-10-07 (Hamza approved in-place bridge read)
+
+### Context
+
+ADR-012 redirects a production URL to `http://127.0.0.1`. Pages with a Content-Security-Policy that does not allow that address never run the file. Inline `overrideBody` already keeps the original URL by fulfilling the response (ADR-009). The bridge file can take the same path: the extension reads loopback, then the body engine writes those bytes onto the original request.
+
+Detour cannot know each page’s CSP when the rule is compiled. In-place works for both strict and open policies, and it keeps the token out of the page. It needs the debugger (Chrome) or `filterResponseData` (Firefox), which the user already accepts with Allow debugger / Allow response rewriting.
+
+### Decision
+
+- **Prefer in-place** when `bodyEngineConsent` is true, the browser permission is present, and the bridge health check succeeded. Do not also emit the DNR redirect. Chrome `Fetch.fulfillRequest` and Firefox `filterResponseData` reuse the body-override session. The fulfilled status is 200. `Content-Type` follows the file. `Cache-Control: no-store`.
+- **Redirect remains the fallback** when that consent is missing, so a page that allows loopback still works without the debugger banner.
+- The extension fetches only `http://127.0.0.1` with the stored token. Path checks stay in the CLI. The token is not written to the apply report, refusal text, or the match log. The match log records the page’s URL.
+- A failed read or a file over 8 MiB leaves the production response. Cancelling Chrome’s debugging banner does the same for that tab until the body plan changes.
+- Not connected and bridge-down still refuse. The production URL is unchanged.
+- RO `fileOverride` stays inline `overrideBody`.
+
+### Consequences
+
+- Strict CSP pages work after the user allows response rewriting. Until they do, those pages can still block the redirect. The rules page says so.
+- Chrome shows the debugging infobar while a `serveLocal` rule is in place, same as `overrideBody`. DevTools on that tab disconnects the override.
+- Subresource Integrity still checks the new bytes. This decision does not strip `integrity`.
+- The page does not see the token in the in-place mode. It still can when the rule falls back to a redirect.

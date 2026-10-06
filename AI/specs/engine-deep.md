@@ -1,10 +1,12 @@
 # Spec: engine-deep
 
 **Status:** Approved (by Hamza, 2026-10-06) — body-override slice  
-**Last updated:** 2026-10-06  
+**Last updated:** 2026-10-07  
 **Build order:** 5  
 **Depends on:** rule-model, engine-core  
 **Plan:** [008-engine-deep-body](../plans/008-engine-deep-body.md)
+
+Amended 2026-10-07 (Hamza, in-place bridge read): the same fulfill / filter path may replace a response with bytes the extension read from Local Bridge. Disk mapping, the token, and path confinement stay in [local-bridge](local-bridge.md) and [ADR-013](../DECISIONS.md). Consent is still `bodyEngineConsent`. This spec does not grow a folder browser.
 
 ## Objective
 
@@ -51,7 +53,7 @@ Hamza approved **engine-deep** for body override on 2026-10-06. Local Bridge sta
 
 ## Out of scope
 
-- Local Bridge, local-folder mapping, and external editors
+- Local-folder mapping and external editors. [local-bridge](local-bridge.md) may call this fulfill path with bytes it already read. The token never enters this module’s apply report
 - SRI stripping, binary bodies, and `data:` redirects
 - Attaching to out-of-process iframes (`Target.setAutoAttach`)
 - Firefox service-worker script filtering (`webRequestFilterResponse.serviceWorkerScript`)
