@@ -6,6 +6,8 @@ import {
   addRule,
   defaultAction,
   describeMatch,
+  effectiveTypes,
+  setResourceType,
   exportFileName,
   headerOpWith,
   isAwaitingApply,
@@ -112,7 +114,25 @@ describe('rule fields', () => {
     expect('resourceTypes' in sub).toBe(false);
     const custom = { ...rule, resourceTypes: ['script' as const] };
     expect(requestScope(custom)).toBe('custom');
-    expect(withRequestScope(custom, 'custom')).toBe(custom);
+    expect(withRequestScope(custom, 'custom')).toEqual(custom);
+  });
+
+  it('edits request types one at a time, starting from what the rule really covers', () => {
+    const sub = redirect('*', 'http://x/');
+    expect(effectiveTypes(sub)).not.toContain('main_frame');
+    expect(withRequestScope(sub, 'custom').resourceTypes).toEqual(effectiveTypes(sub));
+    const withPages = setResourceType(sub, 'main_frame', true);
+    expect(requestScope(withPages)).toBe('all');
+    const scriptsOnly = RESOURCE_TYPES.filter((t) => t !== 'script').reduce((r, t) => setResourceType(r, t, false), withPages);
+    expect(scriptsOnly.resourceTypes).toEqual(['script']);
+    const none = setResourceType(scriptsOnly, 'script', false);
+    expect(none.resourceTypes).toEqual([]);
+    expect(validateRule(none).errors.resourceTypes).toBe('Pick at least one request type');
+  });
+
+  it('keeps imported custom lists in canonical order', () => {
+    const imported = redirect('*', 'http://x/', { resourceTypes: ['xmlhttprequest', 'script'] });
+    expect(setResourceType(imported, 'image', true).resourceTypes).toEqual(['script', 'image', 'xmlhttprequest']);
   });
 
   it('normalizes site lists, forgiving pasted URLs and wildcards', () => {

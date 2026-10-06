@@ -1,12 +1,15 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import type { Action, Match, Rule, Workspace } from '../../rule-model/schema';
+  import { RESOURCE_TYPES, type Action, type Match, type Rule, type Workspace } from '../../rule-model/schema';
   import { announce } from '../../ui/announcer.svelte';
   import Field from '../../ui/Field.svelte';
   import Switch from '../../ui/Switch.svelte';
   import {
     defaultAction,
     describeMatch,
+    effectiveTypes,
+    RESOURCE_TYPE_LABELS,
+    setResourceType,
     describeRedirect,
     moveRule,
     previewMatch,
@@ -45,9 +48,12 @@
   const hasErrors = $derived(Object.keys(validation.errors).length > 0);
   let expanded = $state(false);
   let sampleUrl = $state('');
+  let advancedOpen = $state(false);
+  const typesError = $derived(validation.errors.resourceTypes ?? '');
 
   $effect.pre(() => {
     if (rule.match.pattern === '' || (showAll && hasErrors)) expanded = true;
+    if (typesError) advancedOpen = true;
   });
 
   const set = (patch: Partial<Rule>) => edit((ws) => updateRule(ws, groupId, { ...rule, ...patch }));
@@ -177,12 +183,21 @@
     {/if}
 
     <div class="grid options">
-      <Field id="{id}-scope" label="Applies to" hint={requestScope(rule) === 'custom' ? `Imported list: ${rule.resourceTypes?.join(', ')}` : ''}>
+      <Field id="{id}-scope" label="Applies to" hint={requestScope(rule) === 'custom' ? 'Pick the request types under Advanced.' : ''}>
         {#snippet children({ describedby })}
-          <select id="{id}-scope" value={requestScope(rule)} aria-describedby={describedby} onchange={(e) => set(withRequestScope(rule, e.currentTarget.value as RequestScope))}>
+          <select
+            id="{id}-scope"
+            value={requestScope(rule)}
+            aria-describedby={describedby}
+            onchange={(e) => {
+              const scope = e.currentTarget.value as RequestScope;
+              set(withRequestScope(rule, scope));
+              if (scope === 'custom') advancedOpen = true;
+            }}
+          >
             <option value="all">All requests, including page loads</option>
             <option value="subresources">Everything except page loads</option>
-            <option value="custom" disabled={requestScope(rule) !== 'custom'}>Custom list (kept as imported)</option>
+            <option value="custom">Custom…</option>
           </select>
         {/snippet}
       </Field>
@@ -196,6 +211,24 @@
         Match upper/lower case exactly
       </label>
     </div>
+
+    <details class="advanced" bind:open={advancedOpen}>
+      <summary>Advanced</summary>
+      <fieldset class="types" aria-describedby={typesError ? `${id}-types-error` : undefined}>
+        <legend>Request types</legend>
+        {#each RESOURCE_TYPES as type (type)}
+          <label class="check">
+            <input
+              type="checkbox"
+              checked={effectiveTypes(rule).includes(type)}
+              onchange={(e) => set({ resourceTypes: setResourceType(rule, type, e.currentTarget.checked).resourceTypes })}
+            />
+            {RESOURCE_TYPE_LABELS[type]}
+          </label>
+        {/each}
+      </fieldset>
+      {#if typesError}<p id="{id}-types-error" class="type-error"><strong>Error:</strong> {typesError}</p>{/if}
+    </details>
 
     <div class="preview">
       <Field id="{id}-sample" label="Try a URL (not saved)">
@@ -321,6 +354,38 @@
     grid-column: 1 / -1;
     align-items: center;
     gap: var(--space-2);
+  }
+
+  .advanced > summary {
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .types {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+    gap: var(--space-1) var(--space-3);
+    margin: var(--space-2) 0 0;
+    padding: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  .types legend {
+    padding: 0 var(--space-1);
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  .types .check {
+    grid-column: auto;
+  }
+
+  .type-error {
+    margin-top: var(--space-1);
+    font-size: 0.8rem;
+    color: var(--danger);
   }
 
   .preview {

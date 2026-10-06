@@ -2,7 +2,18 @@ import * as v from 'valibot';
 import type { ApplyReport } from '../engine-core/apply';
 import { compileRule, type RefusalReason } from '../engine-core/compile';
 import { compileMatcher, countWildcards } from '../rule-model/match';
-import { GroupSchema, RESOURCE_TYPES, RuleSchema, type Action, type Group, type HeaderOp, type Match, type Rule, type Workspace } from '../rule-model/schema';
+import {
+  GroupSchema,
+  RESOURCE_TYPES,
+  RuleSchema,
+  type Action,
+  type Group,
+  type HeaderOp,
+  type Match,
+  type ResourceType,
+  type Rule,
+  type Workspace,
+} from '../rule-model/schema';
 import { REASON_LABELS } from './report-view';
 
 type NewId = () => string;
@@ -94,11 +105,38 @@ export function requestScope(rule: Rule): RequestScope {
   return types.size === RESOURCE_TYPES.length && RESOURCE_TYPES.every((t) => types.has(t)) ? 'all' : 'custom';
 }
 
-/** `custom` keeps the rule's existing list (there's no per-type editor yet). */
+/** `custom` turns the current effective set into an explicit, editable list. */
 export function withRequestScope(rule: Rule, scope: RequestScope): Rule {
-  if (scope === 'custom') return rule;
+  if (scope === 'custom') return { ...rule, resourceTypes: effectiveTypes(rule) };
   return clean({ ...rule, resourceTypes: scope === 'all' ? [...RESOURCE_TYPES] : undefined });
 }
+
+/** What the rule actually applies to; omitted `resourceTypes` is DNR's "everything but page loads". */
+export const effectiveTypes = (rule: Rule): ResourceType[] => rule.resourceTypes ?? RESOURCE_TYPES.filter((t) => t !== 'main_frame');
+
+/** Toggles one request type, keeping the canonical order. May leave the list empty (a validation error). */
+export function setResourceType(rule: Rule, type: ResourceType, on: boolean): Rule {
+  const current = new Set(effectiveTypes(rule));
+  if (on) current.add(type);
+  else current.delete(type);
+  return { ...rule, resourceTypes: RESOURCE_TYPES.filter((t) => current.has(t)) };
+}
+
+export const RESOURCE_TYPE_LABELS: Record<ResourceType, string> = {
+  main_frame: 'Page loads (main_frame)',
+  sub_frame: 'Iframes (sub_frame)',
+  stylesheet: 'Stylesheets',
+  script: 'Scripts',
+  image: 'Images',
+  font: 'Fonts',
+  object: 'Plugins (object)',
+  xmlhttprequest: 'fetch / XHR',
+  ping: 'Pings & beacons',
+  csp_report: 'CSP reports',
+  media: 'Audio & video',
+  websocket: 'WebSockets',
+  other: 'Other',
+};
 
 /** Comma/space separated hosts → `pageDomains`. Forgiving: pasted URLs and `*.` prefixes are reduced to hosts. */
 export function normalizeDomains(text: string): string[] | undefined {
@@ -179,6 +217,7 @@ export function validateRule(rule: Rule): RuleValidation {
     const errors = issuesByField(parsed.issues);
     if (rule.match.pattern.trim() === '') errors['match.pattern'] = 'Enter a URL pattern, e.g. https://cdn.example.com/*.js';
     if (rule.action.type === 'redirect' && rule.action.to.trim() === '') errors['action.to'] = 'Enter where matching requests should go';
+    if (rule.resourceTypes?.length === 0) errors.resourceTypes = 'Pick at least one request type';
     return { errors, warnings: {} };
   }
 
