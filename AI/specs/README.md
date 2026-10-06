@@ -1,6 +1,6 @@
 # Specs (Spec-Driven Development)
 
-**Last verified:** 2026-10-06
+**Last verified:** 2026-10-07
 
 Specs live **only** here. Status is **Draft** until a human Approves. See project skill `spec-workflow`.
 
@@ -16,7 +16,7 @@ Specs live **only** here. Status is **Draft** until a human Approves. See projec
 | 6 | [local-bridge](local-bridge.md) | Draft |
 | 7 | [workspace-ui](workspace-ui.md) | **Approved — slices 1–4** (popup, editor, rule tester, remainder) (Hamza, 2026-10-06) |
 | 8 | [observability](observability.md) | **Approved** — badge + match log (Hamza, 2026-10-06). Local Bridge still Draft |
-| 9 | [distribution](distribution.md) | Draft |
+| 9 | [distribution](distribution.md) | **Approved — CI + packaging** (Hamza, 2026-10-07). Local Bridge and store-API upload stay out |
 
 Capability overview: [000-capability-map.md](000-capability-map.md).
 

@@ -1,7 +1,7 @@
 # Capability map
 
 **Status:** Draft  
-**Last updated:** 2026-10-06
+**Last updated:** 2026-10-07
 
 ## Product intent
 
@@ -32,3 +32,5 @@ Detour lets developers **point production at their code** via rules compiled int
 `rule-model` → `engine-core` → (`page-inject` ∥ `api-mock`) → `engine-deep` → `local-bridge` → `workspace-ui` → `observability` → `distribution`
 
 UI may prototype against mocks earlier, but production wiring follows Approved specs in order.
+
+`distribution` is Approved for CI and packaging only (Hamza, 2026-10-07). `local-bridge` is still Draft, so this slice does not add `cli/`.

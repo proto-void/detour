@@ -14,6 +14,7 @@ Implementation plans live **only** here. Numbered `NNN-short-name.md`.
 | [007-workspace-ui-remainder.md](007-workspace-ui-remainder.md) | Done |
 | [008-engine-deep-body.md](008-engine-deep-body.md) | Done |
 | [009-observability-badge-log.md](009-observability-badge-log.md) | Done |
+| [010-distribution-ci-packaging.md](010-distribution-ci-packaging.md) | Done |
 
 New plans only for **Approved** specs (`spec-workflow` gate).
 
