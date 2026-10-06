@@ -269,6 +269,7 @@ Detour needs repeatable checks and store zips with **$0** recurring ops and no p
 - Firefox UI smoke stays manual (BiDi cannot open extension pages)
 - `chrome@stable` moves. 2026-10-07 it was 155, and `CI=1` e2e was 62/62. A future stable can fail the smoke test without a product change
 - The installed manifest name stays `Detour`. The store listing doc uses `Detour — Resource Override`
+- Amended 2026-10-07: `@detour/cli` exists and CI runs its tests. The release job still attaches extension zips only. No npm publish
 
 ---
 

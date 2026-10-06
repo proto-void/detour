@@ -35,13 +35,13 @@ Resource Override `fileOverride` still imports as inline `overrideBody`. Those e
 
 ## Acceptance criteria
 
-- [ ] CLI `detour bridge <folder> [--port 47321]` listens on `127.0.0.1` only. There is no flag to bind `0.0.0.0`.
-- [ ] Each start prints a new 64-hex token. `GET /health` with `Authorization: Bearer <token>` returns `{ ok, rootLabel }` where `rootLabel` is the folder’s basename, not a full path.
-- [ ] `GET /d/<token>/<base64url-path>` serves that file. The URL does not include the filename, so a pattern like `*.js` does not also match the bridge and loop. Wrong token, traversal, symlink escape, and directories are 404. No directory listing.
-- [ ] The extension stores the token only after the user connects and `/health` succeeds (`storage.local.bridgeSession`). Disconnect clears it.
-- [ ] While connected and healthy, an enabled `serveLocal` rule compiles to a DNR redirect. Refusal messages and the match log do not contain the token or file bytes.
-- [ ] Not connected → `bridge-not-connected`. Health check fails → `bridge-down`. The production URL is left alone.
-- [ ] Package name `@detour/cli` (unscoped `detour` is taken). Not published to npm in this slice.
+- [x] CLI `detour bridge <folder> [--port 47321]` listens on `127.0.0.1` only. There is no flag to bind `0.0.0.0`.
+- [x] Each start prints a new 64-hex token. `GET /health` with `Authorization: Bearer <token>` returns `{ ok, rootLabel }` where `rootLabel` is the folder’s basename, not a full path.
+- [x] `GET /d/<token>/<base64url-path>` serves that file. The URL does not include the filename, so a pattern like `*.js` does not also match the bridge and loop. Wrong token, traversal, symlink escape, and directories are 404. No directory listing.
+- [x] The extension stores the token only after the user connects and `/health` succeeds (`storage.local.bridgeSession`). Disconnect clears it.
+- [x] While connected and healthy, an enabled `serveLocal` rule compiles to a DNR redirect. Refusal messages and the match log do not contain the token or file bytes.
+- [x] Not connected → `bridge-not-connected`. Health check fails → `bridge-down`. The production URL is left alone.
+- [x] Package name `@detour/cli` (unscoped `detour` is taken). Not published to npm in this slice.
 
 ## Browser support table
 

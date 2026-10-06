@@ -22,7 +22,7 @@ Rules → RuleCompiler → Core DNR            (built: engine-core)
 | `page-inject` | JS/CSS inject via scripting + userScripts | `extension/src/page-inject/` + `entrypoints/bridge.content.ts` |
 | `api-mock` | fetch/XHR mocks in the page's MAIN world | same module: `mock-runtime.ts` + `entrypoints/mock-main.content.ts` |
 | `engine-deep` | Body override: Chrome debugger Fetch, Firefox filterResponseData | `extension/src/engine-deep/` |
-| `local-bridge` | Node CLI loopback file server | — |
+| `local-bridge` | Node CLI on 127.0.0.1; `serveLocal` compiles to a DNR redirect | `cli/` + `extension/src/local-bridge/` |
 | `workspace-ui` | Popup, options, recipes, tester, RO import | `extension/src/workspace-ui/` (logic) + `src/entrypoints/popup/` (slice 1) + `src/entrypoints/options/` (slice 2) |
 | `observability` | Toolbar badge and session match log (no rule-body telemetry) | `extension/src/observability/` |
 | `distribution` | Store listing docs, permission rationale, CI and zip artifacts | `.github/workflows/ci.yml`, `docs/distribution/`, `extension/scripts/install-chrome.mjs` |
@@ -84,7 +84,24 @@ enabled workspace
 - First matching enabled rule wins. Omitted resource types match everything except `main_frame`. A document whose frame is unknown matches only when the rule lists both `main_frame` and `sub_frame`, so a page is not replaced by accident.
 - Replaced responses drop `content-encoding`, `content-length`, and `transfer-encoding`. Status and other headers stay. Optional content type replaces `Content-Type`.
 - Cancelling Chrome’s debugging banner leaves that tab detached until the body-rule plan changes. DevTools on the tab detaches Detour.
-- RO `fileOverride` maps to `overrideBody`. `fileInject` stays skipped.
+- RO `fileOverride` maps to `overrideBody` (the export holds file bytes). `fileInject` stays skipped. A file on disk is `serveLocal`, not this import.
+
+## Local Bridge (as built, ADR-012)
+
+```
+detour bridge <folder>  →  listen 127.0.0.1 only, print a new 64-hex token
+user connects on the rules page  →  storage.local.bridgeSession after GET /health
+enabled serveLocal { path }
+  → up: DNR redirect to http://127.0.0.1:<port>/d/<token>/<base64url path>
+  → not connected: refuse bridge-not-connected
+  → health fails: refuse bridge-down
+  → production URL is not redirected in either refusal
+```
+
+- The filename is not in the bridge URL, so a pattern like `*.js` does not also match the bridge and loop.
+- Refusal text and the match log do not contain the token or file bytes. The token is in the redirect URL the page can see.
+- No `--host`. The filesystem root is refused. Symlinks that leave the folder are 404.
+- Inline `overrideBody` is unchanged. It keeps the original URL when a page CSP would block `http://127.0.0.1`.
 
 ## UI (workspace-ui)
 
@@ -123,7 +140,7 @@ DNR onRuleMatchedDebug (unpacked Chromium) or getMatchedRules (packed fallback)
 
 - `Workspace { groups: Group[] }`, `Group { id, name, enabled, pageDomains?, importedFrom?, importKey?, rules }` (`pageDomains` = run only on pages of these hosts + subdomains; `importedFrom { file, sha256 }` = provenance, so re-importing that file replaces the group, ADR-007), `Rule { id, enabled, match, action, resourceTypes?, caseSensitive?, note?, importKey? }`.
 - `match`: `glob` (whole URL, `*` = any run incl. `/`, lazy captures) or `regex` (unanchored, RE2 subset).
-- `action`: `redirect { to }` (glob: `*` in `to` = Nth captured wildcard; regex: `\1`–`\9`), `block`, `modifyHeaders { request[], response[] }` with `set | append | remove`, `injectJs` / `injectCss` `{ source: {kind:'inline',code} | {kind:'url',url}, runAt, allFrames, world? }`, `mock { method, status, headers[], body, delayMs }`, `overrideBody { body, contentType? }` (inline UTF-8, 1 MB). Inject match is the page URL; mock and body match the request URL. `resourceTypes` is ignored for inject and mock.
+- `action`: `redirect { to }` (glob: `*` in `to` = Nth captured wildcard; regex: `\1`–`\9`), `block`, `modifyHeaders { request[], response[] }` with `set | append | remove`, `injectJs` / `injectCss` `{ source: {kind:'inline',code} | {kind:'url',url}, runAt, allFrames, world? }`, `mock { method, status, headers[], body, delayMs }`, `overrideBody { body, contentType? }` (inline UTF-8, 1 MB), `serveLocal { path }` (relative to the bridge folder). Inject match is the page URL; mock, body, and serveLocal match the request URL. `resourceTypes` is ignored for inject and mock.
 - `importKey` on groups and rules: stable identity inside an import (RO id, else position + type + match). Re-import copies `enabled` from the match.
 - **Priority**: flattened position over enabled rules; DNR `priority = n - index` (unique, ≥ 1). Block/redirect: the earliest matching rule wins. modifyHeaders: every matching rule applies, and on the same header the earlier rule wins.
 - Export file = storage envelope `{ v: 1, data }`. Import detects RO by array-shaped `data` / `ruleGroups`.
@@ -137,4 +154,4 @@ DNR onRuleMatchedDebug (unpacked Chromium) or getMatchedRules (packed fallback)
 ## Packages
 
 - `extension/` — WXT app (pnpm, standalone package)
-- `cli/` — Local Bridge (not created until its spec is Approved)
+- `cli/` — `@detour/cli`, Node 24 type-stripping, no compile step. Root `pnpm-workspace.yaml` covers `extension/` and `cli/`

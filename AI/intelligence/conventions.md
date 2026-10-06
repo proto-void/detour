@@ -24,7 +24,8 @@
 - Browser APIs are injected as narrow interfaces (`DnrApi`, `StorageAreaLike`) so logic is testable without a browser; cast `browser.*` once at the entrypoint
 - Fallible pure functions return `{ ok: true, value } | { ok: false, errors }`; user-facing errors carry a dot path (`data.groups.0.rules.2.match.pattern: …`)
 - Refusals / import notices use a stable `reason`/`code` string plus a human message; never include rule bodies or file contents
-- Tests colocated as `*.test.ts`; fixtures in `__fixtures__/`; DNR fake in `src/test/fake-dnr.ts`; storage via `fakeBrowser` from `wxt/testing/fake-browser`
+- Extension tests colocated as `*.test.ts` (Vitest); fixtures in `__fixtures__/`; DNR fake in `src/test/fake-dnr.ts`; storage via `fakeBrowser` from `wxt/testing/fake-browser`
+- CLI tests are `node:test` under `cli/src/*.test.ts`. The workspace lockfile is the root `pnpm-lock.yaml`
 - Match WXT + Svelte 5 idioms; no drive-by refactors
 - UI: dark default; light is an explicit `storage.local` `theme` value; accessibility for popup toggles (On/Off text, not color alone)
 

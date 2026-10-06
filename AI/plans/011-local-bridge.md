@@ -1,6 +1,6 @@
 # 011 — Local Bridge
 
-**Status:** In progress  
+**Status:** Done  
 **Date:** 2026-10-07  
 **Spec:** [local-bridge](../specs/local-bridge.md) — Approved (Hamza, 2026-10-07)
 
@@ -20,16 +20,23 @@ See the Approved spec and [ADR-012](../DECISIONS.md). Short version:
 
 ## Tasks
 
-- [ ] T1 Spec Approved, this plan, ADR-012
-- [ ] T2 CLI server, path jail, tests, workspace wiring
-- [ ] T3 `serveLocal` schema, compiler, connect UI, background probe
-- [ ] T4 Unit tests, typecheck, Chrome + Firefox builds
-- [ ] T5 Chrome e2e of one bridge-backed script; note the Firefox gap
-- [ ] T6 KB write-back
+- [x] T1 Spec Approved, this plan, ADR-012
+- [x] T2 CLI server, path jail, tests, workspace wiring
+- [x] T3 `serveLocal` schema, compiler, connect UI, background probe
+- [x] T4 Unit tests, typecheck, Chrome + Firefox builds
+- [x] T5 Chrome e2e of one bridge-backed script; note the Firefox gap
+- [x] T6 KB write-back
 
 ## Out of scope
 
 In-place body reads from the bridge, HTTPS certificates, npm publish, binding non-loopback hosts, changing the RO file-override importer.
+
+## Results (2026-10-07)
+
+- 18 CLI tests (`node --test`); 342 extension tests; typecheck clean; chrome-mv3 and firefox-mv3 builds clean
+- Chrome for Testing 155: `pnpm e2e:chrome` 65/65. After Connect, `*:8001/bridge.js` ran `window.BRIDGE = "DISK"` from the CLI folder
+- Firefox: same DNR redirect, no extra permission. BiDi still cannot open extension pages, so the connect button was not driven there
+- Deviation: none on protocol. In-place body fulfill (keep the original URL under a strict CSP) is left as a follow-up
 
 ## Verification
 

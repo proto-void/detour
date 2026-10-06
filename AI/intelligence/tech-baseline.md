@@ -31,12 +31,13 @@
 ## Tooling (ADR-004)
 
 - **pnpm 12** via `packageManager` field; run with `corepack pnpm …` (no global pnpm needed)
-- `extension/` is a standalone package; add a root `pnpm-workspace.yaml` when `cli/` exists
+- Root `pnpm-workspace.yaml` includes `extension/` and `cli/`. One lockfile: `pnpm-lock.yaml`. Install from the repo root
 - Scripts: `test`, `typecheck` (`wxt prepare && tsc --noEmit && svelte-check --fail-on-warnings`), `build`, `build:firefox`, `dev`, `dev:firefox`, `zip`, `zip:firefox`, `e2e:chrome`, `chrome:install`, `ci`
 - Node **24** (`.node-version`). CI installs pnpm 12.9.1 with `pnpm/action-setup` so it matches `packageManager` without Corepack’s signature check
 - Output: `extension/.output/{chrome-mv3,firefox-mv3}/` (gitignored, as are `.wxt/` and `node_modules/`)
 - Zips (also gitignored): `detour-<version>-chrome.zip`, `detour-<version>-firefox.zip`, `detour-<version>-sources.zip`. `zip.name` is `detour` so the scoped package name is not collapsed to `detourextension`
-- E2E: `pnpm build && CHROME=/path/to/chrome pnpm e2e:chrome`. puppeteer-core `launch({ pipe: true, enableExtensions: true })` + `installExtension`. When `CI` is set, args add `--no-sandbox`, `--disable-dev-shm-usage`, `--disable-gpu`. Chrome for Testing 155 stable, 2026-10-07, `CI=1`: 62/62
+- E2E: `pnpm build && CHROME=/path/to/chrome pnpm e2e:chrome` from `extension/`. puppeteer-core `launch({ pipe: true, enableExtensions: true })` + `installExtension`. When `CI` is set, args add `--no-sandbox`, `--disable-dev-shm-usage`, `--disable-gpu`. Chrome for Testing 155 stable, 2026-10-07: 65/65, including one script served by `@detour/cli` on port 8099
+- **CLI:** `@detour/cli`. Node 24 runs `cli/src/cli.ts` with type stripping (`node --experimental-strip-types`, or `pnpm --filter @detour/cli exec detour bridge <folder>`). Tests are `node --test`. Default port 47321. No npm publish
 - CI: `.github/workflows/ci.yml` on pull requests, `main`, and `v*` tags. The tag job attaches the three zips to a GitHub Release with `github.token`. No store API secrets. No remote in the workspace yet, so the workflow has not run on GitHub
 
 ## Ops / cost

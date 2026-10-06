@@ -19,22 +19,26 @@ Read **[AI/README.md](AI/README.md)** — master router for product strategy, pr
 
 ## Stack
 
-WXT + TypeScript + Svelte 5 + CodeMirror 6 + valibot. Local Bridge (Node CLI) is still a Draft spec. See [AI/DECISIONS.md](AI/DECISIONS.md) and [AI/intelligence/tech-baseline.md](AI/intelligence/tech-baseline.md).
+WXT + TypeScript + Svelte 5 + CodeMirror 6 + valibot. Local Bridge is an optional Node CLI on `127.0.0.1` (`cli/`). See [AI/DECISIONS.md](AI/DECISIONS.md) and [cli/README.md](cli/README.md).
 
 ## Workspace status
 
-What's built is tracked in [AI/PROGRESS.md](AI/PROGRESS.md). Extension code is in [`extension/`](extension/). No `cli/` yet.
+What's built is tracked in [AI/PROGRESS.md](AI/PROGRESS.md). Extension code is in [`extension/`](extension/). The bridge is in [`cli/`](cli/).
 
 ```sh
-cd extension
 corepack pnpm install
-corepack pnpm test          # Vitest
-corepack pnpm typecheck     # tsc + svelte-check
-corepack pnpm build         # .output/chrome-mv3
-corepack pnpm build:firefox # .output/firefox-mv3
-CHROME=$(node scripts/install-chrome.mjs) corepack pnpm e2e:chrome
-corepack pnpm zip           # .output/detour-<version>-chrome.zip
-corepack pnpm zip:firefox   # firefox zip + sources zip
+corepack pnpm --filter @detour/cli test
+corepack pnpm --filter @detour/extension test
+corepack pnpm --filter @detour/extension typecheck
+corepack pnpm --filter @detour/extension build
+corepack pnpm --filter @detour/extension build:firefox
+cd extension && CHROME=$(node scripts/install-chrome.mjs) corepack pnpm e2e:chrome
+```
+
+Serve a folder for **Serve local file** rules (token changes every start; listens on `127.0.0.1` only):
+
+```sh
+corepack pnpm --filter @detour/cli exec detour bridge ./dist
 ```
 
 CI runs those checks on pull requests and `main`. Packaging, store-listing copy, and how to push are in [docs/distribution/README.md](docs/distribution/README.md).

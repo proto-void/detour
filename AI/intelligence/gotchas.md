@@ -103,7 +103,7 @@
 ## `data:` redirects
 
 - RO mv3 file overrides use `data:` URLs, which hit **CSP**, opaque responses, and CORS mode limits (`no-cors` quirks; see RO #32)
-- Body override (`overrideBody`, ADR-009) keeps the original URL. Local Bridge is still the path for files on disk. Do not emit giant `data:` bodies
+- Body override (`overrideBody`, ADR-009) keeps the original URL. Files on disk use `serveLocal` and the Local Bridge. Do not emit giant `data:` bodies
 
 ## CORS / preflight
 
@@ -172,6 +172,17 @@
 - `tabs.onUpdated` often includes the URL again when `status` is `complete`. Reset the per-tab count on `loading` or a real URL change, not on complete, or the matches from that navigation fall outside the count. Match timestamps can precede `onUpdated` by a short time (`NAV_SLACK_MS` is 2s). The clock is in the service worker and resets when the worker restarts
 - The session log can hold request URLs, including tokens in a query string. It stays in `storage.session` on the device. Labels are the group name and match pattern. Never store or ship action bodies
 - Inline JS runs in the MAIN world and cannot message the extension, so those injections are not log rows. Options `h2` text is uppercased in `innerText` (`text-transform`); assert `textContent` for "Recent matches"
+
+## Local Bridge
+
+- Bind is the literal `127.0.0.1`. There is no `--host`. `localhost` may resolve to `::1`, which this process does not listen on
+- The token is in the redirect URL (`/d/<token>/<base64url>`). The page you override can see it. Other origins cannot guess it. Restarting the CLI rotates it
+- `Access-Control-Allow-Private-Network` is sent only after the token matches. A wrong token is 404 with no CORS opt-in
+- A pattern that also matches `http://127.0.0.1:<port>/…` is refused as a redirect loop (`*`, or anything that covers every URL). `https://cdn.example.com/*.js` does not, because the bridge path has no filename
+- A page Content-Security-Policy that does not allow `http://127.0.0.1` can block the redirected script. `overrideBody` still keeps the original URL for pasted text
+- The CLI refuses the filesystem root. A symlink inside the folder that points outside is 404. Health returns the folder basename, not a full path
+- `bridgeSession` lives in `storage.local`. Disconnect stores null. Apply probes only when an enabled `serveLocal` rule exists
+- Node 24 runs the CLI with `--experimental-strip-types`. Tests are `node --test` in `cli/`, not Vitest
 
 ## CI and packaging
 

@@ -1,6 +1,6 @@
 # Browser matrix
 
-**Last verified:** 2026-10-07 (DNR quotas, domain conditions, page engines, body override, badge and match log. Chrome for Testing 155 stable e2e 62/62 with `CI=1`. Firefox 157 importer, editor, inject, mock, tester). Firefox 157 BiDi still cannot open `moz-extension://` pages, so the live filter path and the Firefox match-log UI were not driven, and CI does not run a Firefox UI smoke.
+**Last verified:** 2026-10-07 (DNR quotas, domain conditions, page engines, body override, badge and match log, Local Bridge redirect. Chrome for Testing 155 e2e 65/65. Firefox 157 importer, editor, inject, mock, tester). Firefox 157 BiDi still cannot open `moz-extension://` pages, so the live filter path, the Firefox match-log UI, and a Firefox bridge click-through were not driven. CI does not run a Firefox UI smoke. The bridge itself is the same DNR redirect on both browsers.
 
 ## Supported targets (product intent)
 
@@ -63,6 +63,15 @@ Verified on Chrome for Testing 154: after Allow debugger, one script body became
 | Page, mock, body rows | Logged locally | Logged locally | — |
 
 Chrome `debugger` is unchanged. The log is `storage.session` only.
+
+## Local Bridge
+
+| Capability | Chrome / Edge / Brave 120+ | Firefox 128+ | Safari 17+ |
+|------------|----------------------------|--------------|------------|
+| Serve a file from disk | DNR redirect to `http://127.0.0.1` after the user connects | Same redirect. No extra permission | Not verified |
+| Bridge process | Node CLI on `127.0.0.1` only | Same process | Same process |
+
+Verified on Chrome for Testing 155: after Connect, `*:8001/bridge.js` ran `window.BRIDGE = "DISK"` from the CLI folder (`pnpm e2e:chrome`, 65/65). A page CSP that blocks `http://127.0.0.1` can still reject that script. Inline `overrideBody` keeps the original URL.
 
 ## Notes
 
