@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decodePatchList, encodePatchList, injectPatchMeta, installIntegrityPatch, resolveAssignedIntegrity, type IntegrityPatch, type PatchRoot } from './integrity-patch';
+import { decodePatchList, encodePatchList, injectPatchMeta, installIntegrityPatch, MARKUP_BYTE_CAP, resolveAssignedIntegrity, rewriteMarkupIntegrity, type IntegrityPatch, type PatchRoot } from './integrity-patch';
 import { integrityMetadata } from './sri';
 
 const BAD = 'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
@@ -46,6 +46,34 @@ describe('resolveAssignedIntegrity', () => {
   });
 });
 
+describe('rewriteMarkupIntegrity', () => {
+  const page = 'http://127.0.0.1:8001/sri-html.html';
+
+  it('rewrites a matching script and leaves the sibling hash', async () => {
+    const hash = await integrityMetadata(encoder.encode('window.SRI_HTML = "LOCAL";'));
+    const markup = `<script src="/sri-html.js" integrity="${BAD}"></script><script src="/sri-html-bad.js" integrity="${BAD}"></script>`;
+    const next = rewriteMarkupIntegrity(markup, page, '127.0.0.1', [patch({ integrity: hash, match: { kind: 'glob', pattern: '*:8001/sri-html.js' } })]);
+    expect(next).toContain(`src="/sri-html.js" integrity="${hash}"`);
+    expect(next).toContain(`src="/sri-html-bad.js" integrity="${BAD}"`);
+  });
+
+  it('leaves comments, script text, and an empty list unchanged', async () => {
+    const hash = await integrityMetadata(encoder.encode('kept'));
+    const list = [patch({ integrity: hash, match: { kind: 'glob', pattern: '*:8001/sri-html.js' } })];
+    const comment = `<!-- <script src="/sri-html.js" integrity="${BAD}"></script> -->`;
+    expect(rewriteMarkupIntegrity(comment, page, '127.0.0.1', list)).toBe(comment);
+    const text = `<script>var x = "integrity=${BAD}"</script>`;
+    expect(rewriteMarkupIntegrity(text, page, '127.0.0.1', list)).toBe(text);
+    const markup = `<script src="/sri-html.js" integrity="${BAD}"></script>`;
+    expect(rewriteMarkupIntegrity(markup, page, '127.0.0.1', [])).toBe(markup);
+  });
+
+  it('does not scan markup over the document ceiling', () => {
+    const markup = `${'x'.repeat(MARKUP_BYTE_CAP)}<script src="/sri-html.js" integrity="${BAD}"></script>`;
+    expect(rewriteMarkupIntegrity(markup, page, '127.0.0.1', [patch()])).toBe(markup);
+  });
+});
+
 describe('injectPatchMeta', () => {
   it('places the list after the doctype and replaces an older copy', () => {
     const once = injectPatchMeta('<!doctype html><title>t</title><script src="/a.js"></script>', 'abc');
@@ -70,6 +98,8 @@ function createRealm(initial: string | null) {
   }
   class Element extends Node {
     attrs: Record<string, string> = {};
+    html = '';
+    adjacent = '';
     setAttribute(name: string, value: string) {
       this.attrs[name.toLowerCase()] = String(value);
     }
@@ -81,6 +111,15 @@ function createRealm(initial: string | null) {
     }
     prepend(...nodes: Node[]) {
       for (const node of nodes) this.appendChild(node);
+    }
+    get innerHTML() {
+      return this.html;
+    }
+    set innerHTML(value: string) {
+      this.html = value;
+    }
+    insertAdjacentHTML(_position: string, html: string) {
+      this.adjacent = html;
     }
   }
   class HTMLScriptElement extends Element {
@@ -149,6 +188,7 @@ function createRealm(initial: string | null) {
     root: root as unknown as PatchRoot,
     HTMLScriptElement,
     HTMLLinkElement,
+    Element,
     Node,
     fireObserver() {
       observer?.();
@@ -232,5 +272,34 @@ describe('installIntegrityPatch', () => {
     script.src = 'http://127.0.0.1:8001/app.css';
     script.integrity = BAD;
     expect(script.getAttribute('integrity')).toBe(BAD);
+  });
+
+  it('rewrites integrity in innerHTML and insertAdjacentHTML, and leaves a sibling hash', async () => {
+    const hash = await integrityMetadata(encoder.encode('window.SRI_HTML = "LOCAL";'));
+    const realm = createRealm(encodePatchList([patch({ integrity: hash, match: { kind: 'glob', pattern: '*:8001/sri-html.js' } })]));
+    installIntegrityPatch(realm.root);
+    const markup = `<script src="/sri-html.js" integrity="${BAD}"></script><script src="/sri-html-bad.js" integrity="${BAD}"></script>`;
+    const host = new realm.Element();
+    host.innerHTML = markup;
+    expect(host.innerHTML).toContain(`integrity="${hash}"`);
+    expect(host.innerHTML).toContain(`sri-html-bad.js" integrity="${BAD}"`);
+
+    const adjacent = new realm.Element();
+    adjacent.insertAdjacentHTML('beforeend', markup);
+    expect(adjacent.adjacent).toContain(`integrity="${hash}"`);
+    expect(adjacent.adjacent).toContain(`sri-html-bad.js" integrity="${BAD}"`);
+  });
+
+  it('passes a non-string through and keeps the page hash when no list is published', () => {
+    const realm = createRealm(null);
+    installIntegrityPatch(realm.root);
+    const host = new realm.Element();
+    const trusted = { toString: () => `<script src="/sri-html.js" integrity="${BAD}"></script>` };
+    host.innerHTML = trusted as unknown as string;
+    expect(host.innerHTML).toBe(trusted as unknown as string);
+
+    const plain = new realm.Element();
+    plain.insertAdjacentHTML('beforeend', `<script src="/sri-html.js" integrity="${BAD}"></script>`);
+    expect(plain.adjacent).toContain(`integrity="${BAD}"`);
   });
 });

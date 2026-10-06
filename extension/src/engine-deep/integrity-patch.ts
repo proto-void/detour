@@ -160,7 +160,8 @@ const INSTALLED = Symbol.for('detour.sri.installed');
 
 /**
  * MAIN-world hook. Substitutes a published hash when the page assigns `integrity`
- * to a matching script or stylesheet. Other assignments are written through.
+ * to a matching script or stylesheet, and when that hash is carried in a string
+ * passed to `innerHTML` or `insertAdjacentHTML`. Other assignments are written through.
  */
 export function installIntegrityPatch(root: PatchRoot): void {
   const marked = root as unknown as Record<symbol, boolean>;
@@ -261,6 +262,17 @@ export function installIntegrityPatch(root: PatchRoot): void {
   hookInsert(root.Node.prototype, 'insertBefore', (node) => apply(node));
   hookNodes(root.Element.prototype, 'append', (node) => apply(node));
   hookNodes(root.Element.prototype, 'prepend', (node) => apply(node));
+
+  // A non-string (TrustedHTML) is passed through. Stringifying it would bypass Trusted Types.
+  const rewriteMarkupValue = (value: unknown): unknown => {
+    if (applying || typeof value !== 'string') return value;
+    if (value.length > MARKUP_BYTE_CAP || !/integrity/i.test(value)) return value;
+    const list = patches();
+    if (list.length === 0) return value;
+    return rewriteMarkupIntegrity(value, root.location.href, siteHost(root.location), list);
+  };
+  hookMarkupSetter(root.Element.prototype, 'innerHTML', rewriteMarkupValue);
+  hookMarkupMethod(root.Element.prototype, 'insertAdjacentHTML', rewriteMarkupValue);
 
   if (root.document.readyState && root.document.readyState !== 'loading') {
     snapshot();
@@ -370,4 +382,201 @@ function hookNodes(proto: object, name: 'append' | 'prepend', prepare: (node: ob
     for (const node of nodes) if (node && typeof node === 'object') prepare(node);
     return native.call(this, ...nodes);
   };
+}
+
+/** Same ceiling as document rewrite. Longer markup keeps the page's hashes. */
+export const MARKUP_BYTE_CAP = 2_000_000;
+
+/**
+ * Replace `integrity` on script and stylesheet tags in a markup fragment.
+ * Does not embed the hash list. An empty list or an oversized string is returned unchanged.
+ */
+export function rewriteMarkupIntegrity(markup: string, pageUrl: string, pageHost: string, patches: readonly IntegrityPatch[]): string {
+  if (patches.length === 0 || markup.length > MARKUP_BYTE_CAP || !/integrity/i.test(markup)) return markup;
+  return rewriteTags(markup, pageUrl, pageHost, patches);
+}
+
+function hookMarkupSetter(proto: object, name: 'innerHTML', rewrite: (value: unknown) => unknown) {
+  const desc = Object.getOwnPropertyDescriptor(proto, name);
+  if (!desc?.set || !desc.get) return;
+  const nativeSet = desc.set;
+  try {
+    Object.defineProperty(proto, name, {
+      configurable: true,
+      enumerable: desc.enumerable ?? true,
+      get() {
+        return desc.get!.call(this);
+      },
+      set(value: unknown) {
+        nativeSet.call(this, rewrite(value));
+      },
+    });
+  } catch {
+    /* A non-configurable setter leaves the page's markup unchanged. */
+  }
+}
+
+function hookMarkupMethod(proto: object, name: 'insertAdjacentHTML', rewrite: (value: unknown) => unknown) {
+  const desc = Object.getOwnPropertyDescriptor(proto, name);
+  const native = desc?.value as ((this: object, position: unknown, text: unknown) => unknown) | undefined;
+  if (typeof native !== 'function') return;
+  try {
+    (proto as Record<string, unknown>)[name] = function (this: object, position: unknown, text: unknown) {
+      return native.call(this, position, rewrite(text));
+    };
+  } catch {
+    /* A non-configurable method leaves the page's markup unchanged. */
+  }
+}
+
+function rewriteTags(html: string, pageUrl: string, pageHost: string, patches: readonly IntegrityPatch[]): string {
+  const parts: string[] = [];
+  let i = 0;
+  while (i < html.length) {
+    if (html.startsWith('<!--', i)) {
+      const end = html.indexOf('-->', i + 4);
+      const stop = end === -1 ? html.length : end + 3;
+      parts.push(html.slice(i, stop));
+      i = stop;
+      continue;
+    }
+    const name = tagAt(html, i, 'script') ? 'script' : tagAt(html, i, 'link') ? 'link' : undefined;
+    if (!name) {
+      const next = html.indexOf('<', i + (html[i] === '<' ? 1 : 0));
+      if (html[i] !== '<') {
+        if (next === -1) {
+          parts.push(html.slice(i));
+          break;
+        }
+        parts.push(html.slice(i, next));
+        i = next;
+        continue;
+      }
+      parts.push('<');
+      i += 1;
+      continue;
+    }
+    const end = tagEnd(html, i);
+    if (end === -1) {
+      parts.push(html.slice(i));
+      break;
+    }
+    const raw = html.slice(i, end);
+    const hash = hashForTag(name, raw, pageUrl, pageHost, patches);
+    parts.push(hash ? replaceAttribute(raw, hash) : raw);
+    i = end;
+    if (name === 'script') {
+      const close = closeTag(html, i, 'script');
+      parts.push(html.slice(i, close));
+      i = close;
+    }
+  }
+  return parts.join('');
+}
+
+function hashForTag(name: 'script' | 'link', raw: string, pageUrl: string, pageHost: string, patches: readonly IntegrityPatch[]): string | undefined {
+  if (attributeValue(raw, 'integrity') === undefined) return undefined;
+  const ref = name === 'link' ? attributeValue(raw, 'href') : attributeValue(raw, 'src');
+  const kind = subresourceKind(name, { rel: attributeValue(raw, 'rel'), as: attributeValue(raw, 'as'), hasUrl: Boolean(ref) });
+  if (!kind || !ref) return undefined;
+  let absolute: string;
+  try {
+    absolute = new URL(ref, pageUrl).href;
+  } catch {
+    return undefined;
+  }
+  return hashForAssignment(patches, absolute, kind, pageHost);
+}
+
+function tagAt(html: string, index: number, name: string): boolean {
+  if (html[index] !== '<') return false;
+  const slice = html.slice(index + 1, index + 1 + name.length);
+  if (slice.toLowerCase() !== name) return false;
+  const boundary = html[index + 1 + name.length];
+  return boundary === undefined || /[\s>/]/.test(boundary);
+}
+
+function tagEnd(html: string, index: number): number {
+  let quote = '';
+  for (let i = index; i < html.length; i++) {
+    const ch = html[i]!;
+    if (quote) {
+      if (ch === quote) quote = '';
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (ch === '>') return i + 1;
+  }
+  return -1;
+}
+
+function closeTag(html: string, index: number, name: string): number {
+  const token = `</${name}`;
+  const lower = html.toLowerCase();
+  let from = index;
+  while (from < html.length) {
+    const at = lower.indexOf(token, from);
+    if (at === -1) return html.length;
+    const boundary = html[at + token.length];
+    if (boundary === undefined || /[\s>]/.test(boundary)) {
+      const end = html.indexOf('>', at);
+      return end === -1 ? html.length : end + 1;
+    }
+    from = at + token.length;
+  }
+  return html.length;
+}
+
+function decodeAttr(value: string): string {
+  return value.replace(/&amp;/gi, '&').replace(/&quot;/gi, '"').replace(/&#0*39;|&apos;/gi, "'").replace(/&lt;/gi, '<').replace(/&gt;/gi, '>');
+}
+
+function attributeValue(tag: string, wanted: string): string | undefined {
+  const found = readAttribute(tag, wanted);
+  return found ? decodeAttr(found.value) : undefined;
+}
+
+/** Writes only a publishable SHA-384, so the replacement cannot break out of the attribute. */
+function replaceAttribute(tag: string, nextValue: string): string {
+  if (!isPublishableHash(nextValue)) return tag;
+  const found = readAttribute(tag, 'integrity');
+  if (!found) return tag;
+  return `${tag.slice(0, found.nameStart)}integrity="${nextValue}"${tag.slice(found.valueEnd)}`;
+}
+
+function readAttribute(tag: string, wanted: string): { value: string; nameStart: number; valueEnd: number } | undefined {
+  const lowerWanted = wanted.toLowerCase();
+  let i = 0;
+  while (i < tag.length && !/[\s>/]/.test(tag[i]!)) i++;
+  while (i < tag.length) {
+    while (i < tag.length && /\s/.test(tag[i]!)) i++;
+    if (i >= tag.length || tag[i] === '>' || tag[i] === '/') break;
+    const nameStart = i;
+    while (i < tag.length && !/[\s=/>]/.test(tag[i]!)) i++;
+    const name = tag.slice(nameStart, i).toLowerCase();
+    while (i < tag.length && /\s/.test(tag[i]!)) i++;
+    let value = '';
+    let valueEnd = i;
+    if (tag[i] === '=') {
+      i++;
+      while (i < tag.length && /\s/.test(tag[i]!)) i++;
+      const quote = tag[i];
+      if (quote === '"' || quote === "'") {
+        const end = tag.indexOf(quote, i + 1);
+        value = end === -1 ? tag.slice(i + 1) : tag.slice(i + 1, end);
+        valueEnd = end === -1 ? tag.length : end + 1;
+        i = valueEnd;
+      } else {
+        const start = i;
+        while (i < tag.length && !/[\s>]/.test(tag[i]!)) i++;
+        value = tag.slice(start, i);
+        valueEnd = i;
+      }
+    }
+    if (name === lowerWanted) return { value, nameStart, valueEnd };
+  }
+  return undefined;
 }

@@ -4,7 +4,8 @@ const INSTALLED = Symbol.for('detour.sri');
 
 /**
  * MAIN world, registered only while a body rule is armed.
- * Runs before page scripts so a bundler that sets `integrity` hits the hook.
+ * Runs before page scripts so a bundler that sets `integrity`, or inserts a tag
+ * with `innerHTML` / `insertAdjacentHTML`, hits the hook.
  */
 export default defineContentScript({
   matches: ['<all_urls>'],
