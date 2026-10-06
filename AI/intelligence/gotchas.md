@@ -176,10 +176,13 @@
 ## Local Bridge
 
 - Bind is the literal `127.0.0.1`. There is no `--host`. `localhost` may resolve to `::1`, which this process does not listen on
-- The token is in the redirect URL (`/d/<token>/<base64url>`). The page you override can see it. Other origins cannot guess it. Restarting the CLI rotates it
+- The token is in the redirect URL (`/d/<token>/<base64url>`) when response rewriting is off. The page you override can see it then. In-place mode fetches that URL from the extension, so the page does not. Other origins cannot guess it. Restarting the CLI rotates it
 - `Access-Control-Allow-Private-Network` is sent only after the token matches. A wrong token is 404 with no CORS opt-in
-- A pattern that also matches `http://127.0.0.1:<port>/…` is refused as a redirect loop (`*`, or anything that covers every URL). `https://cdn.example.com/*.js` does not, because the bridge path has no filename
-- A page Content-Security-Policy that does not allow `http://127.0.0.1` can block the redirected script. `overrideBody` still keeps the original URL for pasted text
+- A pattern that also matches `http://127.0.0.1:<port>/…` is refused as a redirect loop (`*`, or anything that covers every URL) while the rule is a redirect. In-place does not redirect, so that check is skipped. `https://cdn.example.com/*.js` does not loop either way, because the bridge path has no filename
+- A page Content-Security-Policy that does not allow `http://127.0.0.1` blocks the **redirect**. With Allow debugger / Allow response rewriting, `serveLocal` keeps the original URL and the extension reads the file itself (ADR-013). Verified on Chrome for Testing 155: `script-src 'self'` on port 8001 still ran the disk script, and the page did not request the bridge port
+- In-place responses are status 200 with `Cache-Control: no-store`. Files over 8 MiB are not copied into the service worker; the production response stays. A failed read does the same. On Firefox, headers may already have dropped `content-encoding` before that failure
+- Cancelling Chrome’s debugging banner leaves that tab on the production response until the body plan changes. There is no per-tab redirect fallback
+- Do not log the extension’s loopback `GET`. The token is in that path. The match log records the page URL only
 - The CLI refuses the filesystem root. A symlink inside the folder that points outside is 404. Health returns the folder basename, not a full path
 - `bridgeSession` lives in `storage.local`. Disconnect stores null. Apply probes only when an enabled `serveLocal` rule exists
 - Node 24 runs the CLI with `--experimental-strip-types`. Tests are `node --test` in `cli/`, not Vitest

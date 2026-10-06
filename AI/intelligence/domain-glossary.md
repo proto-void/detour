@@ -12,11 +12,11 @@
 | **regexFilter** | DNR regex match (scarce: ~1000 dynamic regex rules on Chrome) |
 | **Inject** | Page JS/CSS insertion via extension scripting APIs |
 | **Mock** | Intercept fetch/XHR in page world to return synthetic responses |
-| **Deep engine** | Chromium `chrome.debugger` / CDP Fetch, and Firefox `filterResponseData`, for `overrideBody` |
+| **Deep engine** | Chromium `chrome.debugger` / CDP Fetch, and Firefox `filterResponseData`, for `overrideBody` and in-place `serveLocal` |
 | **overrideBody** | Replace a response’s bytes in place. Inline UTF-8 text, optional content type. Not a DNR rule |
 | **Body consent** | `storage.local.bodyEngineConsent`. Set only by Allow debugger / Allow response rewriting. Absent means do not attach or filter |
 | **Local Bridge** | Optional Node CLI. Serves one folder on `127.0.0.1` after the user pastes its token. Not a remote server |
-| **serveLocal** | Rule action `{ path }` relative to that folder. Compiles to a DNR redirect while the bridge is up; otherwise refused |
+| **serveLocal** | Rule action `{ path }` relative to that folder. In-place body replace when response rewriting is allowed; otherwise a DNR redirect while the bridge is up. Refused when the bridge is down or disconnected |
 | **Recipe** | Built-in starter group (localhost / Vite, CORS headers, SPA fallback). It becomes a normal group; there is no separate recipe file |
 | **Rule tester** | Options-page UI: paste a URL (optional method, resource type, page) and see which rule wins, using engine precedence |
 | **RO** | Resource Override (kylepaulsen) — upstream inspiration |

@@ -1,6 +1,6 @@
 # Browser matrix
 
-**Last verified:** 2026-10-07 (DNR quotas, domain conditions, page engines, body override, badge and match log, Local Bridge redirect. Chrome for Testing 155 e2e 65/65. Firefox 157 importer, editor, inject, mock, tester). Firefox 157 BiDi still cannot open `moz-extension://` pages, so the live filter path, the Firefox match-log UI, and a Firefox bridge click-through were not driven. CI does not run a Firefox UI smoke. The bridge itself is the same DNR redirect on both browsers.
+**Last verified:** 2026-10-07 (DNR quotas, domain conditions, page engines, body override, badge and match log, Local Bridge redirect and in-place. Chrome for Testing 155 e2e 68/68. Firefox 157 importer, editor, inject, mock, tester). Firefox 157 BiDi still cannot open `moz-extension://` pages, so the live filter path, the Firefox match-log UI, and a Firefox bridge click-through were not driven. CI does not run a Firefox UI smoke. In-place `serveLocal` uses the same body engines as `overrideBody` (debugger on Chrome, `filterResponseData` on Firefox). Without that consent both browsers redirect to `127.0.0.1`.
 
 ## Supported targets (product intent)
 
@@ -68,10 +68,10 @@ Chrome `debugger` is unchanged. The log is `storage.session` only.
 
 | Capability | Chrome / Edge / Brave 120+ | Firefox 128+ | Safari 17+ |
 |------------|----------------------------|--------------|------------|
-| Serve a file from disk | DNR redirect to `http://127.0.0.1` after the user connects | Same redirect. No extra permission | Not verified |
+| Serve a file from disk | In-place via `chrome.debugger` when Allow debugger is on. Otherwise a DNR redirect to `http://127.0.0.1` | In-place via `filterResponseData` when Allow response rewriting is on. Otherwise the same redirect | Not verified |
 | Bridge process | Node CLI on `127.0.0.1` only | Same process | Same process |
 
-Verified on Chrome for Testing 155: after Connect, `*:8001/bridge.js` ran `window.BRIDGE = "DISK"` from the CLI folder (`pnpm e2e:chrome`, 65/65). A page CSP that blocks `http://127.0.0.1` can still reject that script. Inline `overrideBody` keeps the original URL.
+Verified on Chrome for Testing 155 (`pnpm e2e:chrome`, 68/68), after Connect and Allow debugger: `*:8001/bridge.js` ran `window.BRIDGE = "DISK"` and the script URL stayed on port 8001. A document with `script-src 'self'` on port 8001 still ran `window.CSP_BRIDGE = "DISK"` and did not request the bridge port. Without that consent the rule is still a redirect, which that policy would block. Inline `overrideBody` is unchanged. Firefox in-place is unit-tested; the live filter was not driven (BiDi).
 
 ## Notes
 

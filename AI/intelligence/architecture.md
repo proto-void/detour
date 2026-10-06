@@ -22,7 +22,7 @@ Rules → RuleCompiler → Core DNR            (built: engine-core)
 | `page-inject` | JS/CSS inject via scripting + userScripts | `extension/src/page-inject/` + `entrypoints/bridge.content.ts` |
 | `api-mock` | fetch/XHR mocks in the page's MAIN world | same module: `mock-runtime.ts` + `entrypoints/mock-main.content.ts` |
 | `engine-deep` | Body override: Chrome debugger Fetch, Firefox filterResponseData | `extension/src/engine-deep/` |
-| `local-bridge` | Node CLI on 127.0.0.1; `serveLocal` compiles to a DNR redirect | `cli/` + `extension/src/local-bridge/` |
+| `local-bridge` | Node CLI on 127.0.0.1; `serveLocal` is in-place when rewriting is allowed, else a DNR redirect | `cli/` + `extension/src/local-bridge/` |
 | `workspace-ui` | Popup, options, recipes, tester, RO import | `extension/src/workspace-ui/` (logic) + `src/entrypoints/popup/` (slice 1) + `src/entrypoints/options/` (slice 2) |
 | `observability` | Toolbar badge and session match log (no rule-body telemetry) | `extension/src/observability/` |
 | `distribution` | Store listing docs, permission rationale, CI and zip artifacts | `.github/workflows/ci.yml`, `docs/distribution/`, `extension/scripts/install-chrome.mjs` |
@@ -92,16 +92,18 @@ enabled workspace
 detour bridge <folder>  →  listen 127.0.0.1 only, print a new 64-hex token
 user connects on the rules page  →  storage.local.bridgeSession after GET /health
 enabled serveLocal { path }
-  → up: DNR redirect to http://127.0.0.1:<port>/d/<token>/<base64url path>
+  → up + bodyEngineConsent + permission: body engine reads the file and fulfills in place (original URL)
+  → up, no consent: DNR redirect to http://127.0.0.1:<port>/d/<token>/<base64url path>
   → not connected: refuse bridge-not-connected
   → health fails: refuse bridge-down
-  → production URL is not redirected in either refusal
+  → production URL is unchanged on either refusal
 ```
 
-- The filename is not in the bridge URL, so a pattern like `*.js` does not also match the bridge and loop.
-- Refusal text and the match log do not contain the token or file bytes. The token is in the redirect URL the page can see.
+- In-place reuses Chrome `Fetch.fulfillRequest` and Firefox `filterResponseData`. Status 200, file `Content-Type`, `Cache-Control: no-store`. Over 8 MiB, or a failed read, leaves the production response.
+- The filename is not in the bridge URL, so a redirect pattern like `*.js` does not also match the bridge and loop. In-place does not redirect, so that loop check does not apply.
+- Refusal text, the apply report, and the match log do not contain the token or file bytes. The match log stores the page’s request URL. The token is in the redirect URL only when the rule falls back to a redirect.
 - No `--host`. The filesystem root is refused. Symlinks that leave the folder are 404.
-- Inline `overrideBody` is unchanged. It keeps the original URL when a page CSP would block `http://127.0.0.1`.
+- Inline `overrideBody` is unchanged. Subresource Integrity still checks replaced bytes.
 
 ## UI (workspace-ui)
 

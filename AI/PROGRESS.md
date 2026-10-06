@@ -28,11 +28,12 @@
 - [x] **observability** Approved for badge + match log (Hamza, 2026-10-06) and built (plan 009, ADR-010): per-tab toolbar count, session match log (newest 50, label + URL, no action bodies). Chromium `declarativeNetRequestFeedback`. Popup badge switch and options `#log`. 327 unit tests; Chrome + Firefox builds clean; `pnpm e2e:chrome` 62/62. Firefox UI e2e not driven (BiDi). Chrome `debugger` unchanged. Local Bridge stays Draft
 - [x] **distribution** Approved for CI + packaging (Hamza, 2026-10-07) and built (plan 010, ADR-011): GitHub Actions on pull requests and `main` (unit tests, typecheck, Chrome + Firefox builds, `e2e:chrome` on Chrome for Testing stable, store zips). `v*` tags attach the zips to a GitHub Release with `GITHUB_TOKEN` only. Reviewer docs in `docs/distribution/`. Local check: 327 tests, typecheck clean, both builds, `CI=1` e2e 62/62 on Chrome 155, three zips. No store secrets. Not pushed (no remote). Local Bridge stays Draft
 - [x] **local-bridge** Approved (Hamza, 2026-10-07) and built (plan 011, ADR-012): `@detour/cli` serves a folder on `127.0.0.1` only. `serveLocal` redirects after the user connects and `/health` succeeds; otherwise the rule is refused and the production URL stays. RO `fileOverride` stays inline `overrideBody`. 18 CLI tests, 342 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 65/65 (script from disk is `DISK`). Firefox UI still not driven (BiDi). Not pushed
+- [x] **local-bridge in-place** Approved (Hamza, 2026-10-07) and built (plan 012, ADR-013): when Allow debugger / Allow response rewriting is on, `serveLocal` keeps the original URL and the extension reads the file from the bridge. Otherwise it still redirects. 18 CLI tests, 351 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 68/68 (disk script on a `script-src 'self'` page). Firefox live filter still not driven (BiDi). Not pushed
 
 ## Next
 
 1. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
-2. Optional follow-up: serve the file in place (keep the original URL) when a page CSP blocks `http://127.0.0.1`. npm publish of `@detour/cli` is still out of scope
+2. npm publish of `@detour/cli` is still out of scope. SRI stripping is still out of scope
 
 ## Open questions (not blocking)
 
