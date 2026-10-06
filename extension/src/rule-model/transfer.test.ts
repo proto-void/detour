@@ -3,13 +3,15 @@ import golden from './__fixtures__/detour-export.json';
 import roV1 from './__fixtures__/ro-v1.json';
 import roV2Data from './__fixtures__/ro-v2-data.json';
 import roV2RuleGroups from './__fixtures__/ro-v2-rulegroups.json';
-import { parseRoHeaderRules } from './ro-import';
+import { parsePageScope, parseRoHeaderRules } from './ro-import';
+import { RESOURCE_TYPES } from './schema';
 import { importWorkspace, serializeExport } from './transfer';
 
 const sequentialIds = () => {
   let n = 0;
   return () => `id${++n}`;
 };
+const ALL_TYPES = [...RESOURCE_TYPES];
 const importFixture = (input: unknown) => importWorkspace(input, { newId: sequentialIds() });
 
 describe('Detour export/import', () => {
@@ -47,7 +49,7 @@ describe('Resource Override import', () => {
           name: '*',
           enabled: true,
           rules: [
-            { id: 'id1', enabled: true, match: { kind: 'glob', pattern: 'https://cdn.example.com/*.js' }, action: { type: 'redirect', to: 'http://localhost:8080/*.js' } },
+            { id: 'id1', enabled: true, match: { kind: 'glob', pattern: 'https://cdn.example.com/*.js' }, action: { type: 'redirect', to: 'http://localhost:8080/*.js' }, resourceTypes: ALL_TYPES },
             {
               id: 'id2',
               enabled: false,
@@ -63,6 +65,7 @@ describe('Resource Override import', () => {
                   { op: 'remove', name: 'content-security-policy' },
                 ],
               },
+              resourceTypes: ALL_TYPES,
             },
           ],
         },
@@ -70,7 +73,16 @@ describe('Resource Override import', () => {
           id: 'id5',
           name: 'https://app.example.com/*',
           enabled: false,
-          rules: [{ id: 'id4', enabled: true, match: { kind: 'glob', pattern: 'https://**.example.com/*' }, action: { type: 'redirect', to: 'https://**.staging.example.com/*' } }],
+          pageDomains: ['app.example.com'],
+          rules: [
+            {
+              id: 'id4',
+              enabled: true,
+              match: { kind: 'glob', pattern: 'https://**.example.com/*' },
+              action: { type: 'redirect', to: 'https://**.staging.example.com/*' },
+              resourceTypes: ALL_TYPES,
+            },
+          ],
         },
       ],
     });
@@ -79,10 +91,7 @@ describe('Resource Override import', () => {
       ['file-inject-unsupported', 0, 3],
       ['empty-header-rule', 1, 1],
     ]);
-    expect(result.warnings.map((w) => [w.code, w.group, w.rule])).toEqual([
-      ['page-scope-dropped', 1, undefined],
-      ['wildcard-groups-simplified', 1, 0],
-    ]);
+    expect(result.warnings.map((w) => [w.code, w.group, w.rule])).toEqual([['wildcard-groups-simplified', 1, 0]]);
   });
 
   it('never copies file bodies into notices', () => {
@@ -129,5 +138,60 @@ describe('Resource Override import', () => {
 describe('parseRoHeaderRules', () => {
   it('ignores malformed entries the way Resource Override did', () => {
     expect(parseRoHeaderRules('set A: 1: 2;bogus;remove B;')).toEqual([{ op: 'remove', name: 'b' }]);
+  });
+});
+
+describe('parsePageScope', () => {
+  it.each([
+    ['', { kind: 'any' }],
+    ['*', { kind: 'any' }],
+    ['*://*/*', { kind: 'any' }],
+    ['https://app.example.com/*', { kind: 'domains', domains: ['app.example.com'] }],
+    ['*://*.Example.com/*', { kind: 'domains', domains: ['example.com'] }],
+    ['http://localhost', { kind: 'domains', domains: ['localhost'] }],
+    ['http://127.0.0.1/', { kind: 'domains', domains: ['127.0.0.1'] }],
+  ])('%j → %j', (pattern, expected) => {
+    expect(parsePageScope(pattern)).toEqual(expected);
+  });
+
+  it.each([
+    ['http://localhost:3000/*', 'port'],
+    ['https://app.example.com/admin/*', 'path'],
+    ['https://app.example.com:8443/admin/*', 'port and path'],
+  ])('approximates %s (drops the %s)', (pattern, part) => {
+    expect(parsePageScope(pattern)).toMatchObject({ kind: 'domains', approximation: expect.stringContaining(`the ${part} part`) });
+  });
+
+  it.each(['*example.com*', 'example.com', 'https://app.*.com/*', 'https://*/admin/*', 'https://café.com/*'])('refuses %s', (pattern) => {
+    expect(parsePageScope(pattern)).toMatchObject({ kind: 'unsupported' });
+  });
+});
+
+describe('Resource Override page scoping', () => {
+  const roWithGroup = (matchUrl: string) => ({
+    v: 1,
+    data: [{ id: 'd1', matchUrl, on: true, rules: [{ type: 'normalOverride', match: 'https://cdn.x.com/a.js', replace: 'http://localhost/a.js', on: true }] }],
+  });
+
+  it('keeps an approximated scope enabled and says what was lost', () => {
+    const result = importFixture(roWithGroup('https://app.example.com/admin/*'));
+    if (!result.ok) throw new Error(result.errors.join());
+    expect(result.workspace.groups[0]).toMatchObject({ enabled: true, pageDomains: ['app.example.com'] });
+    expect(result.warnings).toEqual([expect.objectContaining({ code: 'page-scope-approximated', group: 0 })]);
+  });
+
+  it('imports an inexpressible scope disabled with a reason, rather than running everywhere', () => {
+    const result = importFixture(roWithGroup('*example.com*'));
+    if (!result.ok) throw new Error(result.errors.join());
+    expect(result.workspace.groups[0]).toMatchObject({ enabled: false, name: '*example.com*' });
+    expect(result.workspace.groups[0]).not.toHaveProperty('pageDomains');
+    expect(result.warnings[0]).toMatchObject({ code: 'page-scope-unsupported', message: expect.stringContaining('imported disabled') });
+  });
+
+  it('includes main_frame so page loads are overridden like in Resource Override', () => {
+    const result = importFixture(roWithGroup('*'));
+    if (!result.ok) throw new Error(result.errors.join());
+    expect(result.workspace.groups[0]!.rules[0]!.resourceTypes).toContain('main_frame');
+    expect(result.workspace.groups[0]!.rules[0]!.resourceTypes).toEqual(ALL_TYPES);
   });
 });

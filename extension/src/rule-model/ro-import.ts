@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { formatIssues, parseRule, type Group, type HeaderOp, type Rule, type Workspace } from './schema';
+import { formatIssues, parseRule, RESOURCE_TYPES, type Group, type HeaderOp, type Rule, type Workspace } from './schema';
 
 /**
  * Resource Override export formats (kylepaulsen/ResourceOverride):
@@ -43,7 +43,8 @@ export type ImportNoticeCode =
   | 'incomplete-rule'
   | 'empty-header-rule'
   | 'invalid-after-mapping'
-  | 'page-scope-dropped'
+  | 'page-scope-approximated'
+  | 'page-scope-unsupported'
   | 'wildcard-groups-simplified';
 
 /** `group` / `rule` are 0-based positions in the source file. */
@@ -76,7 +77,39 @@ export function parseRoHeaderRules(text: string): HeaderOp[] {
   return ops;
 }
 
-const ANY_PAGE = new Set(['', '*']);
+export type PageScope =
+  | { kind: 'any' }
+  | { kind: 'domains'; domains: string[]; approximation?: string }
+  | { kind: 'unsupported'; reason: string };
+
+const HOSTNAME = /^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)*$/;
+
+/**
+ * Maps an RO tab-group pattern (a glob over the page URL) to the domains DNR can scope by.
+ * Hosts match their subdomains too, so `*.example.com` and `example.com` both become `example.com`.
+ */
+export function parsePageScope(pattern: string): PageScope {
+  const trimmed = pattern.trim();
+  if (/^\**$/.test(trimmed)) return { kind: 'any' };
+  const url = /^(\*|[a-z][a-z0-9+.-]*):\/\/([^/]*)(.*)$/i.exec(trimmed);
+  if (!url) return { kind: 'unsupported', reason: 'only patterns shaped like scheme://host/… can be mapped to sites' };
+  const [, , authority = '', rest = ''] = url;
+  const [, hostPart = '', port] = /^(.*?)(:[0-9*]+)?$/.exec(authority)!;
+  const host = hostPart.toLowerCase();
+  const pathIsTrivial = /^\/?\**$/.test(rest);
+  const approximations = [port && 'port', !pathIsTrivial && 'path'].filter(Boolean);
+  const approximation = approximations.length > 0 ? `the ${approximations.join(' and ')} part of "${trimmed}" can't be enforced` : undefined;
+
+  if (/^\*+$/.test(host)) {
+    return pathIsTrivial ? { kind: 'any' } : { kind: 'unsupported', reason: 'a path-only pattern on any host can\'t be mapped to sites' };
+  }
+  const domain = host.replace(/^\*+\./, '');
+  if (!HOSTNAME.test(domain)) {
+    return { kind: 'unsupported', reason: `host "${hostPart}" isn't a plain hostname or *.hostname (wildcards inside hosts and non-ASCII hosts can't be mapped)` };
+  }
+  return approximation ? { kind: 'domains', domains: [domain], approximation } : { kind: 'domains', domains: [domain] };
+}
+
 const hasStarGroups = (text: string) => /\*\*/.test(text);
 
 export function importResourceOverride(input: unknown, newId: () => string): { ok: true; value: RoImport } | { ok: false; errors: string[] } {
@@ -133,10 +166,19 @@ export function importResourceOverride(input: unknown, newId: () => string): { o
   const workspace: Workspace = {
     groups: groups.map((roGroup, g): Group => {
       const pagePattern = (roGroup.name ?? roGroup.matchUrl ?? '').trim();
-      if (!ANY_PAGE.has(pagePattern)) {
+      const scope = parsePageScope(pagePattern);
+      let enabled = roGroup.on;
+      if (scope.kind === 'unsupported') {
+        enabled = false;
         warnings.push({
-          code: 'page-scope-dropped',
-          message: `Group "${pagePattern}" only ran on pages matching that URL in Resource Override; Detour applies its rules on every page`,
+          code: 'page-scope-unsupported',
+          message: `Group "${pagePattern}" was imported disabled: ${scope.reason}. Edit its sites, then enable it`,
+          group: g,
+        });
+      } else if (scope.kind === 'domains' && scope.approximation) {
+        warnings.push({
+          code: 'page-scope-approximated',
+          message: `Group "${pagePattern}" now runs on every page of ${scope.domains.join(', ')}: ${scope.approximation}`,
           group: g,
         });
       }
@@ -144,11 +186,18 @@ export function importResourceOverride(input: unknown, newId: () => string): { o
       roGroup.rules.forEach((roRule, r) => {
         const mapped = mapRule(roRule, g, r);
         if (!mapped) return;
-        const checked = parseRule({ id: newId(), enabled: roRule.on, ...mapped });
+        // RO matched every request type, page loads included.
+        const checked = parseRule({ id: newId(), enabled: roRule.on, ...mapped, resourceTypes: [...RESOURCE_TYPES] });
         if (checked.ok) rules.push(checked.value);
         else skipped.push({ code: 'invalid-after-mapping', message: checked.errors.join('; '), group: g, rule: r });
       });
-      return { id: newId(), name: pagePattern || `Imported group ${g + 1}`, enabled: roGroup.on, rules };
+      return {
+        id: newId(),
+        name: pagePattern || `Imported group ${g + 1}`,
+        enabled,
+        ...(scope.kind === 'domains' && { pageDomains: scope.domains }),
+        rules,
+      };
     }),
   };
 
