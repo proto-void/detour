@@ -1,6 +1,6 @@
 # 018 — setHTMLUnsafe integrity when scripts are off
 
-**Status:** In progress  
+**Status:** Done  
 **Date:** 2026-10-07  
 **Spec:** [engine-deep](../specs/engine-deep.md) — setHTMLUnsafe with scripts off Approved (Hamza, 2026-10-07)
 
@@ -23,11 +23,18 @@ The document rewrite (ADR-014) and the earlier MAIN-world hooks (ADR-015 through
 ## Tasks
 
 - [x] T1 Spec Approved, this plan, ADR-019
-- [ ] T2 Hook: `Element.setHTMLUnsafe` and `ShadowRoot.setHTMLUnsafe` rewrite a string whenever a body rule is armed, including when `runScripts` is omitted, false, or any value other than true. Options are forwarded. A non-string is passed through. A sibling hash stays
-- [ ] T3 Rules-page copy
-- [ ] T4 Unit tests, typecheck, Chrome + Firefox builds
-- [ ] T5 Chrome e2e: `setHTMLUnsafe` without `runScripts` (or with `false`) inserts a stylesheet whose production integrity still applies the override; a non-matching sibling stays blocked. The existing `runScripts: true` script check stays green
-- [ ] T6 KB write-back
+- [x] T2 Hook: `Element.setHTMLUnsafe` and `ShadowRoot.setHTMLUnsafe` rewrite a string whenever a body rule is armed, including when `runScripts` is omitted, false, or any value other than true. Options are forwarded. A non-string is passed through. A sibling hash stays
+- [x] T3 Rules-page copy
+- [x] T4 Unit tests, typecheck, Chrome + Firefox builds
+- [x] T5 Chrome e2e: `setHTMLUnsafe` without `runScripts` (or with `false`) inserts a stylesheet whose production integrity still applies the override; a non-matching sibling stays blocked. The existing `runScripts: true` script check stays green
+- [x] T6 KB write-back
+
+## Results (2026-10-07)
+
+- 388 extension tests; typecheck clean; chrome-mv3 and firefox-mv3 builds clean (`content-scripts/sri-main.js` in both)
+- Chrome for Testing 155: `pnpm e2e:chrome` 98/98. `*:8001/sri-unsafe-css.css` applied `--sri-unsafe-css: local` after `Element.setHTMLUnsafe` with `runScripts` omitted and the production hash. A sibling stylesheet in that string stayed blocked and kept the page's hash. `*:8001/sri-unsafe-shadow.css` applied `--sri-unsafe-shadow: local` after `ShadowRoot.setHTMLUnsafe` with `runScripts: false`. A sibling in that shadow root stayed blocked and kept the page's hash. The existing `setHTMLUnsafe` with `runScripts: true` still ran `window.SRI_UNSAFE = "LOCAL"`
+- Firefox document rewrite is unit-tested. BiDi still cannot open extension pages
+- Not pushed
 
 ## Out of scope
 

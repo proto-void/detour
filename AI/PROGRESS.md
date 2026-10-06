@@ -34,12 +34,12 @@
 - [x] **Markup integrity** Approved (Hamza, 2026-10-07) and built (plan 015, ADR-016): the same hook rewrites `integrity` in a string assigned to `innerHTML` or passed to `insertAdjacentHTML` before the browser parses it. Other hashes in the string stay. A non-string is passed through. 381 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 80/80 on Chrome for Testing 155 (override runs, sibling in that markup stays blocked). Firefox document path is unit-tested. Not pushed
 - [x] **Script-running markup** Approved (Hamza, 2026-10-07) and built (plan 016, ADR-017): the same hook rewrites `integrity` in a string passed to `createContextualFragment`, and in a string passed to `setHTMLUnsafe` only when `runScripts` is true. Other hashes in the string stay. A non-string is passed through. `runScripts` omitted or false leaves the string unchanged. 384 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 85/85 on Chrome for Testing 155 (both calls run the override, non-matching siblings stay blocked). Firefox document path is unit-tested. Not pushed
 - [x] **Inert markup** Approved (Hamza, 2026-10-07) and built (plan 017, ADR-018): the same hook rewrites `integrity` in a string assigned to `outerHTML` or `ShadowRoot.innerHTML`, and substitutes it when `setAttributeNS` sets HTML `integrity` on a script or stylesheet link. Other hashes stay. A non-string is passed through. A foreign namespace is left unchanged. 387 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 92/92 on Chrome for Testing 155 (`setAttributeNS` runs the override, both stylesheets are accepted, non-matching siblings stay blocked). Firefox document path is unit-tested. Not pushed
+- [x] **setHTMLUnsafe with scripts off** Approved (Hamza, 2026-10-07) and built (plan 018, ADR-019): the same hook rewrites `integrity` in a string passed to `Element.setHTMLUnsafe` or `ShadowRoot.setHTMLUnsafe` whenever a body rule is armed, including when `runScripts` is omitted, false, or any value other than true. The options object is passed through, so scripts still run only when `runScripts` is strictly true. Other hashes stay. A non-string is passed through. 388 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 98/98 on Chrome for Testing 155 (both stylesheets applied, non-matching siblings stayed blocked and kept the page's hash; the existing `runScripts: true` script still ran). Firefox document path is unit-tested. Not pushed
 
 ## Next
 
-1. Plan 018: rewrite `integrity` in `setHTMLUnsafe` even when `runScripts` is omitted or not strictly true (Approved, Hamza, 2026-10-07)
-2. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
-3. npm publish of `@detour/cli` is still out of scope
+1. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
+2. npm publish of `@detour/cli` is still out of scope
 
 ## Open questions (not blocking)
 

@@ -22,7 +22,7 @@ Implementation plans live **only** here. Numbered `NNN-short-name.md`.
 | [015-sri-markup-integrity.md](015-sri-markup-integrity.md) | Done |
 | [016-sri-script-markup.md](016-sri-script-markup.md) | Done |
 | [017-sri-inert-markup.md](017-sri-inert-markup.md) | Done |
-| [018-sri-unsafe-html-scripts-off.md](018-sri-unsafe-html-scripts-off.md) | In progress |
+| [018-sri-unsafe-html-scripts-off.md](018-sri-unsafe-html-scripts-off.md) | Done |
 
 New plans only for **Approved** specs (`spec-workflow` gate).
 
