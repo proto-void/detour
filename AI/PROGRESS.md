@@ -35,8 +35,9 @@
 
 ## Next
 
-1. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
-2. npm publish of `@detour/cli` is still out of scope
+1. Plan 016: rewrite `integrity` in `createContextualFragment` and in `setHTMLUnsafe` when `runScripts` is true (Approved, Hamza, 2026-10-07)
+2. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
+3. npm publish of `@detour/cli` is still out of scope
 
 ## Open questions (not blocking)
 
@@ -47,7 +48,7 @@
 - Packed Chromium rows store the tab URL, not the subresource. Is that enough, or should packed builds stay limited to unpacked-style request URLs some other way?
 - Firefox does not record DNR matches (no feedback API; `webRequest` was not added). Is that gap acceptable?
 - Inline JS injections are not log rows. Worth a later note, or leave them to the apply report?
-- `outerHTML`, `setAttributeNS`, `ShadowRoot.innerHTML`, `createContextualFragment`, and `setHTMLUnsafe` are still not hooked. The last two can execute a script whose hash is still the one in the markup. Worth a later pass?
+- `outerHTML`, `setAttributeNS`, and `ShadowRoot.innerHTML` are still not hooked. They do not execute scripts. Worth a later pass?
 
 ## Blocked
 

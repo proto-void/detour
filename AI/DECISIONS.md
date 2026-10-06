@@ -402,11 +402,43 @@ The hash list is already in `<meta name="detour-sri">`. This slice does not add 
 - Use the same tag scan as the document rewrite. On a script or stylesheet tag whose URL matches a snapshotted entry, set `integrity` to that `sha384-`. Leave every other hash in the string as written. Do not inject the meta tag into the fragment
 - Pass a non-string value through unchanged. TrustedHTML is not turned into a string, so this hook does not bypass Trusted Types
 - A string with no `integrity`, an empty list, a missing meta, or a string longer than 2 MiB is left unchanged
-- Do not hook `outerHTML`, `setAttributeNS`, `ShadowRoot.innerHTML`, `Range.createContextualFragment`, or `setHTMLUnsafe` in this slice
+- Do not hook `outerHTML`, `setAttributeNS`, `ShadowRoot.innerHTML`, `Range.createContextualFragment`, or `setHTMLUnsafe` in this slice. Amended 2026-10-07 by [ADR-017](#adr-017--script-running-markup-uses-the-same-integrity-hash): `createContextualFragment` and `setHTMLUnsafe` with `runScripts: true` are hooked
 
 ### Consequences
 
 - A matching tag in that markup carries Detour's hash after the browser parses it. A sibling tag in the same string keeps the page's hash
 - The fragment parser still does not execute those scripts. A page that copies the parsed attributes onto a new script element, without going through the integrity setter, runs the override only when this rewrite happened
-- `createContextualFragment` and `setHTMLUnsafe({ runScripts: true })` can still execute a script whose hash is the one in the markup
+- Amended 2026-10-07 by [ADR-017](#adr-017--script-running-markup-uses-the-same-integrity-hash): `createContextualFragment` and `setHTMLUnsafe({ runScripts: true })` rewrite the string before those scripts run
 - The substituted value is a publishable SHA-384. It cannot break out of the attribute, and it cannot remove a hash the page set
+
+---
+
+## ADR-017 — Script-running markup uses the same integrity hash
+
+**Status:** Accepted  
+**Date:** 2026-10-07 (Hamza approved script-running markup)
+
+### Context
+
+ADR-016 rewrites `integrity` in a string passed to `innerHTML` or `insertAdjacentHTML`. The HTML fragment parser marks those scripts already started, so they do not run from that insertion. Two other calls parse a string and can execute the script while still copying `integrity` from that string:
+
+- `Range.createContextualFragment` invokes the fragment parsing algorithm with scripting mode Fragment. Inserting the fragment runs the scripts. [HTML: createContextualFragment](https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-range-createcontextualfragment)
+- `Element.setHTMLUnsafe` and `ShadowRoot.setHTMLUnsafe` run scripts only when `SetHTMLUnsafeOptions.runScripts` is true. The default is false, which stays inert, the same as `innerHTML`. [setHTMLUnsafe](https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-element-sethtmlunsafe)
+
+The hash list is already in `<meta name="detour-sri">`. This slice does not add a second list or a second content script.
+
+### Decision
+
+- While the MAIN-world hook from ADR-015 is installed, rewrite a string passed to `Range.createContextualFragment` before the original method runs
+- Rewrite a string passed to `Element.setHTMLUnsafe` or `ShadowRoot.setHTMLUnsafe` only when the options object's `runScripts` member is strictly `true`. Omitted options, `false`, or any other value are passed through unchanged
+- Use the same tag scan as ADR-016. On a script or stylesheet tag whose URL matches a snapshotted entry, set `integrity` to that `sha384-`. Leave every other hash in the string as written. Do not inject the meta tag into the fragment
+- Pass a non-string value through unchanged, including when `runScripts` is true. TrustedHTML is not turned into a string, so this hook does not bypass Trusted Types. The native method still applies the page's Trusted Types policy to a string
+- A string with no `integrity`, an empty list, a missing meta, or a string longer than 2 MiB is left unchanged
+- Do not hook `outerHTML`, `setAttributeNS`, `ShadowRoot.innerHTML`, `Document.parseHTMLUnsafe`, or the safe `setHTML` methods in this slice. `parseHTMLUnsafe` creates a document with scripting disabled
+
+### Consequences
+
+- A matching script inserted through `createContextualFragment`, or through `setHTMLUnsafe` with `runScripts: true`, carries Detour's hash and can run. A sibling tag in the same string keeps the page's hash
+- `setHTMLUnsafe` with scripts off does not execute scripts, and this slice leaves that string's hashes alone. A stylesheet in that inert call can still be checked against the page's hash
+- The substituted value is a publishable SHA-384. It cannot break out of the attribute, and it cannot remove a hash the page set
+- `outerHTML` and `ShadowRoot.innerHTML` can still carry the page's hash. They do not execute scripts

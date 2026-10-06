@@ -1,10 +1,10 @@
 # Spec: engine-deep
 
-**Status:** Approved — body override (Hamza, 2026-10-06); SRI hashes (Hamza, 2026-10-07); page-world integrity (Hamza, 2026-10-07); markup integrity (Hamza, 2026-10-07)  
+**Status:** Approved — body override (Hamza, 2026-10-06); SRI hashes (Hamza, 2026-10-07); page-world integrity (Hamza, 2026-10-07); markup integrity (Hamza, 2026-10-07); script-running markup (Hamza, 2026-10-07)  
 **Last updated:** 2026-10-07  
 **Build order:** 5  
 **Depends on:** rule-model, engine-core  
-**Plan:** [008-engine-deep-body](../plans/008-engine-deep-body.md), [013-sri-handling](../plans/013-sri-handling.md), [014-sri-page-integrity](../plans/014-sri-page-integrity.md), [015-sri-markup-integrity](../plans/015-sri-markup-integrity.md)
+**Plan:** [008-engine-deep-body](../plans/008-engine-deep-body.md), [013-sri-handling](../plans/013-sri-handling.md), [014-sri-page-integrity](../plans/014-sri-page-integrity.md), [015-sri-markup-integrity](../plans/015-sri-markup-integrity.md), [016-sri-script-markup](../plans/016-sri-script-markup.md)
 
 Amended 2026-10-07 (Hamza, in-place bridge read): the same fulfill / filter path may replace a response with bytes the extension read from Local Bridge. Disk mapping, the token, and path confinement stay in [local-bridge](local-bridge.md) and [ADR-013](../DECISIONS.md). Consent is still `bodyEngineConsent`. This spec does not grow a folder browser.
 
@@ -13,6 +13,8 @@ Amended 2026-10-07 (Hamza, SRI): while those rules are armed, Detour rewrites UT
 Amended 2026-10-07 (Hamza, page-world integrity): the same hash list is applied when page JavaScript assigns `integrity` after parse. The hook runs only while body rewriting is consented and a rule is armed. It substitutes the hash; it does not clear one. [ADR-015](../DECISIONS.md).
 
 Amended 2026-10-07 (Hamza, markup integrity): the same hook rewrites `integrity` inside a string assigned to `innerHTML` or passed to `insertAdjacentHTML`, before the browser parses that string. A script or stylesheet tag whose URL matches an armed override gets the same SHA-384. Other hashes in the string stay. A value that is not a string is passed through unchanged. [ADR-016](../DECISIONS.md).
+
+Amended 2026-10-07 (Hamza, script-running markup): the same hook rewrites that string when it is passed to `Range.createContextualFragment`, and when it is passed to `Element.setHTMLUnsafe` or `ShadowRoot.setHTMLUnsafe` with `runScripts: true`. Those calls can execute the script. A call that does not run scripts is left unchanged. [ADR-017](../DECISIONS.md).
 
 ## Objective
 
@@ -29,6 +31,7 @@ Hamza approved **engine-deep** for body override on 2026-10-06. Local Bridge sta
 - As a developer, I can replace a script or stylesheet that the page protects with Subresource Integrity, and the browser runs my file.
 - As a developer, I can override a script whose `integrity` is assigned by page JavaScript after the HTML is parsed.
 - As a developer, I can override a script or stylesheet whose `integrity` is carried in markup passed to `innerHTML` or `insertAdjacentHTML`.
+- As a developer, I can override a script whose `integrity` is carried in markup that actually runs, through `createContextualFragment` or `setHTMLUnsafe` with scripts enabled.
 
 ## Acceptance criteria
 
@@ -49,6 +52,8 @@ Hamza approved **engine-deep** for body override on 2026-10-06. Local Bridge sta
 - [x] The hook does not remove `integrity`. A missing hash leaves the page's value. Rewriting off does not register the hook
 - [x] While those rules are armed, assigning `innerHTML` or calling `insertAdjacentHTML` with a string rewrites `integrity` on a script or stylesheet tag in that string whose URL matches an armed override. The rewrite happens before the browser parses the string. A tag in that string that does not match keeps the hash the page wrote
 - [x] A value that is not a string is passed to the original setter or method unchanged. Markup with no hash list, or longer than 2 MiB, is left unchanged. The hook still does not clear `integrity`
+- [ ] While those rules are armed, a string passed to `Range.createContextualFragment` is rewritten the same way before the browser parses it. A string passed to `Element.setHTMLUnsafe` or `ShadowRoot.setHTMLUnsafe` is rewritten only when `runScripts` is `true`. A non-matching hash in that string stays. `runScripts` omitted or false leaves the string unchanged
+- [ ] A value that is not a string is still passed through on those methods, including when `runScripts` is true
 
 ## Browser support table
 
@@ -68,7 +73,8 @@ Hamza approved **engine-deep** for body override on 2026-10-06. Local Bridge sta
 - A redirect to `127.0.0.1` (rewriting off) does not change the document, so the page's hash can still reject the file. [SRI checks the response that is used](https://w3c.github.io/webappsec-subresource-integrity/#does-response-match-metadatalist)
 - The hash list in the page is readable by that page. The hook copies it once and then ignores later edits. A forged list can only substitute a SHA-384, so a wrong hash blocks the script. The hook never clears `integrity`, and the body engine still matches the real rules. [ADR-015](../DECISIONS.md)
 - `innerHTML` and `insertAdjacentHTML` rewrite `integrity` in a string before the HTML fragment parser runs, using the same hash list. That parser marks script elements already started, so those scripts do not execute from the insertion alone. A stylesheet in the string is fetched and checked. [HTML fragment parsing](https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#html-fragment-parsing-algorithm)
-- `outerHTML`, `setAttributeNS`, `ShadowRoot.innerHTML`, `Range.createContextualFragment`, and `setHTMLUnsafe` are not hooked. `createContextualFragment` clears the already-started flag, and `setHTMLUnsafe` with `runScripts: true` can execute scripts, so a hash in that markup can still reject an override. [DOM Parsing: createContextualFragment](https://w3c.github.io/DOM-Parsing/#dom-range-createcontextualfragment), [setHTMLUnsafe](https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-element-sethtmlunsafe)
+- `createContextualFragment` parses with scripting mode Fragment, so a script in that fragment runs when it is inserted. `setHTMLUnsafe` runs scripts only when `SetHTMLUnsafeOptions.runScripts` is true; the default is false. Both copy `integrity` from the markup string. The hook rewrites that string first, using the same hash list. A non-string is passed through, so TrustedHTML is not stringified. [createContextualFragment](https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-range-createcontextualfragment), [setHTMLUnsafe](https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-element-sethtmlunsafe)
+- `outerHTML`, `setAttributeNS`, and `ShadowRoot.innerHTML` are not hooked. Those paths do not execute scripts. `Document.parseHTMLUnsafe` creates a document with scripting disabled, so it is not hooked either
 - The URL does not change, so page CSP still applies to that URL. That is why this is not a `data:` redirect
 - A DNR redirect for the same URL can change the address before Fetch sees the response. The tester says so
 - Response `content-encoding` / `content-length` are dropped on the replaced response so the browser does not decode the new bytes as gzip
@@ -80,7 +86,9 @@ Hamza approved **engine-deep** for body override on 2026-10-06. Local Bridge sta
 - Binary bodies and `data:` redirects
 - Rewriting the document when response rewriting is off
 - Non-UTF-8 HTML and documents over 2 MiB
-- `outerHTML`, `setAttributeNS`, `ShadowRoot.innerHTML`, `Range.createContextualFragment`, and `setHTMLUnsafe`
+- `outerHTML`, `setAttributeNS`, and `ShadowRoot.innerHTML`
+- `Document.parseHTMLUnsafe` and the safe `setHTML` methods
+- `setHTMLUnsafe` when `runScripts` is omitted or not strictly `true`
 - Attaching to out-of-process iframes (`Target.setAutoAttach`)
 - Firefox service-worker script filtering (`webRequestFilterResponse.serviceWorkerScript`)
 - Distribution, CI, and observability
