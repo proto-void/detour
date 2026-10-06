@@ -1,0 +1,14 @@
+---
+description: Short coding invariants for Detour
+alwaysApply: true
+---
+
+# Coding practices
+
+- Free, MIT, open source; **no backend**; **$0** recurring cloud ops.
+- Spec-driven: implement only from **Approved** specs in `AI/specs/`; Draft specs are for human review.
+- Prefer `urlFilter` over `regexFilter` for DNR; respect the 1000 dynamic regex ceiling.
+- Match existing patterns; no drive-by refactors or unrelated files.
+- Prefer small, verified increments; update `AI/intelligence/` and `AI/PROGRESS.md` when behavior or architecture changes.
+- No secrets in repo, commits, or knowledge-base files.
+- Hard nos: no paid SaaS dependency, no telemetry that ships user rule bodies, no gambling/adult/crypto/politics marketing.

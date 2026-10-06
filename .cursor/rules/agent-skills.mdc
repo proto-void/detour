@@ -1,0 +1,23 @@
+---
+description: On-demand router for addyosmani + project skills under .cursor/skills
+alwaysApply: true
+---
+
+# Agent skills router
+
+Skills are discovered from `.cursor/skills` → `AI/agent-skills/skills` (addyosmani vendor + project skill symlinks).
+
+Sources:
+
+- addyosmani process pack → `AI/agent-skills/`
+- Project skills → `AI/skills/` (symlinked into discovery)
+
+Before non-trivial engineering work:
+
+1. Read `using-agent-skills` (meta-skill) if unsure which skill applies.
+2. From task context, pick **1–3** matching skills; read only those `SKILL.md` files.
+3. Open `references/` only when a skill links to them.
+4. Do **not** load all vendor skills.
+5. **Precedence:** `AI/` Product Intelligence wins for product/strategy facts; these skills win for engineering process.
+
+Project skills: `start-session`, `write-back-kb`, `plan-workflow`, `spec-workflow` (also under `AI/skills/` as source of truth).
