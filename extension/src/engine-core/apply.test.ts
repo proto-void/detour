@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import type { Group, Rule, Workspace } from '../rule-model/schema';
-import { saveWorkspace, WORKSPACE_KEY } from '../rule-model/storage';
+import { saveEnabled, saveWorkspace, WORKSPACE_KEY } from '../rule-model/storage';
 import { createFakeDnr } from '../test/fake-dnr';
 import { APPLY_REPORT_KEY, applyWorkspace, syncRules } from './apply';
 
@@ -44,6 +44,7 @@ describe('applyWorkspace', () => {
       ],
       refused: [],
       fallback: false,
+      disabled: false,
       errors: [],
     });
   });
@@ -169,6 +170,24 @@ describe('syncRules', () => {
     const report = await syncRules(dnr, area, fixedNow);
     expect(rules()).toHaveLength(1);
     expect((await area.get(APPLY_REPORT_KEY))[APPLY_REPORT_KEY]).toEqual(report);
+  });
+
+  it('removes every rule while switched off and restores them when switched back on', async () => {
+    const { dnr, rules } = createFakeDnr();
+    await saveWorkspace(area, ws(group('g', [redirect('a'), redirect('b')])));
+    await syncRules(dnr, area);
+    expect(rules()).toHaveLength(2);
+
+    await saveEnabled(area, false);
+    const off = await syncRules(dnr, area);
+    expect(rules()).toEqual([]);
+    expect(off).toMatchObject({ disabled: true, applied: [], refused: [] });
+    expect((await area.get(WORKSPACE_KEY))[WORKSPACE_KEY]).toBeDefined();
+
+    await saveEnabled(area, true);
+    const on = await syncRules(dnr, area);
+    expect(rules()).toHaveLength(2);
+    expect(on.disabled).toBe(false);
   });
 
   it('leaves current DNR rules alone when the stored workspace is corrupt', async () => {

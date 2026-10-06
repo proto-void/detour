@@ -1,5 +1,5 @@
-import { loadWorkspace, type StorageAreaLike } from '../rule-model/storage';
-import type { Workspace } from '../rule-model/schema';
+import { emptyWorkspace, type Workspace } from '../rule-model/schema';
+import { loadEnabled, loadWorkspace, type StorageAreaLike } from '../rule-model/storage';
 import { compileWorkspace, type Candidate, type Refusal } from './compile';
 import { supportsTopDomains, type DnrApi, type DnrRule } from './dnr';
 import { enforceLimits, readLimits } from './limits';
@@ -13,6 +13,8 @@ export interface ApplyReport {
   refused: Refusal[];
   /** True when the batch was rejected without naming a rule and rules were added one by one. */
   fallback: boolean;
+  /** Global switch was off, so no rules were installed. */
+  disabled: boolean;
   errors: string[];
 }
 
@@ -100,16 +102,25 @@ export async function applyWorkspace(dnr: DnrApi, workspace: Workspace, now = ()
     applied: addRules.map((r) => ({ dnrId: r.id, groupId: owners.get(r.id)!.groupId, ruleId: owners.get(r.id)!.ruleId })),
     refused,
     fallback,
+    disabled: false,
     errors: [],
   };
 }
 
-/** Loads the stored workspace and applies it. An unreadable workspace leaves the current DNR rules in place. */
+/**
+ * Loads the stored workspace and applies it. When the global switch is off, installs nothing but keeps
+ * the workspace. An unreadable workspace leaves the current DNR rules in place.
+ */
 export async function syncRules(dnr: DnrApi, area: StorageAreaLike, now = () => new Date()): Promise<ApplyReport> {
-  const loaded = await loadWorkspace(area);
-  const report: ApplyReport = loaded.ok
-    ? await applyWorkspace(dnr, loaded.value, now)
-    : { appliedAt: now().toISOString(), applied: [], refused: [], fallback: false, errors: loaded.errors };
+  let report: ApplyReport;
+  if (!(await loadEnabled(area))) {
+    report = { ...(await applyWorkspace(dnr, emptyWorkspace(), now)), disabled: true };
+  } else {
+    const loaded = await loadWorkspace(area);
+    report = loaded.ok
+      ? await applyWorkspace(dnr, loaded.value, now)
+      : { appliedAt: now().toISOString(), applied: [], refused: [], fallback: false, disabled: false, errors: loaded.errors };
+  }
   await area.set({ [APPLY_REPORT_KEY]: report });
   return report;
 }

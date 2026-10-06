@@ -1,6 +1,8 @@
 import { emptyWorkspace, parseEnvelope, SCHEMA_VERSION, type ParseResult, type Workspace } from './schema';
 
 export const WORKSPACE_KEY = 'workspace';
+/** Global on/off switch; anything but `false` means on. */
+export const ENABLED_KEY = 'enabled';
 
 /** The subset of `storage.StorageArea` Detour needs; `browser.storage.local` satisfies it. */
 export interface StorageAreaLike {
@@ -16,6 +18,14 @@ export async function loadWorkspace(area: StorageAreaLike): Promise<ParseResult<
   return result.ok
     ? { ok: true, value: result.value.data }
     : { ok: false, errors: result.errors.map((e) => `Stored workspace is invalid: ${e}`) };
+}
+
+export async function loadEnabled(area: StorageAreaLike): Promise<boolean> {
+  return (await area.get(ENABLED_KEY))[ENABLED_KEY] !== false;
+}
+
+export async function saveEnabled(area: StorageAreaLike, enabled: boolean): Promise<void> {
+  await area.set({ [ENABLED_KEY]: enabled });
 }
 
 /** Validates before writing so storage never holds a workspace the engines can't read. */

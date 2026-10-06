@@ -2,7 +2,7 @@ import { browser } from 'wxt/browser';
 import { syncRules } from '../engine-core/apply';
 import { createCoalescer } from '../engine-core/coalesce';
 import type { DnrApi } from '../engine-core/dnr';
-import { WORKSPACE_KEY } from '../rule-model/storage';
+import { ENABLED_KEY, WORKSPACE_KEY } from '../rule-model/storage';
 
 export default defineBackground(() => {
   const dnr = browser.declarativeNetRequest as unknown as DnrApi;
@@ -20,6 +20,6 @@ export default defineBackground(() => {
   browser.runtime.onInstalled.addListener(refreshSafely);
   browser.runtime.onStartup.addListener(refreshSafely);
   browser.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === 'local' && WORKSPACE_KEY in changes) void refreshSafely();
+    if (areaName === 'local' && (WORKSPACE_KEY in changes || ENABLED_KEY in changes)) void refreshSafely();
   });
 });
