@@ -191,3 +191,29 @@ Resource Override gates groups by tab URL; DNR has no tab condition. The popup n
 - Inline JS needs one-time user action (toggle or permission). The editor explains it, and the rules are refused (not silently dropped) until then
 - A mock wins over DNR for the same URL, because the request never leaves the page
 - The page can observe the patched fetch and the mock config
+
+---
+
+## ADR-009 — Body override: CDP Fetch on Chromium, filterResponseData on Firefox
+
+**Status:** Accepted  
+**Date:** 2026-10-06 (engine-deep body-override slice)
+
+### Context
+
+MV3 Chromium cannot rewrite response bodies with blocking `webRequest`. `data:` redirects break CSP, CORS, and opaque responses (gotchas). ADR-002 already assigned body override to `chrome.debugger` and Firefox `filterResponseData`.
+
+### Decision
+
+- One action, `overrideBody` (inline UTF-8 body, optional content type). The DNR compiler skips it
+- **Chromium:** `debugger` is an install-time permission. Chrome 154 headless denies an optional `permissions.request` for it, and reading `chrome.debugger` before the permission exists crashes the service worker. Attach protocol `1.3` per http(s) tab only while a body rule is enabled **and** `storage.local.bodyEngineConsent` is true (the Allow debugger button). CDP `Fetch` at `Response`, `fulfillRequest` to swap the body (base64), `continueResponse` otherwise. No `Fetch.getResponseBody` (we never read the original bytes)
+- **Firefox:** optional `webRequest`, `webRequestBlocking`, and `webRequestFilterResponse`. The Allow button requests them and sets the same consent key. `filterResponseData` only for a matching request; others are untouched
+- Install does not attach. Cancelling Chrome’s banner sticks until the body rules change
+- Resource Override `fileOverride` maps to this action. Local Bridge remains a separate, unapproved module
+- Do not strip Subresource Integrity in this slice
+
+### Consequences
+
+- Chrome shows a debugging infobar and conflicts with DevTools on that tab
+- A redirect rule for the same URL can still move the request before the body is replaced
+- Out-of-process iframes and Firefox service-worker script streams are not covered yet

@@ -12,7 +12,7 @@ Specs live **only** here. Status is **Draft** until a human Approves. See projec
 | 2 | [engine-core](engine-core.md) | **Approved** (Hamza, 2026-10-06) |
 | 3 | [page-inject](page-inject.md) | **Approved** (Hamza, 2026-10-06) |
 | 4 | [api-mock](api-mock.md) | **Approved** (Hamza, 2026-10-06) |
-| 5 | [engine-deep](engine-deep.md) | Draft |
+| 5 | [engine-deep](engine-deep.md) | **Approved** — body override (Hamza, 2026-10-06). Local Bridge still Draft |
 | 6 | [local-bridge](local-bridge.md) | Draft |
 | 7 | [workspace-ui](workspace-ui.md) | **Approved — slices 1–4** (popup, editor, rule tester, remainder) (Hamza, 2026-10-06) |
 | 8 | [observability](observability.md) | Draft |

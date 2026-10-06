@@ -12,6 +12,7 @@ Implementation plans live **only** here. Numbered `NNN-short-name.md`.
 | [005-page-inject-api-mock.md](005-page-inject-api-mock.md) | Done |
 | [006-workspace-ui-rule-tester.md](006-workspace-ui-rule-tester.md) | Done |
 | [007-workspace-ui-remainder.md](007-workspace-ui-remainder.md) | Done |
+| [008-engine-deep-body.md](008-engine-deep-body.md) | Done |
 
 New plans only for **Approved** specs (`spec-workflow` gate).
 
