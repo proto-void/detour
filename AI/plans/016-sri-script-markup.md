@@ -1,6 +1,6 @@
 # 016 — Script-running markup integrity
 
-**Status:** Active  
+**Status:** Done  
 **Date:** 2026-10-07  
 **Spec:** [engine-deep](../specs/engine-deep.md) — script-running markup slice Approved (Hamza, 2026-10-07)
 
@@ -23,12 +23,19 @@ The document rewrite (ADR-014), the property hook (ADR-015), and the inert marku
 ## Tasks
 
 - [x] T1 Spec Approved, this plan, ADR-017
-- [ ] T2 Hook: `createContextualFragment` rewrites before the native call; a non-string is passed through; no list leaves the page hash
-- [ ] T3 Hook: `Element.setHTMLUnsafe` and `ShadowRoot.setHTMLUnsafe` rewrite only when `runScripts` is true; other calls pass the string through
-- [ ] T4 Rules-page copy
-- [ ] T5 Unit tests, typecheck, Chrome + Firefox builds
-- [ ] T6 Chrome e2e: markup that runs a script with a production hash runs the override; a non-matching sibling stays blocked
-- [ ] T7 KB write-back
+- [x] T2 Hook: `createContextualFragment` rewrites before the native call; a non-string is passed through; no list leaves the page hash
+- [x] T3 Hook: `Element.setHTMLUnsafe` and `ShadowRoot.setHTMLUnsafe` rewrite only when `runScripts` is true; other calls pass the string through
+- [x] T4 Rules-page copy
+- [x] T5 Unit tests, typecheck, Chrome + Firefox builds
+- [x] T6 Chrome e2e: markup that runs a script with a production hash runs the override; a non-matching sibling stays blocked
+- [x] T7 KB write-back
+
+## Results (2026-10-07)
+
+- 384 extension tests; typecheck clean; chrome-mv3 and firefox-mv3 builds clean (`content-scripts/sri-main.js` in both)
+- Chrome for Testing 155: `pnpm e2e:chrome` 85/85. `*:8001/sri-exec.js` ran `window.SRI_EXEC = "LOCAL"` after `createContextualFragment` with the production hash. A sibling in that fragment stayed blocked. `*:8001/sri-unsafe.js` ran `window.SRI_UNSAFE = "LOCAL"` after `setHTMLUnsafe` with `runScripts: true`. A sibling in that call stayed blocked
+- Firefox document rewrite is unit-tested. BiDi still cannot open extension pages
+- Not pushed
 
 ## Out of scope
 

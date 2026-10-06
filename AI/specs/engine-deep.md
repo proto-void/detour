@@ -52,8 +52,8 @@ Hamza approved **engine-deep** for body override on 2026-10-06. Local Bridge sta
 - [x] The hook does not remove `integrity`. A missing hash leaves the page's value. Rewriting off does not register the hook
 - [x] While those rules are armed, assigning `innerHTML` or calling `insertAdjacentHTML` with a string rewrites `integrity` on a script or stylesheet tag in that string whose URL matches an armed override. The rewrite happens before the browser parses the string. A tag in that string that does not match keeps the hash the page wrote
 - [x] A value that is not a string is passed to the original setter or method unchanged. Markup with no hash list, or longer than 2 MiB, is left unchanged. The hook still does not clear `integrity`
-- [ ] While those rules are armed, a string passed to `Range.createContextualFragment` is rewritten the same way before the browser parses it. A string passed to `Element.setHTMLUnsafe` or `ShadowRoot.setHTMLUnsafe` is rewritten only when `runScripts` is `true`. A non-matching hash in that string stays. `runScripts` omitted or false leaves the string unchanged
-- [ ] A value that is not a string is still passed through on those methods, including when `runScripts` is true
+- [x] While those rules are armed, a string passed to `Range.createContextualFragment` is rewritten the same way before the browser parses it. A string passed to `Element.setHTMLUnsafe` or `ShadowRoot.setHTMLUnsafe` is rewritten only when `runScripts` is `true`. A non-matching hash in that string stays. `runScripts` omitted or false leaves the string unchanged
+- [x] A value that is not a string is still passed through on those methods, including when `runScripts` is true
 
 ## Browser support table
 
@@ -96,7 +96,7 @@ Hamza approved **engine-deep** for body override on 2026-10-06. Local Bridge sta
 ## Verification
 
 - Unit tests: planning, match, header rewrite, Chrome session (attach / fulfill / continue / detach / cancel), Firefox filter, permission refusal, RO import, tester, document integrity rewrite (matching tag, sibling tag, failed read, non-HTML)
-- Chrome smoke: a script whose `integrity` is the hash of the production file runs the override; a sibling with a valid hash still runs; a sibling with a bad hash stays blocked. Verified 2026-10-07, Chrome for Testing 155, `pnpm e2e:chrome` 80/80, including an in-place bridge file whose page hash was for the production bytes, a page that set `integrity` from JavaScript after parse (override ran, non-matching sibling stayed blocked), and a page that passed the production hash to `insertAdjacentHTML` (override ran, sibling in that string stayed blocked)
+- Chrome smoke: a script whose `integrity` is the hash of the production file runs the override; a sibling with a valid hash still runs; a sibling with a bad hash stays blocked. Verified 2026-10-07, Chrome for Testing 155, `pnpm e2e:chrome` 85/85, including an in-place bridge file whose page hash was for the production bytes, a page that set `integrity` from JavaScript after parse (override ran, non-matching sibling stayed blocked), a page that passed the production hash to `insertAdjacentHTML` (override ran, sibling in that string stayed blocked), and a page that passed the production hash to `createContextualFragment` and to `setHTMLUnsafe` with `runScripts: true` (both overrides ran, non-matching siblings stayed blocked)
 - `pnpm test`, `pnpm typecheck`, `pnpm build`, `pnpm build:firefox`
 - Chrome smoke: one script body changes and a sibling script does not. Verified 2026-10-06, Chrome for Testing 154, `pnpm e2e:chrome` 57/57, after Allow debugger
 - Firefox headless: Firefox 157.0.1 installs the temporary add-on, then BiDi refuses `moz-extension://` navigation, so the Allow click and a live `filterResponseData` path were not driven. Firefox filter behavior is unit-tested
