@@ -34,6 +34,7 @@ export const REASON_LABELS: Record<RefusalReason, string> = {
   'browser-rejected': 'Rejected by browser',
   'user-scripts-unavailable': 'User scripts off',
   'inject-failed': 'Injection failed',
+  'body-permission-denied': 'Permission needed',
 };
 
 export function summarizeRule(rule: Rule): string {
@@ -55,6 +56,8 @@ export function summarizeRule(rule: Rule): string {
     }
     case 'mock':
       return `Mock ${rule.action.method === 'ANY' ? '' : `${rule.action.method} `}${pattern} → ${rule.action.status}`;
+    case 'overrideBody':
+      return `Replace body of ${pattern}`;
   }
 }
 
@@ -69,7 +72,7 @@ export function describeReport(report: ApplyReport | undefined, workspace: Works
     return hit ? { ruleId, groupName: hit.groupName, summary: summarizeRule(hit.rule) } : { ruleId, groupName: '', summary: `Rule ${ruleId} (no longer in workspace)` };
   };
 
-  const applied = [...new Set([...report.applied, ...(report.injected ?? [])].map((a) => a.ruleId))].map(row);
+  const applied = [...new Set([...report.applied, ...(report.injected ?? []), ...(report.bodies ?? [])].map((a) => a.ruleId))].map(row);
   const refused = report.refused.map((r) => ({ ...row(r.ruleId), reason: r.reason, reasonLabel: REASON_LABELS[r.reason], message: r.message }));
   const state = report.errors.length > 0 ? 'error' : report.disabled ? 'disabled' : applied.length + refused.length === 0 ? 'empty' : 'active';
   return { state, applied, refused, errors: report.errors, appliedAt: report.appliedAt };

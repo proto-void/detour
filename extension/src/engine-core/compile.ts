@@ -12,7 +12,8 @@ export type RefusalReason =
   | 'rule-limit'
   | 'browser-rejected'
   | 'user-scripts-unavailable'
-  | 'inject-failed';
+  | 'inject-failed'
+  | 'body-permission-denied';
 
 export interface Refusal {
   groupId: string;

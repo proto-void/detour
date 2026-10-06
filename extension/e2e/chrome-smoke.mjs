@@ -41,6 +41,9 @@ const prod = await serve(8001, {
   '/inject.html': html('<!doctype html><title>inject</title><h1>hi</h1><script>window.SEEN = window.EARLY ?? "none";</script>'),
   '/other.html': html('<!doctype html><title>other</title><h1>hi</h1><script>window.SEEN = window.EARLY ?? "none";</script>'),
   '/api/real': { type: 'text/plain', text: 'REAL' },
+  '/body.html': html('<!doctype html><title>body</title><script src="/replaced.js"></script><script src="/kept.js"></script>'),
+  '/replaced.js': js('window.BODY = "PROD";'),
+  '/kept.js': js('window.KEPT = "PROD";'),
 });
 const local = await serve(8002, {
   '/a.js': js('window.A = "LOCAL";'),
@@ -81,7 +84,23 @@ const check = (name, actual, expected) => {
   console.log(`${ok ? 'PASS' : 'FAIL'} ${name}: ${JSON.stringify(actual)}${ok ? '' : ` (expected ${JSON.stringify(expected)})`}`);
 };
 
-const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, pipe: true, enableExtensions: true, args: ['--no-first-run'] });
+// While the body-override tab is open, Puppeteer must not attach to it: Chrome allows one debugger per tab.
+let shieldHttp = false;
+const browser = await puppeteer.launch({
+  executablePath: CHROME,
+  headless: true,
+  pipe: true,
+  enableExtensions: true,
+  // Headless cannot click the debugging infobar. The permission itself is still requested from the page.
+  args: ['--no-first-run', '--silent-debugger-extension-api'],
+  targetFilter: (target) => {
+    if (!shieldHttp) return true;
+    const url = target.url();
+    if (url.includes('/body.html')) return false;
+    if (url === 'about:blank' || url === '') return false;
+    return true;
+  },
+});
 try {
   const id = await browser.installExtension(EXT);
   console.log('extension id', id);
@@ -97,10 +116,11 @@ try {
   await popup.waitForFunction(() => /\d+ applied/.test(document.body.innerText), { timeout: 10000 });
   const text = await popup.evaluate(() => document.body.innerText);
   console.log('--- popup after import ---\n' + text + '\n---');
-  check('import summary', /Imported 4 rules in 2 groups/.test(text), true);
-  check('skipped file override listed', /1 rule skipped/.test(text), true);
+  check('import summary', /Imported 5 rules in 2 groups/.test(text), true);
+  check('file override is imported, not skipped', /rule skipped/.test(text), false);
   check('port-scope warning shown', /port part .* can't be enforced/.test(text), true);
-  check('report counts', /3 applied/.test(text) && /1 refused/.test(text), true);
+  check('report counts', /3 applied/.test(text) && /2 refused/.test(text), true);
+  check('file override waits for the debugger permission', /Replace body of \*\/x\.css/.test(text) && /Allow debugger/.test(text), true);
   check('loop refusal has a reason', /loop\.js[\s\S]*Redirect loop/.test(text), true);
 
   const run = async (url) => {
@@ -448,6 +468,57 @@ try {
   await popup.setViewport({ width: 400, height: 600 });
   await popup.screenshot({ path: path.join(outDir, 'popup.png'), fullPage: true });
   console.log('screenshot', path.join(outDir, 'popup.png'));
+
+  // Body override. The imported file override already asked for the debugger; allow it, then replace one script.
+  await editor.bringToFront();
+  await editor.waitForSelector('#allow-body', { timeout: 10000 });
+  await editor.click('#allow-body');
+  await editor.waitForFunction(() => !document.querySelector('[data-testid=body-permission-banner]'), { timeout: 10000 }).catch(async (e) => {
+    console.log('--- body banner still up ---\n' + (await editorText()));
+    throw e;
+  });
+  check('debugger permission granted from the editor', true, true);
+
+  await editor.click('#add-group');
+  await editor.keyboard.type('Body override');
+  const bodyGroup = (await editor.$$('section.group')).at(-1);
+  const bodyRule = await addPageRule(bodyGroup, '*:8001/replaced.js', 'overrideBody');
+  await typeCode(bodyRule, 'window.BODY = "LOCAL";');
+  await saveAndSettle();
+  await waitStatus(bodyRule, 'Applied');
+  check('body rule shows applied', await statusOf(bodyRule), '✓ Applied');
+
+  shieldHttp = true;
+  const workerTarget = await browser.waitForTarget((t) => t.type() === 'service_worker' && t.url().includes(id), { timeout: 10000 });
+  const worker = await workerTarget.worker();
+  const replaced = await worker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () => ({ BODY: window.BODY, KEPT: window.KEPT }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/body.html');
+  check('replaced script body runs', replaced.BODY, 'LOCAL');
+  check('unmatched script is untouched', replaced.KEPT, 'PROD');
 } finally {
   await browser.close();
   prod.close();

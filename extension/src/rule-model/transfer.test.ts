@@ -46,13 +46,21 @@ describe('Resource Override import', () => {
     expect(result.workspace).toEqual({
       groups: [
         {
-          id: 'id3',
+          id: 'id4',
           name: '*',
           enabled: true,
           rules: [
             { id: 'id1', enabled: true, match: { kind: 'glob', pattern: 'https://cdn.example.com/*.js' }, action: { type: 'redirect', to: 'http://localhost:8080/*.js' }, resourceTypes: ALL_TYPES, importKey: 'r1' },
             {
               id: 'id2',
+              enabled: true,
+              match: { kind: 'glob', pattern: 'https://cdn.example.com/app.css' },
+              action: { type: 'overrideBody', body: 'body { color: red }' },
+              resourceTypes: ALL_TYPES,
+              importKey: 'r2',
+            },
+            {
+              id: 'id3',
               enabled: false,
               match: { kind: 'glob', pattern: 'https://api.example.com/*' },
               action: {
@@ -73,13 +81,13 @@ describe('Resource Override import', () => {
           importKey: 'd1',
         },
         {
-          id: 'id5',
+          id: 'id6',
           name: 'https://app.example.com/*',
           enabled: false,
           pageDomains: ['app.example.com'],
           rules: [
             {
-              id: 'id4',
+              id: 'id5',
               enabled: true,
               match: { kind: 'glob', pattern: 'https://**.example.com/*' },
               action: { type: 'redirect', to: 'https://**.staging.example.com/*' },
@@ -92,17 +100,20 @@ describe('Resource Override import', () => {
       ],
     });
     expect(result.skipped.map((s) => [s.code, s.group, s.rule])).toEqual([
-      ['file-override-unsupported', 0, 1],
       ['file-inject-unsupported', 0, 3],
       ['empty-header-rule', 1, 1],
     ]);
     expect(result.warnings.map((w) => [w.code, w.group, w.rule])).toEqual([['wildcard-groups-simplified', 1, 0]]);
   });
 
-  it('never copies file bodies into notices', () => {
+  it('keeps file bodies on the rule and out of notices', () => {
     const result = importFixture(roV1);
-    expect(JSON.stringify(result)).not.toContain('color: red');
-    expect(JSON.stringify(result)).not.toContain('console.log');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const notices = JSON.stringify(result.skipped) + JSON.stringify(result.warnings);
+    expect(notices).not.toContain('color: red');
+    expect(notices).not.toContain('console.log');
+    expect(result.workspace.groups[0]?.rules[1]?.action).toEqual({ type: 'overrideBody', body: 'body { color: red }' });
   });
 
   it('maps v2 { ruleGroups } exports with legacy matchUrl names and /regex/ mode', () => {
@@ -124,11 +135,12 @@ describe('Resource Override import', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.workspace.groups.map((g) => [g.name, g.rules.length])).toEqual([
-      ['*', 1],
+      ['*', 2],
       ['Imported group 2', 0],
     ]);
-    expect(result.skipped.map((s) => s.code)).toEqual(['file-override-unsupported', 'unknown-rule-type', 'invalid-after-mapping']);
-    expect(result.skipped[2]?.message).toContain('action.request.0.name');
+    expect(result.workspace.groups[0]?.rules[1]?.action).toEqual({ type: 'overrideBody', body: '{}' });
+    expect(result.skipped.map((s) => s.code)).toEqual(['unknown-rule-type', 'invalid-after-mapping']);
+    expect(result.skipped[1]?.message).toContain('action.request.0.name');
   });
 
   it('rejects unknown RO versions and malformed groups', () => {

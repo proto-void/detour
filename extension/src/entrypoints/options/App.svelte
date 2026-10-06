@@ -10,6 +10,7 @@
   import { serializeExport } from '../../rule-model/transfer';
   import { announce, live } from '../../ui/announcer.svelte';
   import ThemeToggle from '../../ui/ThemeToggle.svelte';
+  import { BODY_CONSENT_KEY, bodyPermissions, workspaceHasBodyRules } from '../../engine-deep/permissions';
   import { addGroup, exportFileName, isAwaitingApply, isDirty, newGroup, validateWorkspace } from '../../workspace-ui/editor';
   import GroupCard from './GroupCard.svelte';
   import RecipePicker from './RecipePicker.svelte';
@@ -30,6 +31,7 @@
   let changedElsewhere = $state(false);
   let failures: PageFailure[] = $state.raw([]);
   let userScriptsReady = $state(true);
+  let bodyPermission = $state(true);
   let testerFocused = $state(false);
 
   const validation = $derived(validateWorkspace(draft));
@@ -40,6 +42,33 @@
     (saved?.groups ?? []).some((g) => g.enabled && g.rules.some((r) => r.enabled && r.action.type === 'injectJs' && r.action.source.kind === 'inline')),
   );
   const isFirefox = import.meta.env.FIREFOX;
+  const bodyPermissionNames = bodyPermissions(isFirefox ? 'firefox' : 'chrome');
+  const needsBodyPermission = $derived(workspaceHasBodyRules(saved ?? { groups: [] }) && !bodyPermission);
+
+  async function checkBodyPermission() {
+    if (!workspaceHasBodyRules(saved ?? { groups: [] })) {
+      bodyPermission = true;
+      return true;
+    }
+    const stored = await area.get(BODY_CONSENT_KEY);
+    const consented = stored[BODY_CONSENT_KEY] === true;
+    const granted = await browser.permissions.contains({ permissions: bodyPermissionNames as never }).catch(() => false);
+    bodyPermission = consented && granted;
+    return bodyPermission;
+  }
+
+  async function allowBodyOverride() {
+    // Firefox's webRequest permission is optional, so the click must request it first.
+    // Chrome's debugger permission is install-time; this click is the attach consent.
+    if (isFirefox) {
+      const granted = await browser.permissions.request({ permissions: bodyPermissionNames as never }).catch(() => false);
+      if (!granted) return announce('WebRequest permission was not allowed.');
+    }
+    await area.set({ [BODY_CONSENT_KEY]: true });
+    bodyPermission = true;
+    await browser.runtime.sendMessage({ type: RESYNC_MESSAGE }).catch(() => {});
+    announce('Body overrides allowed. Applying rules…');
+  }
 
   /** Chrome exposes the API before the toggle is on, but calls throw until it is. */
   async function checkUserScripts() {
@@ -86,6 +115,7 @@
       loadErrors = loaded.errors;
     }
     changedElsewhere = false;
+    await checkBodyPermission();
   }
 
   async function loadReport() {
@@ -167,6 +197,7 @@
     void loadEnabled(area).then((value) => (enabled = value));
     void loadPageFailures();
     void checkUserScripts();
+    void checkBodyPermission();
 
     const onChanged = (changes: Record<string, unknown>, areaName: string) => {
       if (areaName === 'session' && PAGE_FAILURES_KEY in changes) void loadPageFailures();
@@ -188,7 +219,10 @@
     };
     window.addEventListener('beforeunload', beforeUnload);
     // Back from chrome://extensions after flipping the toggle.
-    const onFocus = () => void checkUserScripts();
+    const onFocus = () => {
+      void checkUserScripts();
+      void checkBodyPermission();
+    };
     window.addEventListener('focus', onFocus);
 
     return () => {
@@ -221,6 +255,20 @@
     <div class="banner" role="status">
       <p><strong>Detour is off,</strong> so no rules are applied. Your edits are still saved.</p>
       <button type="button" class="btn" onclick={() => saveEnabled(area, true)}>Turn Detour on</button>
+    </div>
+  {/if}
+
+  {#if needsBodyPermission}
+    <div class="banner warning" role="status" data-testid="body-permission-banner">
+      {#if isFirefox}
+        <p><strong>Response body rules are paused.</strong> Firefox needs permission to rewrite responses. DevTools keeps working. Pages that set <code>integrity</code> can still reject the new file.</p>
+      {:else}
+        <p>
+          <strong>Response body rules are paused.</strong> Allow debugger before Detour attaches. Chrome then shows a debugging banner, and DevTools on that tab will disconnect. Pages that set <code>integrity</code> can
+          still reject the new file.
+        </p>
+      {/if}
+      <button type="button" class="btn" id="allow-body" onclick={allowBodyOverride}>{isFirefox ? 'Allow response rewriting' : 'Allow debugger'}</button>
     </div>
   {/if}
 

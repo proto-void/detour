@@ -104,7 +104,13 @@ describe('page actions (inject / mock)', () => {
     });
   });
 
+  it('accepts a body override and keeps the text byte-for-byte', () => {
+    const parsed = parseRule(rule({ type: 'overrideBody', body: '  window.A = 1;\n', contentType: ' text/javascript ' }));
+    expect(parsed).toMatchObject({ ok: true, value: { action: { type: 'overrideBody', body: '  window.A = 1;\n', contentType: 'text/javascript' } } });
+  });
+
   it.each([
+    [{ type: 'overrideBody', body: '   ' }, 'action.body: Enter the replacement body'],
     [{ type: 'injectJs', source: { kind: 'inline', code: '   ' } }, 'action.source.code: Enter some code'],
     [{ type: 'injectCss', source: { kind: 'url', url: 'file:///x.css' } }, 'action.source.url: Must be an http:// or https:// URL'],
     [{ type: 'injectJs', source: { kind: 'inline', code: 'x' }, runAt: 'later' }, 'action.runAt'],

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { RESOURCE_TYPES, type Action, type Match, type Rule, type Workspace } from '../../rule-model/schema';
+  import BodyFields from './BodyFields.svelte';
   import { announce } from '../../ui/announcer.svelte';
   import Field from '../../ui/Field.svelte';
   import Switch from '../../ui/Switch.svelte';
@@ -174,6 +175,7 @@
             <option value="injectJs">Inject JavaScript</option>
             <option value="injectCss">Inject CSS</option>
             <option value="mock">Mock the response</option>
+            <option value="overrideBody">Replace response body</option>
           </select>
         {/snippet}
       </Field>
@@ -201,6 +203,8 @@
       <HeaderOps action={rule.action} ruleId={rule.id} {validation} {showAll} onchange={(action) => set({ action })} />
     {:else if rule.action.type === 'injectJs' || rule.action.type === 'injectCss' || rule.action.type === 'mock'}
       <PageActionFields action={rule.action} ruleId={rule.id} {validation} {showAll} {userScriptsReady} onchange={(action) => set({ action })} />
+    {:else if rule.action.type === 'overrideBody'}
+      <BodyFields action={rule.action} ruleId={rule.id} {validation} {showAll} onchange={(action) => set({ action })} />
     {/if}
 
     <div class="grid options" class:single={pageRule}>
@@ -264,7 +268,7 @@
       <output for="{id}-sample {id}-pattern" class="result" aria-live="polite" data-testid="preview">
         {#if preview.kind === 'match'}
           <strong>✓ Matches.</strong>
-          {#if preview.outcome === 'redirect'}It would go to <code>{preview.to}</code>{:else if preview.outcome === 'block'}It would be blocked.{:else if preview.outcome === 'modifyHeaders'}Its headers would change.{:else if preview.outcome === 'mock'}It would get the mocked response.{:else}The code would be injected into this page.{/if}
+          {#if preview.outcome === 'redirect'}It would go to <code>{preview.to}</code>{:else if preview.outcome === 'block'}It would be blocked.{:else if preview.outcome === 'modifyHeaders'}Its headers would change.{:else if preview.outcome === 'mock'}It would get the mocked response.{:else if preview.outcome === 'overrideBody'}Its response body would be replaced.{:else}The code would be injected into this page.{/if}
         {:else if preview.kind === 'no-match'}
           <strong>✕ Doesn't match.</strong>
         {:else if preview.kind === 'invalid'}

@@ -290,12 +290,14 @@ describe('page rules in the editor', () => {
     expect(codeLanguage(defaultAction('injectJs'))).toBe('javascript');
     expect(codeLanguage(defaultAction('injectCss'))).toBe('css');
     expect(codeLanguage(defaultAction('mock'))).toBe('json');
+    expect(codeLanguage(defaultAction('overrideBody'))).toBe('text');
+    expect(codeLanguage({ type: 'overrideBody', body: 'x', contentType: 'text/css' })).toBe('css');
     expect(codeLanguage({ type: 'mock', method: 'ANY', status: 200, headers: [{ name: 'Content-Type', value: 'text/html' }], body: '', delayMs: 0 })).toBe('text');
   });
 
   it('classifies what the pattern is tested against', () => {
     expect([isPageAction(defaultAction('mock')), isPageAction(defaultAction('redirect'))]).toEqual([true, false]);
-    expect([matchSubject(defaultAction('injectCss')), matchSubject(defaultAction('mock'))]).toEqual(['page', 'request']);
+    expect([matchSubject(defaultAction('injectCss')), matchSubject(defaultAction('mock')), matchSubject(defaultAction('overrideBody'))]).toEqual(['page', 'request', 'request']);
   });
 
   it('explains empty sources and bad numbers', () => {

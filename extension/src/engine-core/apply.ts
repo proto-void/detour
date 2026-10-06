@@ -1,3 +1,4 @@
+import type { BodyEngine } from '../engine-deep/sync';
 import { planPage, type InjectedKind } from '../page-inject/plan';
 import { syncPage, userScriptsAvailable, type PageApi } from '../page-inject/sync';
 import { emptyWorkspace, type Workspace } from '../rule-model/schema';
@@ -14,6 +15,8 @@ export interface ApplyReport {
   applied: { dnrId: number; groupId: string; ruleId: string }[];
   /** Inject/mock rules registered with the browser (absent in reports from before page-inject). */
   injected?: { groupId: string; ruleId: string; kind: InjectedKind }[];
+  /** Body-override rules armed in the debugger or Firefox filter. Ids only. */
+  bodies?: { groupId: string; ruleId: string }[];
   refused: Refusal[];
   /** True when the batch was rejected without naming a rule and rules were added one by one. */
   fallback: boolean;
@@ -116,7 +119,7 @@ export async function applyWorkspace(dnr: DnrApi, workspace: Workspace, now = ()
  * When the global switch is off, installs nothing but keeps the workspace. An unreadable workspace
  * leaves the current rules and registrations in place.
  */
-export async function syncRules(dnr: DnrApi, area: StorageAreaLike, now = () => new Date(), page?: PageApi): Promise<ApplyReport> {
+export async function syncRules(dnr: DnrApi, area: StorageAreaLike, now = () => new Date(), page?: PageApi, body?: BodyEngine): Promise<ApplyReport> {
   const enabled = await loadEnabled(area);
   const loaded = enabled ? await loadWorkspace(area) : { ok: true as const, value: emptyWorkspace() };
   let report: ApplyReport;
@@ -128,6 +131,10 @@ export async function syncRules(dnr: DnrApi, area: StorageAreaLike, now = () => 
       const plan = planPage(loaded.value, { userScripts: await userScriptsAvailable(page) });
       const result = await syncPage(page, area, plan);
       report = { ...report, injected: result.injected, refused: [...report.refused, ...result.refused], errors: [...report.errors, ...result.errors] };
+    }
+    if (body) {
+      const result = await body.sync(loaded.value, enabled);
+      report = { ...report, bodies: result.bodies, refused: [...report.refused, ...result.refused], errors: [...report.errors, ...result.errors] };
     }
   }
   await area.set({ [APPLY_REPORT_KEY]: report });

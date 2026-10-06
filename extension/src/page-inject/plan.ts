@@ -110,6 +110,7 @@ export function planPage(workspace: Workspace, { userScripts }: PlanOptions): Pa
       if (!rule.enabled) continue;
       const ids = { groupId: group.id, ruleId: rule.id };
       const { action } = rule;
+      if (action.type !== 'injectJs' && action.type !== 'injectCss' && action.type !== 'mock') continue;
       switch (action.type) {
         case 'injectJs':
           if (action.source.kind === 'url') {

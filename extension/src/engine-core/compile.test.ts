@@ -227,7 +227,7 @@ describe('compileWorkspace', () => {
 });
 
 describe('page actions', () => {
-  it('are skipped by the DNR compiler (they run in the page, not the network)', () => {
+  it('are skipped by the DNR compiler (page and body rules use their own engines)', () => {
     const ws: Workspace = {
       groups: [
         {
@@ -237,6 +237,7 @@ describe('page actions', () => {
           rules: [
             { id: 'js', enabled: true, match: { kind: 'glob', pattern: '*' }, action: { type: 'injectJs', source: { kind: 'inline', code: 'x' }, runAt: 'document_start', allFrames: false, world: 'MAIN' } },
             { id: 'mock', enabled: true, match: { kind: 'glob', pattern: '*/api/*' }, action: { type: 'mock', method: 'ANY', status: 200, headers: [], body: '', delayMs: 0 } },
+            { id: 'body', enabled: true, match: { kind: 'glob', pattern: 'https://cdn.example.com/a.js' }, action: { type: 'overrideBody', body: 'x' }, resourceTypes: ['script'] },
             { id: 'b', enabled: true, match: { kind: 'glob', pattern: '*ads*' }, action: { type: 'block' } },
           ],
         },

@@ -19,6 +19,8 @@ const RoRuleSchema = v.looseObject({
   replace: v.optional(v.string(), ''),
   requestRules: v.optional(v.string(), ''),
   responseRules: v.optional(v.string(), ''),
+  /** fileOverride / fileInject payload. Not copied into skip notices. */
+  file: v.optional(v.string(), ''),
 });
 
 const RoGroupSchema = v.looseObject({
@@ -41,7 +43,6 @@ const RoExportSchema = v.pipe(
 type RoRule = v.InferOutput<typeof RoRuleSchema>;
 
 export type ImportNoticeCode =
-  | 'file-override-unsupported'
   | 'file-inject-unsupported'
   | 'unknown-rule-type'
   | 'incomplete-rule'
@@ -158,8 +159,19 @@ export function importResourceOverride(input: unknown, newId: () => string): { o
         if (request.length + response.length === 0) return skip('empty-header-rule', `"${match}": no header operations`);
         return { match: { kind: 'glob', pattern: match }, action: { type: 'modifyHeaders', request, response } };
       }
-      case 'fileOverride':
-        return skip('file-override-unsupported', `"${match}": file overrides need a body engine (local-bridge / engine-deep), not available yet`);
+      case 'fileOverride': {
+        if (!match || !ro.file.trim()) return skip('incomplete-rule', 'File override has an empty match or file');
+        if (hasStarGroups(match)) {
+          warnings.push({
+            code: 'wildcard-groups-simplified',
+            message: `"${match}": "**" runs are treated as a single "*"; Resource Override paired star groups by length`,
+            group,
+            rule,
+          });
+        }
+        // The file string is the new body. The original URL stays, so this is not a data: redirect.
+        return { match: { kind: 'glob', pattern: match }, action: { type: 'overrideBody', body: ro.file } };
+      }
       case 'fileInject':
         return skip('file-inject-unsupported', 'File injects belong to page-inject, not available yet');
       default:

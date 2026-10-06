@@ -22,9 +22,9 @@ describe('importIntoStorage', () => {
 
   it('imports an RO export into an empty workspace and reports what happened', async () => {
     const summary = await importIntoStorage(roText, area, { fileName: 'ro.json', newId: ids() });
-    expect(summary).toMatchObject({ ok: true, source: 'resource-override-v1', groups: 2, rules: 3, replaced: 0 });
+    expect(summary).toMatchObject({ ok: true, source: 'resource-override-v1', groups: 2, rules: 4, replaced: 0 });
     if (!summary.ok) return;
-    expect(summary.skipped.map((s) => s.code)).toEqual(['file-override-unsupported', 'file-inject-unsupported', 'empty-header-rule']);
+    expect(summary.skipped.map((s) => s.code)).toEqual(['file-inject-unsupported', 'empty-header-rule']);
     expect(await groupNames()).toEqual(['*', 'https://app.example.com/*']);
   });
 

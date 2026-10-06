@@ -54,7 +54,8 @@ interface HeaderHit {
 type RequestHit =
   | { kind: 'redirect'; ref: Ref; to: string }
   | { kind: 'block'; ref: Ref }
-  | { kind: 'mock'; ref: Ref; status: number; body: string; method: string };
+  | { kind: 'mock'; ref: Ref; status: number; body: string; method: string }
+  | { kind: 'overrideBody'; ref: Ref; contentType?: string };
 
 interface Resolved {
   idle: boolean;
@@ -63,6 +64,8 @@ interface Resolved {
   page: { ref: Ref; outcome: string }[];
   suppressed: 'redirected' | 'blocked' | null;
   notApplied: { groupName: string; summary: string; message: string }[];
+  /** A redirect or block and a body replacement both matched this URL. */
+  overlap: boolean;
 }
 
 const NULL_BODY = new Set([204, 205, 304]);
@@ -90,6 +93,8 @@ const summaryOf = (rule: Rule): string => {
       return `Inject CSS ${pattern}`;
     case 'mock':
       return `Mock ${rule.action.method ?? 'ANY'} ${pattern}`;
+    case 'overrideBody':
+      return `Replace body ${pattern}`;
   }
 };
 
@@ -169,10 +174,11 @@ const injectOutcome = (rule: Rule): string => {
 /** Which rule wins for `probe`, using the engines' order, switches, site scope, and action lanes. */
 export function resolveProbe(workspace: Workspace, probe: Probe): Resolved {
   const ctx = contextOf(probe);
-  if (!ctx) return { idle: true, request: null, headers: [], page: [], suppressed: null, notApplied: [] };
+  if (!ctx) return { idle: true, request: null, headers: [], page: [], suppressed: null, notApplied: [], overlap: false };
 
   let request: RequestHit | null = null;
   let mock: RequestHit | null = null;
+  let overlap = false;
   const headerRules: { ref: Ref; request: HeaderOp[]; response: HeaderOp[] }[] = [];
   const page: Resolved['page'] = [];
   const notApplied: Resolved['notApplied'] = [];
@@ -197,6 +203,7 @@ export function resolveProbe(workspace: Workspace, probe: Probe): Resolved {
           headerRules.push({ ref, request: action.request ?? [], response: action.response ?? [] });
           continue;
         }
+        if (request?.kind === 'overrideBody') overlap = true;
         if (request) continue;
         if (action.type === 'block') {
           request = { kind: 'block', ref };
@@ -208,6 +215,19 @@ export function resolveProbe(workspace: Workspace, probe: Probe): Resolved {
           continue;
         }
         request = { kind: 'redirect', ref, to: preview.to };
+        continue;
+      }
+
+      if (action.type === 'overrideBody') {
+        if (!resourceMatches(rule, ctx.resourceType) || !urlMatches(rule, ctx.url)) continue;
+        const host = ctx.resourceType === 'main_frame' ? hostnameOf(ctx.url) : hostnameOf(ctx.pageUrl);
+        if (!siteMatches(group, host)) continue;
+        if (request?.kind === 'redirect' || request?.kind === 'block') {
+          overlap = true;
+          continue;
+        }
+        if (request) continue;
+        request = { kind: 'overrideBody', ref, ...(action.contentType && { contentType: action.contentType }) };
         continue;
       }
 
@@ -233,7 +253,7 @@ export function resolveProbe(workspace: Workspace, probe: Probe): Resolved {
 
   // A mock answers in the page, so DNR never sees the request.
   if (mock && ctx.resourceType === 'xmlhttprequest') {
-    return { idle: false, request: mock, headers: [], page, suppressed: null, notApplied };
+    return { idle: false, request: mock, headers: [], page, suppressed: null, notApplied, overlap: false };
   }
 
   const navigationStopped = ctx.resourceType === 'main_frame' && (request?.kind === 'redirect' || request?.kind === 'block');
@@ -245,6 +265,7 @@ export function resolveProbe(workspace: Workspace, probe: Probe): Resolved {
     // Only mention injects that actually matched and were dropped.
     suppressed: navigationStopped && page.length > 0 ? (request?.kind === 'redirect' ? 'redirected' : 'blocked') : null,
     notApplied,
+    overlap,
   };
 }
 
@@ -259,6 +280,9 @@ export function describeResolution(result: Resolved): TesterView {
     lines.push({ ...result.request.ref, outcome: 'Blocks the request.' });
   } else if (result.request?.kind === 'mock') {
     lines.push({ ...result.request.ref, outcome: mockOutcome(result.request.status, result.request.body, result.request.method) });
+  } else if (result.request?.kind === 'overrideBody') {
+    const type = result.request.contentType ? ` and sets Content-Type to ${result.request.contentType}` : '';
+    lines.push({ ...result.request.ref, outcome: `Replaces the response body${type}.` });
   }
   for (const header of result.headers) {
     lines.push({ ...header.ref, outcome: sentence(header.applied.map((item) => describeOp(item.op, item.side))) });
@@ -267,12 +291,15 @@ export function describeResolution(result: Resolved): TesterView {
 
   const notes = result.notApplied.map((item) => `${item.groupName} matches, but is not applied: ${item.message}`);
   if (result.suppressed) notes.push(`Inject rules do not run, because this page is ${result.suppressed}.`);
+  if (result.overlap) {
+    notes.push('This URL matches both a redirect or block and a body replacement. The earlier rule is shown. On Chrome a redirect can still change the address before the body is replaced.');
+  }
 
   if (lines.length === 0) {
     return { headline: result.notApplied.length > 0 ? 'No rule is applied.' : 'No rule matches.', lines, notes };
   }
 
-  const decisive = result.request?.kind === 'redirect' || result.request?.kind === 'block' || result.request?.kind === 'mock';
+  const decisive = result.request?.kind === 'redirect' || result.request?.kind === 'block' || result.request?.kind === 'mock' || result.request?.kind === 'overrideBody';
   const onlyHeaders = !result.request && result.page.length === 0;
   const onlyInjects = !result.request && result.headers.length === 0;
   const headline = decisive || lines.length === 1

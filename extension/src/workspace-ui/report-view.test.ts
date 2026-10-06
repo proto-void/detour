@@ -79,6 +79,7 @@ describe('summarizeRule for page actions', () => {
     [{ type: 'injectCss', source: { kind: 'url', url: 'http://l/x.css' }, runAt: 'document_start', allFrames: false }, 'Inject CSS from http://l/x.css on https://app/*'],
     [{ type: 'mock', method: 'POST', status: 201, headers: [], body: '', delayMs: 0 }, 'Mock POST https://app/* → 201'],
     [{ type: 'mock', method: 'ANY', status: 200, headers: [], body: '', delayMs: 0 }, 'Mock https://app/* → 200'],
+    [{ type: 'overrideBody', body: 'x' }, 'Replace body of https://app/*'],
   ])('%j', (action, expected) => {
     expect(summarizeRule({ ...base, action } as never)).toBe(expected);
   });
@@ -89,5 +90,15 @@ describe('describeReport with page rules', () => {
     const ws: Workspace = { groups: [{ id: 'g', name: 'G', enabled: true, rules: [{ id: 'm', enabled: true, match: { kind: 'glob', pattern: '*/api/*' }, action: { type: 'mock', method: 'ANY', status: 200, headers: [], body: '', delayMs: 0 } }] }] };
     const report: ApplyReport = { appliedAt: 'x', applied: [], injected: [{ groupId: 'g', ruleId: 'm', kind: 'mock' }], refused: [], fallback: false, disabled: false, errors: [] };
     expect(describeReport(report, ws)).toMatchObject({ state: 'active', applied: [{ ruleId: 'm', summary: 'Mock */api/* → 200' }] });
+  });
+
+  it('lists armed body rules as applied without the body text', () => {
+    const ws: Workspace = {
+      groups: [{ id: 'g', name: 'G', enabled: true, rules: [{ id: 'b', enabled: true, match: { kind: 'glob', pattern: 'https://cdn.example.com/a.js' }, action: { type: 'overrideBody', body: 'SECRET' }, resourceTypes: ['script'] }] }],
+    };
+    const report: ApplyReport = { appliedAt: 'x', applied: [], bodies: [{ groupId: 'g', ruleId: 'b' }], refused: [], fallback: false, disabled: false, errors: [] };
+    const view = describeReport(report, ws);
+    expect(view.applied).toEqual([{ ruleId: 'b', groupName: 'G', summary: 'Replace body of https://cdn.example.com/a.js' }]);
+    expect(JSON.stringify(view)).not.toContain('SECRET');
   });
 });

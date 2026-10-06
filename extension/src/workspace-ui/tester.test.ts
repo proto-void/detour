@@ -285,6 +285,26 @@ describe('resolveProbe action lanes', () => {
     expect(view.notes.some((n) => /user scripts/i.test(n))).toBe(true);
   });
 
+  it('lets an earlier body replacement win, and notes a redirect on the same URL', () => {
+    const body = rule('body', { type: 'overrideBody', body: 'local', contentType: 'text/javascript' }, { match: { kind: 'glob', pattern: 'https://cdn.example.com/*.js' }, resourceTypes: ['script'] });
+    const later = redirect('r', 'https://cdn.example.com/*', 'http://127.0.0.1/*', { resourceTypes: ['script'] });
+    const view = lines(ws(group('g', 'Files', [body, later])), probe('https://cdn.example.com/app.js', { resourceType: 'script' }));
+    expect(view.headline).toBe('This rule wins.');
+    expect(view.lines.map((line) => line.outcome)).toEqual(['Replaces the response body and sets Content-Type to text/javascript.']);
+    expect(view.notes.some((note) => /redirect/i.test(note) && /body/i.test(note))).toBe(true);
+
+    const redirectFirst = lines(ws(group('g', 'Files', [later, body])), probe('https://cdn.example.com/app.js', { resourceType: 'script' }));
+    expect(redirectFirst.lines[0]?.outcome).toMatch(/^Redirects to /);
+    expect(redirectFirst.notes.some((note) => /body replacement/i.test(note))).toBe(true);
+  });
+
+  it('lets a fetch mock win over a body replacement', () => {
+    const mock = rule('m', { type: 'mock', method: 'ANY', status: 201, headers: [], body: '{}', delayMs: 0 }, { match: { kind: 'glob', pattern: '*' } });
+    const body = rule('b', { type: 'overrideBody', body: 'nope' }, { match: { kind: 'glob', pattern: '*' }, resourceTypes: ['xmlhttprequest'] });
+    const view = lines(ws(group('g', 'API', [body, mock])), probe('https://api.example.com/x', { resourceType: 'xmlhttprequest' }));
+    expect(view.lines.map((line) => line.outcome)).toEqual(['Returns 201 with body "{}".']);
+  });
+
   it('scopes mocks and injects to the page host', () => {
     const mock = rule('mock', { type: 'mock', method: 'ANY', status: 200, headers: [], body: 'ok', delayMs: 0 }, { match: { kind: 'glob', pattern: '*' } });
     const scoped = group('g', 'App', [mock], { pageDomains: ['app.example.com'] });

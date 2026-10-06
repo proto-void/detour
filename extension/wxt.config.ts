@@ -10,12 +10,15 @@ export default defineConfig({
     description: 'Point production at your code.',
     // scripting: page-inject bridge + mock runtime and insertCSS. userScripts: inline JS rules; Chrome
     // still requires the user's "Allow User Scripts" toggle, Firefox only allows it as optional.
-    permissions: ['declarativeNetRequest', 'storage', 'unlimitedStorage', 'scripting', ...(browser === 'firefox' ? [] : ['userScripts'])],
+    // debugger is install-time on Chrome because an optional debugger grant cannot be accepted headlessly,
+    // and the API is missing until it is granted. Attach still waits for bodyEngineConsent (the Allow button).
+    permissions: ['declarativeNetRequest', 'storage', 'unlimitedStorage', 'scripting', ...(browser === 'firefox' ? [] : ['userScripts', 'debugger'])],
     // redirect and modifyHeaders need host access to the request URL and initiator; injection needs the page.
     host_permissions: ['<all_urls>'],
     ...(browser === 'firefox'
       ? {
-          optional_permissions: ['userScripts'],
+          // userScripts: inline JS. webRequest*: body override via filterResponseData (MDN: MV3 also needs webRequestFilterResponse).
+          optional_permissions: ['userScripts', 'webRequest', 'webRequestBlocking', 'webRequestFilterResponse'],
           browser_specific_settings: {
             gecko: {
               id: 'detour@protovoid.com',

@@ -96,6 +96,8 @@ export function defaultAction(type: Action['type']): Action {
       return { type, source: { kind: 'inline', code: '' }, runAt: 'document_start', allFrames: false };
     case 'mock':
       return { type, method: 'GET', status: 200, headers: [{ name: 'content-type', value: 'application/json' }], body: '{}', delayMs: 0 };
+    case 'overrideBody':
+      return { type, body: '' };
   }
 }
 
@@ -226,6 +228,7 @@ export function validateRule(rule: Rule): RuleValidation {
     const errors = issuesByField(parsed.issues);
     if (rule.match.pattern.trim() === '') errors['match.pattern'] = 'Enter a URL pattern, e.g. https://cdn.example.com/*.js';
     if (rule.action.type === 'redirect' && rule.action.to.trim() === '') errors['action.to'] = 'Enter where matching requests should go';
+    if (rule.action.type === 'overrideBody' && rule.action.body.trim() === '') errors['action.body'] = 'Enter the replacement body';
     if ((rule.action.type === 'injectJs' || rule.action.type === 'injectCss') && rule.action.source.kind === 'url' && rule.action.source.url.trim() === '') {
       errors['action.source.url'] = 'Enter the URL to load, e.g. http://localhost:5173/dev.js';
     }
@@ -237,6 +240,10 @@ export function validateRule(rule: Rule): RuleValidation {
   if (isDnrAction(parsed.output.action)) {
     const compiled = compileRule(parsed.output);
     if (!compiled.ok) warnings[REASON_FIELD[compiled.reason] ?? 'match.pattern'] = `${REASON_LABELS[compiled.reason]}: ${compiled.message}`;
+  }
+  if (rule.action.type === 'overrideBody' && (rule.match.kind === 'regex' || /^\*+$/.test(rule.match.pattern))) {
+    warnings['match.pattern'] =
+      'This pattern pauses every response while the rule is on, then lets non-matches continue. A more specific URL avoids that.';
   }
   if (rule.action.type === 'modifyHeaders') {
     rule.action.request.forEach((op, i) => {
@@ -321,7 +328,7 @@ export type Preview =
   | { kind: 'invalid'; message: string }
   | { kind: 'no-match' }
   | { kind: 'match'; outcome: 'redirect'; to: string }
-  | { kind: 'match'; outcome: 'block' | 'modifyHeaders' | 'injectJs' | 'injectCss' | 'mock' };
+  | { kind: 'match'; outcome: 'block' | 'modifyHeaders' | 'injectJs' | 'injectCss' | 'mock' | 'overrideBody' };
 
 /** Expands `\0`–`\9` and `\\` like DNR `regexSubstitution`. */
 function expandSubstitution(template: string, groups: RegExpExecArray): string {
@@ -383,6 +390,13 @@ export const isPageAction = (action: Action): boolean => action.type === 'inject
 export const matchSubject = (action: Action): 'page' | 'request' => (action.type === 'injectJs' || action.type === 'injectCss' ? 'page' : 'request');
 
 export function codeLanguage(action: Action): CodeLanguage {
+  if (action.type === 'overrideBody') {
+    const type = action.contentType ?? '';
+    if (/json/i.test(type)) return 'json';
+    if (/css/i.test(type)) return 'css';
+    if (/javascript|ecmascript/i.test(type)) return 'javascript';
+    return 'text';
+  }
   if (action.type === 'injectJs') return 'javascript';
   if (action.type === 'injectCss') return 'css';
   if (action.type === 'mock') {
@@ -402,6 +416,7 @@ export function ruleStatus(draftRule: Rule, { report, saved, awaitingApply, fail
   const refused = report.refused.find((r) => r.ruleId === draftRule.id);
   if (refused) return { kind: 'refused', label: REASON_LABELS[refused.reason], message: refused.message };
   if (report.applied.some((a) => a.ruleId === draftRule.id)) return { kind: 'applied' };
+  if (report.bodies?.some((a) => a.ruleId === draftRule.id)) return { kind: 'applied' };
   if (report.injected?.some((a) => a.ruleId === draftRule.id)) {
     const failure = failures?.find((f) => f.ruleId === draftRule.id && f.at >= report.appliedAt);
     return failure ? { kind: 'failing', message: failure.message, page: failure.page } : { kind: 'applied' };
