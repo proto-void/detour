@@ -41,16 +41,16 @@ Deliver Detour's primary UX: popup quick controls, full workspace editor, recipe
 
 ### Acceptance criteria
 
-- [ ] Options page (`options_ui`, opens in a tab) linked from the popup; the popup stays lean
-- [ ] Groups: create, rename, delete, move up/down, on/off switch, site-scoping field (`pageDomains`, comma separated hosts)
-- [ ] Rules: create, edit, delete, move up/down within a group, on/off switch; actions **redirect**, **block**, **modify headers** (request/response set/append/remove)
-- [ ] Match field: glob or regex, a plain-language description, field-level errors from the valibot schemas plus the engine's pre-checks (non-ASCII, bad redirect target, loop, too many wildcards); a sample-URL preview showing match / no match and the redirect result
-- [ ] Rule options: case sensitivity, which requests (all incl. page loads / subresources only / custom kept as-is), note
-- [ ] Explicit **Save** writes the workspace (validated) which triggers engine apply; unsaved changes are flagged and can be discarded; external changes (e.g. a popup import) don't silently overwrite unsaved edits
-- [ ] Inline per-rule status from `applyReport`: applied, refused + reason, off, or waiting for apply
-- [ ] **Export** button downloads the saved workspace as `{ v: 1, data }`
-- [ ] Site-scoped groups show an **iframe coverage warning** on browsers without `topDomains` (Firefox, Chrome < 145): requests made by cross-site iframes on those pages aren't covered (accepted gap, Hamza 2026-10-06)
-- [ ] Dark, keyboard accessible (reorder by buttons, focus kept after moves), no color-only state
+- [x] Options page (`options_ui`, opens in a tab) linked from the popup; the popup stays lean
+- [x] Groups: create, rename, delete, move up/down, on/off switch, site-scoping field (`pageDomains`, comma separated hosts)
+- [x] Rules: create, edit, delete, move up/down within a group, on/off switch; actions **redirect**, **block**, **modify headers** (request/response set/append/remove)
+- [x] Match field: glob or regex, a plain-language description, field-level errors from the valibot schemas plus the engine's pre-checks (non-ASCII, bad redirect target, loop, too many wildcards); a sample-URL preview showing match / no match and the redirect result
+- [x] Rule options: case sensitivity, which requests (all incl. page loads / subresources only / custom kept as-is), note
+- [x] Explicit **Save** writes the workspace (validated) which triggers engine apply; unsaved changes are flagged and can be discarded; external changes (e.g. a popup import) don't silently overwrite unsaved edits
+- [x] Inline per-rule status from `applyReport`: applied, refused + reason, off, or waiting for apply
+- [x] **Export** button downloads the saved workspace as `{ v: 1, data }`
+- [x] Site-scoped groups show an **iframe coverage warning** on browsers without `topDomains` (Firefox, Chrome < 145): requests made by cross-site iframes on those pages aren't covered (accepted gap, Hamza 2026-10-06)
+- [x] Dark, keyboard accessible (reorder by buttons, focus kept after moves), no color-only state
 
 ### Slice 2 out of scope
 

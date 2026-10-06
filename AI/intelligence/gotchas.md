@@ -48,7 +48,7 @@
 ## Page scoping (`pageDomains`)
 
 - DNR has no "tab URL" condition. A page-scoped rule compiles to two DNR rules: `main_frame` with `requestDomains` (the page load is checked against its own URL, like RO), and subresources with `topDomains` (Chrome 145+), or `initiatorDomains` where that isn't available
-- `initiatorDomains` is the frame that made the request, not the top page, so iframes from other sites aren't covered on Firefox / older Chrome
+- `initiatorDomains` is the frame that made the request, not the top page, so iframes from other sites aren't covered on Firefox / older Chrome. **Accepted gap** (Hamza, 2026-10-06). The editor warns on scoped groups only when `supportsTopDomains()` is false
 - An unknown condition key (e.g. `topDomains` on old Chrome) rejects the **whole** batch, so Detour feature-detects with `RuleConditionKeys` (Chrome 145+) before using it
 - Domain conditions match hosts only and include subdomains; ports and paths in RO tab patterns can't be enforced (import warning)
 
@@ -56,6 +56,15 @@
 
 - Firefox closes the popup when a file picker opens, so the importer opens `popup.html?view=tab` in a tab there
 - `applyReport` holds ids only; the popup joins them with the workspace for labels, and split page-scoped rules show once
+- In an async DOM handler, `event.currentTarget` is `null` after the first `await`. Grab the element first. This bit the import picker: the reset threw, so choosing the same file again fired no `change`, and repeat imports silently did nothing
+- A file input fires `change` only when its value changes, so reset `input.value = ''` after each import
+
+## Editor
+
+- Chrome accepts `append` on **request** headers only for a case-sensitive allowlist (accept, accept-encoding, accept-language, access-control-request-headers, cache-control, connection, content-language, cookie, forwarded, if-match, if-none-match, keep-alive, range, te, trailer, transfer-encoding, upgrade, user-agent, via, want-digest, x-forwarded-for). Any other name makes Chrome reject the rule. The editor warns but doesn't block, because Firefox's rules haven't been verified (DNR reference, 2026-10-06)
+- A DNR `regexSubstitution` replaces only the **first match** within the URL, not the whole URL. Glob rules are anchored `^…$`, so for them it's the whole URL anyway. A regex rule with `\1` keeps the unmatched prefix and suffix; the preview copies this
+- Save timing: take the timestamp **before** `storage.set`. The background can apply and write `applyReport` before the write promise resolves, and a later timestamp would leave status stuck on "Applying"
+- Imported rules with a custom `resourceTypes` list show as "Custom list (kept as imported)". There's no per-type editor yet
 
 ## Resource Override import
 
@@ -67,6 +76,7 @@
 - Header strings look like `set name: value;remove name`, with URI-encoded parts and lowercased names
 - The RO mv3 exporter (before PR #73) could write `{}`; Detour rejects it with an explicit message
 - RO "redirect to the same URL = stop here" (an allow-like rule) has no Detour equivalent yet
+- Re-import identity is file name **or** content SHA-256 (ADR-007). Two unrelated exports with the same name replace each other, and the summary says so
 
 ## `data:` redirects
 

@@ -23,7 +23,7 @@ WXT + TypeScript + Svelte 5 + CodeMirror 6 + valibot; Node CLI for Local Bridge.
 
 ## Workspace status
 
-`rule-model`, `engine-core`, and `workspace-ui` slice 1 (popup: on/off switch, RO import, applied/refused report) are **Approved** and built in [`extension/`](extension/). Other specs are Draft. No `cli/` yet.
+`rule-model`, `engine-core`, and `workspace-ui` slices 1–2 are **Approved** and built in [`extension/`](extension/): a popup (on/off switch, RO import, applied/refused report) and a rule editor page (groups, rules, switches, site scoping, live validation, Export). Other specs are Draft. No `cli/` yet.
 
 ```sh
 cd extension

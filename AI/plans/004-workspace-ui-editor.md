@@ -1,6 +1,6 @@
 # 004 — workspace-ui slice 2: rule editor
 
-**Status:** In progress  
+**Status:** Done  
 **Date:** 2026-10-06  
 **Spec:** [workspace-ui](../specs/workspace-ui.md) — slice 2 Approved (Hamza, 2026-10-06)
 
@@ -28,12 +28,34 @@ A workspace editor page (options page, opens in a tab) for groups and rules, wit
 ## Tasks
 
 - [x] T1 Docs: spec slice 2 Approved, distribution CI note, answers recorded (plan 003, ADR-007)
-- [ ] T2 Re-import provenance + `replaceImported` + summary `replaced` — tests
-- [ ] T3 Editor logic module — tests
-- [ ] T4 Options page + popup link + iframe warning; `svelte-check`
-- [ ] T5 Builds (chrome, firefox)
-- [ ] T6 e2e: create a rule in the editor → it fires; re-import replaces instead of duplicating
-- [ ] T7 KB write-back
+- [x] T2 Re-import provenance + `mergeImported` + summary `replaced` — tests
+- [x] T3 Editor logic module — tests
+- [x] T4 Options page + popup link + iframe warning; `svelte-check`
+- [x] T5 Builds (chrome, firefox)
+- [x] T6 e2e: create a rule in the editor → it fires; re-import replaces instead of duplicating
+- [x] T7 KB write-back
+
+## Results (2026-10-06)
+
+- 164 unit tests (10 files) pass; `tsc` + `svelte-check --fail-on-warnings` clean
+- `wxt build`: chrome-mv3 ~125 KB, firefox-mv3; both manifests have `options_ui { page: options.html, open_in_tab: true }`; no warnings
+- `pnpm e2e:chrome` on Chrome for Testing 154: **23/23**. The 9 new checks:
+  - re-import reports "Replaced 2 groups", and the editor still shows 2 groups
+  - no iframe warning (topDomains is supported)
+  - Save is blocked with focus on the empty redirect field
+  - the preview shows the target
+  - the new rule shows ✓ Applied, and its redirect fires on a real page
+  - turning the rule off and saving stops it
+- Bug found by e2e and fixed: the import picker couldn't re-pick the same file (`event.currentTarget` is null after `await`)
+- Deviations:
+  - the helper is named `mergeImported` (not `replaceImported`), and `normalizeDomains` replaces `parseDomains`. Invalid hosts stay in the draft so the schema error shows at the field
+  - engine pre-check problems are **warnings, not blocking errors**, so an imported refused rule never stops you saving unrelated edits
+- **Not run in a real browser:** Firefox. Manual steps, after the plan 003 steps:
+  1. Load `.output/firefox-mv3`
+  2. In the popup choose **Edit rules…**; the editor tab opens
+  3. Add a group with a site (e.g. `localhost`); the iframe warning shows (Firefox has no `topDomains`)
+  4. Add a redirect rule, Save, and check that it shows ✓ Applied and that the redirect shows in the Network panel
+  5. Re-import the same RO file from the popup tab; the summary says "Replaced …", and the editor shows a banner if it had unsaved edits
 
 ## Out of scope
 
