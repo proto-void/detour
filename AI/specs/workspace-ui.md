@@ -4,7 +4,7 @@
 **Last updated:** 2026-10-06  
 **Build order:** 7  
 **Depends on:** rule-model (engines as available)  
-**Plans:** [003-workspace-ui-popup](../plans/003-workspace-ui-popup.md), [004-workspace-ui-editor](../plans/004-workspace-ui-editor.md)
+**Plans:** [003-workspace-ui-popup](../plans/003-workspace-ui-popup.md), [004-workspace-ui-editor](../plans/004-workspace-ui-editor.md). CodeMirror for inject/mock bodies is plan [005](../plans/005-page-inject-api-mock.md).
 
 ## Objective
 
@@ -54,7 +54,7 @@ Deliver Detour's primary UX: popup quick controls, full workspace editor, recipe
 
 ### Slice 2 out of scope
 
-CodeMirror (no body editing exists yet), drag-and-drop reorder, moving rules between groups, undo history, import from the editor page.
+CodeMirror was deferred from this slice and landed with page-inject (plan 005). Still out of scope here: drag-and-drop reorder, moving rules between groups, undo history, import from the editor page.
 
 ## Remainder (Draft — not approved)
 
@@ -72,7 +72,7 @@ CodeMirror (no body editing exists yet), drag-and-drop reorder, moving rules bet
 - [ ] Recipes installable from built-in list
 - [ ] DevTools panel
 - [ ] Light theme toggle
-- [ ] CodeMirror 6 editors once bodies (inject/mock) exist
+- [x] CodeMirror 6 editors for inject/mock bodies (delivered in plan 005; not part of this remainder)
 
 ## Browser support table
 

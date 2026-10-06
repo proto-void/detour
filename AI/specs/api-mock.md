@@ -18,12 +18,12 @@ Mock HTTP APIs by intercepting `fetch` and `XMLHttpRequest` in the page world so
 
 ## Acceptance criteria
 
-- [ ] Rule action `mock { method, status, headers[], body, delayMs }`. The rule's `match` is the **request URL** (absolute, resolved against the page). `method` is `ANY` or one HTTP method
-- [ ] Intercepts both `fetch` and `XMLHttpRequest` (async) for matched requests in top and child frames. The first matching mock in workspace order wins
-- [ ] Unmatched traffic passes through to the native implementation unchanged, with the same arguments
-- [ ] Switching a rule off (or Detour off) takes effect without reload: open pages get the new config and pass through
-- [ ] Conflict policy: a mock answers **inside the page**, so the request never reaches the network and DNR redirect/block/header rules for that URL don't apply. **Mock wins**
-- [ ] `status` 200–599 (Fetch `Response` limits). 204/205/304 get no body. `delayMs` 0–30000, and the delay respects `AbortSignal`
+- [x] Rule action `mock { method, status, headers[], body, delayMs }`. The rule's `match` is the **request URL** (absolute, resolved against the page). `method` is `ANY` or one HTTP method
+- [x] Intercepts both `fetch` and `XMLHttpRequest` (async) for matched requests in top and child frames. The first matching mock in workspace order wins
+- [x] Unmatched traffic passes through to the native implementation unchanged, with the same arguments
+- [x] Switching a rule off (or Detour off) takes effect without reload: open pages get the new config and pass through
+- [x] Conflict policy: a mock answers **inside the page**, so the request never reaches the network and DNR redirect/block/header rules for that URL don't apply. **Mock wins**
+- [x] `status` 200–599 (Fetch `Response` limits). 204/205/304 get no body. `delayMs` 0–30000, and the delay respects `AbortSignal`
 
 ## Mechanism (verified 2026-10-06)
 

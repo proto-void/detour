@@ -19,11 +19,13 @@
 
 - [x] Hamza's plan-003 answers: re-import replaces same-file groups (`importedFrom`, ADR-007); iframe gap accepted and warned about in the editor; CI e2e recorded in the `distribution` spec (not built)
 - [x] **workspace-ui slice 2** Approved (Hamza, 2026-10-06) and built (plan 004): options-page rule editor (CRUD, reorder, group/rule switches, site scoping, live validation, preview, Save, inline status, Export). 164 unit tests; Chrome + Firefox builds clean; `pnpm e2e:chrome` 23/23
+- [x] Hamza's plan-004 answers: re-import keeps on/off via `importKey`; name-only match asks (content-hash match replaces silently); request types live in a collapsed Advanced section
+- [x] **page-inject** + **api-mock** Approved (Hamza, 2026-10-06) and built (plan 005, ADR-008): inline and URL JS/CSS, MAIN-world fetch/XHR mocks, CodeMirror 6 on the options page, apply-report refusals and session page failures. 239 unit tests; Chrome + Firefox builds clean; `pnpm e2e:chrome` 41/41 on Chrome for Testing 154
 
 ## Next
 
-1. **Firefox manual check** (plans 003 + 004 steps): tab importer, editor, iframe warning
-2. **Next spec to review/Approve:** `page-inject` / `api-mock` (build order 3–4), or the `workspace-ui` remainder (rule tester is the most useful next piece)
+1. **Firefox manual check** (plans 003–005): tab importer, editor, iframe warning, user-scripts permission, CSS inject, fetch/XHR mock
+2. **Next spec to review/Approve:** `workspace-ui` remainder — the rule tester is the most useful next piece. `engine-deep` is next in engine build order if body override comes first
 3. `distribution` approval unlocks CI (unit + build + `e2e:chrome`)
 
 ## Blocked

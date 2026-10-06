@@ -19,8 +19,8 @@ Rules → RuleCompiler → Core DNR            (built: engine-core)
 |--------|----------------|------|
 | `rule-model` | Schema, groups, priority, import/export | `extension/src/rule-model/` |
 | `engine-core` | DNR compile/apply; urlFilter preference | `extension/src/engine-core/` |
-| `page-inject` | JS/CSS inject via scripting | — |
-| `api-mock` | fetch/XHR mocks in page world | — |
+| `page-inject` | JS/CSS inject via scripting + userScripts | `extension/src/page-inject/` + `entrypoints/bridge.content.ts` |
+| `api-mock` | fetch/XHR mocks in the page's MAIN world | same module: `mock-runtime.ts` + `entrypoints/mock-main.content.ts` |
 | `engine-deep` | Chromium debugger body path | — |
 | `local-bridge` | Node CLI loopback file server | — |
 | `workspace-ui` | Popup, options, recipes, tester, RO import | `extension/src/workspace-ui/` (logic) + `src/entrypoints/popup/` (slice 1) + `src/entrypoints/options/` (slice 2) |
@@ -43,14 +43,35 @@ storage.local "workspace" { v: 1, data: { groups } }
 
 - Triggers: `runtime.onInstalled`, `runtime.onStartup`, `storage.onChanged` on the `workspace` / `enabled` keys, all through `createCoalescer` (in-flight run + at most one follow-up).
 - Neither UI page talks to the background directly. They write `enabled` / `workspace` to `storage.local` and re-render from `storage.onChanged` (`applyReport`).
-- Import = `importIntoStorage(text, area, { fileName })` → `mergeImported`: replaces groups from the same file (name or SHA-256) in place, else appends; always fresh ids. It refuses to write over an unreadable workspace.
+- Import = `importIntoStorage(text, area, { fileName, onNameOnlyMatch })` → `mergeImported`. Identical content (SHA-256) replaces in place with no prompt. The same file name with different content asks Replace / Import as new / Cancel (no prompt available → import as new). Otherwise it appends. Fresh ids always. `importKey` copies `enabled` from the matched group/rule and replaces everything else. Groups the user created (no `importedFrom`) are never touched. It refuses to write over an unreadable workspace.
+
+## Page engines (as built, ADR-008)
+
+```
+enabled workspace
+  → planPage → userScripts[] (inline JS) + pageConfig { mocks, styles, scripts }
+  → syncPage (inside syncRules): write storage.local.pageConfig, then
+       register content scripts only while needed:
+         detour-bridge  ISOLATED  document_start  allFrames  (CSS, script URLs, mock config)
+         detour-mock    MAIN      document_start  allFrames  (while any mock is enabled)
+       replace Detour user scripts (inline JS)
+  → applyReport gains injected[{groupId,ruleId,kind}] and page refusals
+```
+
+- DNR compile skips `injectJs` / `injectCss` / `mock` (`isDnrAction`). Global off passes an empty workspace to `planPage`, so nothing stays registered.
+- `pageConfig` stores compiled regex sources (not globs) plus mock bodies. The bridge reads it; messages back to the background carry a `ruleId`, never code.
+- Inline JS: `userScripts.register` on `<all_urls>`, guarded in the page (globs, regexes, and top-frame site scoping don't fit match patterns). `runAt` default `document_start`, `allFrames` default false, `world` default `MAIN`.
+- JS URL: bridge inserts `<script src async=false>`. CSS (inline or URL): bridge asks the background, which calls `scripting.insertCSS`. URL CSS is fetched by the background.
+- Mocks: packaged MAIN runtime patches `fetch` and async XHR. Config arrives as a DOM `CustomEvent` JSON string. The first matching mock wins; other traffic calls the native function with the original arguments. Turning a mock off updates open pages without a reload.
+- Runtime failures (CSP-blocked script URL, unreachable CSS URL) append to `storage.session.pageFailures` (last 50, page origin + message, no bodies). The editor shows them on the rule.
+- Permissions: `scripting` always; `userScripts` in Chrome `permissions`, Firefox `optional_permissions`. Content scripts are not listed in the manifest; `syncPage` registers them.
 
 ## UI (workspace-ui)
 
 | Surface | Entry | Holds |
 |---------|-------|-------|
 | Popup | `src/entrypoints/popup/` | global switch, import, applied/refused report, "Edit rules…" → `runtime.openOptionsPage()` |
-| Editor | `src/entrypoints/options/` (`options_ui`, `open_in_tab`) | groups/rules CRUD + reorder, switches, site scoping, validation, preview, Save/Discard, Export |
+| Editor | `src/entrypoints/options/` (`options_ui`, `open_in_tab`) | groups/rules CRUD + reorder, switches, site scoping, request types (collapsed Advanced), inject/mock fields, CodeMirror 6 (options chunk only), validation, preview, Save/Discard, Export, user-scripts banner |
 | Shared | `src/ui/` | `base.css` tokens, `Switch`, `Field`, `announcer` (one live region per page) |
 | Logic | `src/workspace-ui/` | `import-flow`, `report-view`, `editor` (pure; all unit tested) |
 
@@ -61,9 +82,10 @@ storage.local "workspace" { v: 1, data: { groups } }
 
 ## rule-model shape
 
-- `Workspace { groups: Group[] }`, `Group { id, name, enabled, pageDomains?, importedFrom?, rules }` (`pageDomains` = run only on pages of these hosts + subdomains; `importedFrom { file, sha256 }` = provenance, so re-importing that file replaces the group, ADR-007), `Rule { id, enabled, match, action, resourceTypes?, caseSensitive?, note? }`.
+- `Workspace { groups: Group[] }`, `Group { id, name, enabled, pageDomains?, importedFrom?, importKey?, rules }` (`pageDomains` = run only on pages of these hosts + subdomains; `importedFrom { file, sha256 }` = provenance, so re-importing that file replaces the group, ADR-007), `Rule { id, enabled, match, action, resourceTypes?, caseSensitive?, note?, importKey? }`.
 - `match`: `glob` (whole URL, `*` = any run incl. `/`, lazy captures) or `regex` (unanchored, RE2 subset).
-- `action`: `redirect { to }` (glob: `*` in `to` = Nth captured wildcard; regex: `\1`–`\9`), `block`, `modifyHeaders { request[], response[] }` with `set | append | remove`.
+- `action`: `redirect { to }` (glob: `*` in `to` = Nth captured wildcard; regex: `\1`–`\9`), `block`, `modifyHeaders { request[], response[] }` with `set | append | remove`, `injectJs` / `injectCss` `{ source: {kind:'inline',code} | {kind:'url',url}, runAt, allFrames, world? }`, `mock { method, status, headers[], body, delayMs }`. Inject match is the page URL; mock match is the request URL. `resourceTypes` is ignored for those actions.
+- `importKey` on groups and rules: stable identity inside an import (RO id, else position + type + match). Re-import copies `enabled` from the match.
 - **Priority**: flattened position over enabled rules; DNR `priority = n - index` (unique, ≥ 1). Block/redirect: the earliest matching rule wins. modifyHeaders: every matching rule applies, and on the same header the earlier rule wins.
 - Export file = storage envelope `{ v: 1, data }`. Import detects RO by array-shaped `data` / `ruleGroups`.
 

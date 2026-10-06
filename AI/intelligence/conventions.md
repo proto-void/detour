@@ -19,7 +19,7 @@
 ## Code
 
 - TypeScript strict + `noUncheckedIndexedAccess`; valibot at trust boundaries (import, storage load/save)
-- One folder per spec module under `extension/src/` (`rule-model/`, `engine-core/`); entrypoints stay wiring-only
+- One folder per spec module under `extension/src/` (`rule-model/`, `engine-core/`, `page-inject/`). api-mock shares `page-inject/` (one registration path). Entrypoints stay wiring-only
 - Types come from schemas (`v.InferOutput`), not hand-written duplicates
 - Browser APIs are injected as narrow interfaces (`DnrApi`, `StorageAreaLike`) so logic is testable without a browser; cast `browser.*` once at the entrypoint
 - Fallible pure functions return `{ ok: true, value } | { ok: false, errors }`; user-facing errors carry a dot path (`data.groups.0.rules.2.match.pattern: …`)

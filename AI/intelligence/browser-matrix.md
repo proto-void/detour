@@ -1,6 +1,6 @@
 # Browser matrix
 
-**Last verified:** 2026-10-06 (DNR quotas, domain conditions)
+**Last verified:** 2026-10-06 (DNR quotas, domain conditions, page engines on Chrome 154)
 
 ## Supported targets (product intent)
 
@@ -30,7 +30,18 @@ Source: Chrome DNR reference + MDN (2026-10-06). Detour reads the constants at r
 | `initiatorDomains` | 101+ | 128+ | subresource half when `topDomains` is missing |
 | `topDomains` | **145+** | **not on MDN** | subresource half when `RuleConditionKeys` lists it |
 
-All three match subdomains too. Chrome for Testing 154 verified end to end (`pnpm e2e:chrome`, 2026-10-06).
+All three match subdomains too. Chrome for Testing 154 verified end to end (`pnpm e2e:chrome`, 2026-10-06, 41/41).
+
+## Page engines (inject + mock)
+
+| Capability | Chrome / Edge / Brave 120+ | Firefox 128+ | Safari 17+ |
+|------------|----------------------------|--------------|------------|
+| Inline JS | `userScripts` + user toggle (Chrome 138+ “Allow User Scripts”; earlier, Developer mode) | 136+ optional `userScripts` permission; 128–135 refused with a reason | Not available; refuse |
+| JS from a URL | Bridge inserts `<script src>`; page CSP applies | Same (MAIN world 128+) | Verify |
+| CSS inline / URL | `scripting.insertCSS` from the background | Same | Verify |
+| fetch / XHR mock | Packaged MAIN script, `document_start`; no user-scripts toggle | Same | Verify |
+
+Mocks and URL/CSS injection do not need the user-scripts toggle. Inline JS rules are refused (`user-scripts-unavailable`) until it is on.
 
 ## Notes
 

@@ -21,5 +21,10 @@
 | **Workspace** | All groups the user has; stored/exported as `{ v, data }` envelope |
 | **Candidate** | A compiled DNR rule before ids/priority are assigned |
 | **Refusal** | A rule engine-core did not install, with a `reason` code (e.g. `regex-limit`, `browser-rejected`) |
-| **Apply report** | `storage.local.applyReport` — what was applied/refused on the last refresh (ids only) |
+| **Apply report** | `storage.local.applyReport` — applied DNR ids, `injected` page rules, refusals, errors. No rule bodies |
+| **Page config** | `storage.local.pageConfig` — compiled mock/CSS/script-URL entries the bridge reads. Holds mock bodies locally; not telemetry |
+| **Page failure** | `storage.session.pageFailures` — last 50 runtime inject failures (origin + message, no bodies) |
+| **Import key** | Stable id inside an import so re-import can keep that group or rule's on/off state |
+| **User scripts** | Chrome/Firefox API for running user-supplied JS. Needs a toggle (Chrome) or optional permission (Firefox 136+) |
+| **Bridge** | Detour's isolated content script: CSS requests, script-URL tags, mock config handoff |
 | **Unsafe rule** | Chrome DNR term: any action besides block/allow/allowAllRequests/upgradeScheme; separate 5000 cap |

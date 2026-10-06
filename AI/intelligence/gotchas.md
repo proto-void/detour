@@ -64,7 +64,7 @@
 - Chrome accepts `append` on **request** headers only for a case-sensitive allowlist (accept, accept-encoding, accept-language, access-control-request-headers, cache-control, connection, content-language, cookie, forwarded, if-match, if-none-match, keep-alive, range, te, trailer, transfer-encoding, upgrade, user-agent, via, want-digest, x-forwarded-for). Any other name makes Chrome reject the rule. The editor warns but doesn't block, because Firefox's rules haven't been verified (DNR reference, 2026-10-06)
 - A DNR `regexSubstitution` replaces only the **first match** within the URL, not the whole URL. Glob rules are anchored `^…$`, so for them it's the whole URL anyway. A regex rule with `\1` keeps the unmatched prefix and suffix; the preview copies this
 - Save timing: take the timestamp **before** `storage.set`. The background can apply and write `applyReport` before the write promise resolves, and a later timestamp would leave status stuck on "Applying"
-- Imported rules with a custom `resourceTypes` list show as "Custom list (kept as imported)". There's no per-type editor yet
+- Imported rules with a custom `resourceTypes` list show under Advanced as "Custom…". The collapsed Advanced section has a checkbox per type. An empty list is a field error. Inject and mock ignore `resourceTypes`
 
 ## Resource Override import
 
@@ -76,7 +76,7 @@
 - Header strings look like `set name: value;remove name`, with URI-encoded parts and lowercased names
 - The RO mv3 exporter (before PR #73) could write `{}`; Detour rejects it with an explicit message
 - RO "redirect to the same URL = stop here" (an allow-like rule) has no Detour equivalent yet
-- Re-import identity is file name **or** content SHA-256 (ADR-007). Two unrelated exports with the same name replace each other, and the summary says so
+- Re-import identity is file name **or** content SHA-256 (ADR-007). Identical content replaces silently. The same name with different content asks Replace / Import as new / Cancel. `importKey` keeps each group's and rule's on/off state; everything else is replaced. User-created groups (no `importedFrom`) are left alone
 
 ## `data:` redirects
 
@@ -109,3 +109,18 @@
 
 - Body rewrite APIs differ (`filterResponseData` vs debugger); one RuleCompiler, multiple backends
 - Firefox has `declarativeNetRequest.testMatchOutcome()`, a candidate for a native rule tester there
+
+## Page inject and api-mock
+
+- `userScripts` can exist before the user allows it, and its methods throw. Probe with `getScripts()` (`userScriptsAvailable`). Chrome reads it through a getter because the property appears and disappears with the toggle
+- Inline JS is registered on `<all_urls>` and wrapped in a guard. The code runs inside a block, so top-level `let` / `const` / `class` are not page globals. The editor says to use `window.name = …`
+- A script URL inserted at `document_start` still downloads asynchronously, so page scripts can run first. Inline `userScripts` at `document_start` runs before them (verified on Chrome 154)
+- `insertCSS` goes bridge → background → tab, so CSS can land just after `load`. E2E waits for the computed style
+- Subframe site scoping uses `location.ancestorOrigins` when the browser exposes it (Chromium). Firefox frames use their own host
+- Mock config crosses worlds as a `CustomEvent` whose `detail` is a JSON string. Requests made before it arrives are held up to 1 s, then mocked or passed through. Synchronous XHR in that window cannot wait, so it passes through
+- Status 204, 205, 304, and HEAD mocks send no body. `delayMs` listens for `AbortSignal`
+- A mock is answered in the page, so DNR redirect/block/header rules for that URL never see the request. Mock wins
+- CSS and script injection change on the next load. Mock on/off updates open pages without a reload
+- `pageConfig` includes mock bodies (the bridge needs them). Failure records and `applyReport` do not. Do not add telemetry on `pageConfig`
+- CodeMirror 6 is imported only from the options page. The production chunk is about 435 KB; popup stays separate
+- User scripts are cleared on extension update. `runtime.onInstalled` re-runs `syncRules`. Firefox also re-syncs on `permissions.onAdded` / `onRemoved`

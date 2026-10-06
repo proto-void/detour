@@ -19,14 +19,14 @@ Inject user-provided JavaScript and CSS into matched pages at configurable docum
 
 ## Acceptance criteria
 
-- [ ] Rule actions `injectJs` and `injectCss`, each with a source: **inline code** or **URL**. The rule's `match` is the **page URL** (glob/regex); the group's sites still apply
-- [ ] Timing `runAt`: `document_start` (default for JS and CSS, so styles land before first paint), `document_end`, `document_idle`
-- [ ] Frames: top frame only (default) or all frames (`allFrames`)
-- [ ] Inline JS world: `MAIN` (default; shares the page's globals) or isolated `USER_SCRIPT` (exempt from page CSP, can't see page variables)
-- [ ] Registration follows the global switch, group/rule switches and site scoping; re-registered on every workspace change
-- [ ] Refused registrations (e.g. user scripts not allowed) appear in `applyReport` with a reason. Per-page runtime failures (CSP-blocked script URL, unreachable CSS URL) are recorded and shown on the rule
-- [ ] Disabled rules do not inject
-- [ ] UI copy explains MAIN-world risk (the page can see and tamper with injected code) and the user-scripts toggle
+- [x] Rule actions `injectJs` and `injectCss`, each with a source: **inline code** or **URL**. The rule's `match` is the **page URL** (glob/regex); the group's sites still apply
+- [x] Timing `runAt`: `document_start` (default for JS and CSS, so styles land before first paint), `document_end`, `document_idle`
+- [x] Frames: top frame only (default) or all frames (`allFrames`)
+- [x] Inline JS world: `MAIN` (default; shares the page's globals) or isolated `USER_SCRIPT` (exempt from page CSP, can't see page variables)
+- [x] Registration follows the global switch, group/rule switches and site scoping; re-registered on every workspace change
+- [x] Refused registrations (e.g. user scripts not allowed) appear in `applyReport` with a reason. Per-page runtime failures (CSP-blocked script URL, unreachable CSS URL) are recorded and shown on the rule
+- [x] Disabled rules do not inject
+- [x] UI copy explains MAIN-world risk (the page can see and tamper with injected code) and the user-scripts toggle
 
 ## Mechanism (verified against Chrome + MDN docs, 2026-10-06)
 
