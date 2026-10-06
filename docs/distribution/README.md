@@ -6,19 +6,23 @@ The installed extension name stays **Detour**. Store listings should use **Detou
 
 ## Run the same checks as CI
 
-From `extension/`, with Node 24 (see `/.node-version`) and pnpm 12.9.1 via Corepack:
+From the repo root, with Node 24 (see `/.node-version`) and pnpm 12.9.1 via Corepack. The lockfile is `pnpm-lock.yaml` at the root (`extension/` and `cli/`):
 
 ```sh
-cd extension
 corepack pnpm install --frozen-lockfile
-corepack pnpm test
-corepack pnpm typecheck
-corepack pnpm build
-corepack pnpm build:firefox
+corepack pnpm --filter @detour/cli test
+corepack pnpm --filter @detour/cli typecheck
+corepack pnpm --filter @detour/extension test
+corepack pnpm --filter @detour/extension typecheck
+corepack pnpm --filter @detour/extension build
+corepack pnpm --filter @detour/extension build:firefox
+cd extension
 CHROME=$(node scripts/install-chrome.mjs) corepack pnpm e2e:chrome
 corepack pnpm zip
 corepack pnpm zip:firefox
 ```
+
+The store zips are the extension only. Local Bridge is `corepack pnpm --filter @detour/cli exec detour bridge <folder>` (see `cli/README.md`). It is not published to npm from CI.
 
 `corepack pnpm ci` runs that sequence and expects `CHROME` to be set already. `scripts/install-chrome.mjs` prints a Chrome for Testing **stable** binary (cached under `~/.cache/puppeteer` unless `CHROME_CACHE` is set). On Linux, install its libraries once as root:
 

@@ -1,5 +1,5 @@
-# Free-tier GitHub Actions. No store credentials. Local Bridge is not built here.
-# pnpm 12.9.1 matches extension/package.json "packageManager".
+# Free-tier GitHub Actions. No store credentials. The CLI is tested here and is not in the store zips.
+# pnpm 12.9.1 matches the root packageManager field.
 # Local equivalent: docs/distribution/README.md
 
 name: CI
@@ -21,9 +21,6 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: extension
     steps:
       - uses: actions/checkout@v4
 
@@ -35,24 +32,31 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
-          cache-dependency-path: extension/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: CLI tests
+        run: pnpm --filter @detour/cli test
+
+      - name: CLI typecheck
+        run: pnpm --filter @detour/cli typecheck
+
       - name: Unit tests
-        run: pnpm test
+        run: pnpm --filter @detour/extension test
 
       - name: Typecheck
-        run: pnpm typecheck
+        run: pnpm --filter @detour/extension typecheck
 
       - name: Chrome build
-        run: pnpm build
+        run: pnpm --filter @detour/extension build
 
       - name: Firefox build
-        run: pnpm build:firefox
+        run: pnpm --filter @detour/extension build:firefox
 
       - name: Install Chrome for Testing
+        working-directory: extension
         env:
           CHROME_CACHE: ${{ runner.temp }}/chrome
         run: |
@@ -62,9 +66,11 @@ jobs:
           sudo env PATH="$PATH" CHROME_CACHE="$CHROME_CACHE" node scripts/install-chrome.mjs --deps
 
       - name: Chrome e2e
+        working-directory: extension
         run: pnpm e2e:chrome
 
       - name: Package store zips
+        working-directory: extension
         run: |
           pnpm zip
           pnpm zip:firefox
