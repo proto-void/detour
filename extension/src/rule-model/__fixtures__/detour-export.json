@@ -6,6 +6,10 @@
         "id": "g-local",
         "name": "Local dev",
         "enabled": true,
+        "pageDomains": [
+          "example.com",
+          "localhost"
+        ],
         "rules": [
           {
             "id": "r-bundle",

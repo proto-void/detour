@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { matchesUrl } from '../rule-model/match';
 import type { Rule, Workspace } from '../rule-model/schema';
-import { compileRule, compileWorkspace, globToUrlFilter, toRegexSubstitution } from './compile';
+import { compileRule, compileWorkspace, globToUrlFilter, scopeToPages, toRegexSubstitution } from './compile';
 
 /** Reference implementation of DNR urlFilter syntax (`*`, `|`, `||`, `^`) for cross-checking. */
 function urlFilterRegExp(filter: string, caseSensitive: boolean): RegExp {
@@ -162,7 +162,55 @@ describe('compileRule', () => {
   });
 });
 
+describe('scopeToPages', () => {
+  const base = (resourceTypes?: Rule['resourceTypes']) => {
+    const result = compileRule(rule({ ...(resourceTypes && { resourceTypes }) }));
+    if (!result.ok) throw new Error('compile failed');
+    return result.value;
+  };
+
+  it('splits page loads (requestDomains) from subresources (initiatorDomains)', () => {
+    const scoped = scopeToPages(base(['main_frame', 'script', 'xmlhttprequest']), ['app.example.com']);
+    expect(scoped.map((c) => c.condition)).toEqual([
+      { urlFilter: '|https://cdn.example.com/*', isUrlFilterCaseSensitive: false, resourceTypes: ['main_frame'], requestDomains: ['app.example.com'] },
+      { urlFilter: '|https://cdn.example.com/*', isUrlFilterCaseSensitive: false, resourceTypes: ['script', 'xmlhttprequest'], initiatorDomains: ['app.example.com'] },
+    ]);
+  });
+
+  it('uses topDomains for subresources when the browser supports it', () => {
+    const [main, sub] = scopeToPages(base(['main_frame', 'script']), ['example.com'], { topDomains: true });
+    expect(main!.condition).toMatchObject({ requestDomains: ['example.com'] });
+    expect(main!.condition).not.toHaveProperty('topDomains');
+    expect(sub!.condition).toMatchObject({ resourceTypes: ['script'], topDomains: ['example.com'] });
+    expect(sub!.condition).not.toHaveProperty('initiatorDomains');
+  });
+
+  it('keeps the DNR default (no main_frame) as a single rule', () => {
+    const scoped = scopeToPages(base(), ['example.com']);
+    expect(scoped).toHaveLength(1);
+    expect(scoped[0]!.condition).toEqual({ urlFilter: '|https://cdn.example.com/*', isUrlFilterCaseSensitive: false, initiatorDomains: ['example.com'] });
+  });
+
+  it('emits only the page-load rule for main_frame-only rules', () => {
+    const scoped = scopeToPages(base(['main_frame']), ['example.com']);
+    expect(scoped.map((c) => c.condition.resourceTypes)).toEqual([['main_frame']]);
+  });
+});
+
 describe('compileWorkspace', () => {
+  it('scopes rules of groups with pageDomains, keeping both halves adjacent and owned by the rule', () => {
+    const { candidates } = compileWorkspace({
+      groups: [
+        { id: 'g', name: 'g', enabled: true, pageDomains: ['example.com'], rules: [rule({ id: 'a', resourceTypes: ['main_frame', 'script'] }), rule({ id: 'b' })] },
+      ],
+    });
+    expect(candidates.map((c) => [c.ruleId, c.condition.resourceTypes])).toEqual([
+      ['a', ['main_frame']],
+      ['a', ['script']],
+      ['b', undefined],
+    ]);
+  });
+
   const ws: Workspace = {
     groups: [
       { id: 'g1', name: 'first', enabled: true, rules: [rule({ id: 'a' }), rule({ id: 'b', enabled: false }), rule({ id: 'c' })] },

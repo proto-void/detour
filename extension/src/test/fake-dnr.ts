@@ -8,6 +8,8 @@ export interface FakeDnrOptions {
   rejectRule?: (rule: DnrRule) => string | undefined;
   /** Return `{ isSupported: false }` to emulate RE2 rejections; omit to drop `isRegexSupported`. */
   isRegexSupported?: (regex: string) => { isSupported: boolean; reason?: string };
+  /** Expose Chrome 145+'s RuleConditionKeys with topDomains; otherwise topDomains is rejected like older Chrome. */
+  topDomains?: boolean;
   /** Enforce this hidden regex cap with an error that names no rule (quota mis-estimate). */
   hiddenRegexCap?: number;
 }
@@ -30,6 +32,7 @@ export function createFakeDnr(options: FakeDnrOptions = {}) {
       for (const id of removeRuleIds) next.delete(id);
       for (const rule of addRules) {
         if (next.has(rule.id)) throw new Error(`Rule with id ${rule.id} does not have a unique ID.`);
+        if (rule.condition.topDomains && !options.topDomains) throw new Error(`Rule with id ${rule.id}: Unexpected property "topDomains".`);
         const rejection = options.rejectRule?.(rule);
         if (rejection) throw new Error(`Rule with id ${rule.id} ${rejection}`);
         next.set(rule.id, structuredClone(rule));
@@ -42,6 +45,7 @@ export function createFakeDnr(options: FakeDnrOptions = {}) {
       if (all.length > dnr.MAX_NUMBER_OF_DYNAMIC_RULES!) throw new Error('Dynamic rule count exceeded.');
       rules = next;
     },
+    ...(options.topDomains && { RuleConditionKeys: { URL_FILTER: 'urlFilter', TOP_DOMAINS: 'topDomains' } }),
     ...(options.isRegexSupported && {
       isRegexSupported: async ({ regex }: { regex: string }) => options.isRegexSupported!(regex),
     }),

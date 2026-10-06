@@ -22,6 +22,12 @@ export interface DnrCondition {
   regexFilter?: string;
   isUrlFilterCaseSensitive?: boolean;
   resourceTypes?: ResourceType[];
+  /** Domain of the request URL (Chrome 101+, Firefox). */
+  requestDomains?: string[];
+  /** Domain of the request initiator (Chrome 101+, Firefox). */
+  initiatorDomains?: string[];
+  /** Domain of the top-level frame (Chrome 145+; not in Firefox). */
+  topDomains?: string[];
 }
 
 export interface DnrRule {
@@ -42,4 +48,9 @@ export interface DnrApi {
   /** Firefox < 128 / Safari: combined dynamic + session cap. */
   readonly MAX_NUMBER_OF_DYNAMIC_AND_SESSION_RULES?: number;
   readonly MAX_NUMBER_OF_REGEX_RULES?: number;
+  /** Chrome 145+: enum of supported condition keys (e.g. TOP_DOMAINS: "topDomains"). */
+  readonly RuleConditionKeys?: Record<string, string>;
 }
+
+/** Unknown condition keys make the whole atomic batch fail on older browsers, so detect before using. */
+export const supportsTopDomains = (dnr: DnrApi): boolean => Object.values(dnr.RuleConditionKeys ?? {}).includes('topDomains');

@@ -29,7 +29,7 @@ export interface Candidate {
   condition: DnrCondition;
 }
 
-type CompiledRule = Omit<Candidate, 'groupId' | 'ruleId'>;
+export type CompiledRule = Omit<Candidate, 'groupId' | 'ruleId'>;
 type RuleResult = { ok: true; value: CompiledRule } | { ok: false; reason: RefusalReason; message: string };
 
 const PRINTABLE_ASCII = /^[\x20-\x7e]*$/;
@@ -138,8 +138,36 @@ export function compileRule(rule: Rule): RuleResult {
   };
 }
 
+export interface CompileOptions {
+  /** Browser accepts the `topDomains` condition (Chrome 145+). */
+  topDomains?: boolean;
+}
+
+/**
+ * Restricts a compiled rule to pages on `domains`. A page load's own URL is the page, so main_frame
+ * is matched by `requestDomains` (as RO compared the tab URL); everything else by the top-level
+ * frame where supported, else by initiator. Can split one rule into two DNR rules.
+ */
+export function scopeToPages(compiled: CompiledRule, domains: string[], { topDomains = false }: CompileOptions = {}): CompiledRule[] {
+  const types = compiled.condition.resourceTypes;
+  const subresourceTypes = types?.filter((t) => t !== 'main_frame');
+  const scoped: CompiledRule[] = [];
+  if (types?.includes('main_frame')) {
+    scoped.push({ ...compiled, condition: { ...compiled.condition, resourceTypes: ['main_frame'], requestDomains: domains } });
+  }
+  // Omitted resourceTypes already means "everything except main_frame".
+  if (subresourceTypes === undefined || subresourceTypes.length > 0) {
+    const { resourceTypes: _, ...rest } = compiled.condition;
+    scoped.push({
+      ...compiled,
+      condition: { ...rest, ...(subresourceTypes && { resourceTypes: subresourceTypes }), [topDomains ? 'topDomains' : 'initiatorDomains']: domains },
+    });
+  }
+  return scoped;
+}
+
 /** Enabled groups → enabled rules, in workspace order (which is priority order). */
-export function compileWorkspace(workspace: Workspace): { candidates: Candidate[]; refused: Refusal[] } {
+export function compileWorkspace(workspace: Workspace, options: CompileOptions = {}): { candidates: Candidate[]; refused: Refusal[] } {
   const candidates: Candidate[] = [];
   const refused: Refusal[] = [];
   for (const group of workspace.groups) {
@@ -148,8 +176,12 @@ export function compileWorkspace(workspace: Workspace): { candidates: Candidate[
       if (!rule.enabled) continue;
       const result = compileRule(rule);
       const ids = { groupId: group.id, ruleId: rule.id };
-      if (result.ok) candidates.push({ ...ids, ...result.value });
-      else refused.push({ ...ids, reason: result.reason, message: result.message });
+      if (!result.ok) {
+        refused.push({ ...ids, reason: result.reason, message: result.message });
+        continue;
+      }
+      const compiled = group.pageDomains ? scopeToPages(result.value, group.pageDomains, options) : [result.value];
+      for (const c of compiled) candidates.push({ ...ids, ...c });
     }
   }
   return { candidates, refused };

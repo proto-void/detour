@@ -1,7 +1,7 @@
 import { loadWorkspace, type StorageAreaLike } from '../rule-model/storage';
 import type { Workspace } from '../rule-model/schema';
 import { compileWorkspace, type Candidate, type Refusal } from './compile';
-import type { DnrApi, DnrRule } from './dnr';
+import { supportsTopDomains, type DnrApi, type DnrRule } from './dnr';
 import { enforceLimits, readLimits } from './limits';
 
 export const APPLY_REPORT_KEY = 'applyReport';
@@ -48,7 +48,7 @@ const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e)
  * Priority is positional: the first enabled rule of the first enabled group gets the highest value.
  */
 export async function applyWorkspace(dnr: DnrApi, workspace: Workspace, now = () => new Date()): Promise<ApplyReport> {
-  const compiled = compileWorkspace(workspace);
+  const compiled = compileWorkspace(workspace, { topDomains: supportsTopDomains(dnr) });
   const regexChecked = await refuseUnsupportedRegex(dnr, compiled.candidates);
   const { kept, refused: overLimit } = enforceLimits(regexChecked.supported, readLimits(dnr));
   const refused = [...compiled.refused, ...regexChecked.refused, ...overLimit];

@@ -128,6 +128,29 @@ describe('applyWorkspace', () => {
     expect(report.refused).toEqual([expect.objectContaining({ ruleId: 'la', reason: 'unsupported-regex' })]);
   });
 
+  it('feature-detects topDomains so older browsers never see the key', async () => {
+    const scoped = ws({ ...group('g', [{ ...redirect('a'), resourceTypes: ['main_frame', 'script'] }]), pageDomains: ['example.com'] });
+
+    const old = createFakeDnr();
+    const oldReport = await applyWorkspace(old.dnr, scoped);
+    expect(oldReport.refused).toEqual([]);
+    expect(old.rules().map((r) => Object.keys(r.condition).filter((k) => k.endsWith('Domains')))).toEqual([['requestDomains'], ['initiatorDomains']]);
+
+    const modern = createFakeDnr({ topDomains: true });
+    await applyWorkspace(modern.dnr, scoped);
+    expect(modern.rules()[1]!.condition.topDomains).toEqual(['example.com']);
+  });
+
+  it('reports both DNR ids of a split rule against the same Detour rule', async () => {
+    const { dnr } = createFakeDnr();
+    const report = await applyWorkspace(dnr, ws({ ...group('g', [{ ...redirect('a'), resourceTypes: ['main_frame', 'script'] }, redirect('b')]), pageDomains: ['example.com'] }));
+    expect(report.applied).toEqual([
+      { dnrId: 1, groupId: 'g', ruleId: 'a' },
+      { dnrId: 2, groupId: 'g', ruleId: 'a' },
+      { dnrId: 3, groupId: 'g', ruleId: 'b' },
+    ]);
+  });
+
   it('includes compile refusals in the report', async () => {
     const { dnr } = createFakeDnr();
     const loop: Rule = { id: 'loop', enabled: true, match: { kind: 'glob', pattern: '*' }, action: { type: 'redirect', to: 'http://localhost/' } };

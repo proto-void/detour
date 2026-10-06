@@ -63,6 +63,20 @@ describe('WorkspaceSchema', () => {
   });
 });
 
+describe('GroupSchema pageDomains', () => {
+  const groupWith = (pageDomains: unknown) => ({ groups: [{ id: 'g', name: 'g', enabled: true, pageDomains, rules: [] }] });
+
+  it('accepts plain hostnames', () => {
+    expect(parseWorkspace(groupWith(['example.com', 'localhost', '127.0.0.1'])).ok).toBe(true);
+  });
+
+  it.each([[[]], [['https://example.com']], [['example.com:8080']], [['Example.com']], [['*.example.com']]])('rejects %j', (pageDomains) => {
+    const result = parseWorkspace(groupWith(pageDomains));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors[0]).toMatch(/^groups\.0\.pageDomains/);
+  });
+});
+
 describe('EnvelopeSchema', () => {
   it('requires the schema version', () => {
     const result = parseEnvelope({ v: 9, data: { groups: [] } });

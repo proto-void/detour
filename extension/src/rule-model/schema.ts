@@ -78,10 +78,17 @@ export const RuleSchema = v.object({
   note: v.optional(v.string()),
 });
 
+const Domain = v.pipe(
+  v.string(),
+  v.regex(/^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)*$/, 'Domain must be a lowercase ASCII hostname without scheme, port or path (punycode for IDNs)'),
+);
+
 export const GroupSchema = v.object({
   id: Id,
   name: v.string(),
   enabled: v.boolean(),
+  /** Only run on pages whose host is (a subdomain of) one of these. Omitted = every page. */
+  pageDomains: v.optional(v.pipe(v.array(Domain), v.minLength(1, 'Use at least one domain or omit the field'))),
   rules: v.array(RuleSchema),
 });
 
