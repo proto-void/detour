@@ -16,10 +16,13 @@
     "typecheck": "wxt prepare && tsc --noEmit && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "test": "vitest run",
     "e2e:chrome": "node e2e/chrome-smoke.mjs",
+    "chrome:install": "node scripts/install-chrome.mjs",
+    "ci": "pnpm test && pnpm typecheck && pnpm build && pnpm build:firefox && pnpm e2e:chrome && pnpm zip && pnpm zip:firefox",
     "test:watch": "vitest",
     "postinstall": "wxt prepare"
   },
   "devDependencies": {
+    "@puppeteer/browsers": "3.2.3",
     "@wxt-dev/module-svelte": "^2.0.5",
     "puppeteer-core": "^25.12.0",
     "svelte": "^5.57.1",

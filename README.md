@@ -17,13 +17,13 @@ Read **[AI/README.md](AI/README.md)** — master router for product strategy, pr
 | [AI/plans/](AI/plans/) | Implementation plans |
 | [.cursor/rules/](.cursor/rules/) | Thin Cursor adapters |
 
-## Stack (planned)
+## Stack
 
-WXT + TypeScript + Svelte 5 + CodeMirror 6 + valibot; Node CLI for Local Bridge. See [AI/DECISIONS.md](AI/DECISIONS.md) and [AI/intelligence/tech-baseline.md](AI/intelligence/tech-baseline.md).
+WXT + TypeScript + Svelte 5 + CodeMirror 6 + valibot. Local Bridge (Node CLI) is still a Draft spec. See [AI/DECISIONS.md](AI/DECISIONS.md) and [AI/intelligence/tech-baseline.md](AI/intelligence/tech-baseline.md).
 
 ## Workspace status
 
-`rule-model`, `engine-core`, and `workspace-ui` slices 1–2 are **Approved** and built in [`extension/`](extension/): a popup (on/off switch, RO import, applied/refused report) and a rule editor page (groups, rules, switches, site scoping, live validation, Export). Other specs are Draft. No `cli/` yet.
+What's built is tracked in [AI/PROGRESS.md](AI/PROGRESS.md). Extension code is in [`extension/`](extension/). No `cli/` yet.
 
 ```sh
 cd extension
@@ -32,5 +32,9 @@ corepack pnpm test          # Vitest
 corepack pnpm typecheck     # tsc + svelte-check
 corepack pnpm build         # .output/chrome-mv3
 corepack pnpm build:firefox # .output/firefox-mv3
-CHROME=<Chrome for Testing binary> corepack pnpm e2e:chrome  # real-browser smoke (after build)
+CHROME=$(node scripts/install-chrome.mjs) corepack pnpm e2e:chrome
+corepack pnpm zip           # .output/detour-<version>-chrome.zip
+corepack pnpm zip:firefox   # firefox zip + sources zip
 ```
+
+CI runs those checks on pull requests and `main`. Packaging, store-listing copy, and how to push are in [docs/distribution/README.md](docs/distribution/README.md).

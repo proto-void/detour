@@ -92,7 +92,12 @@ const browser = await puppeteer.launch({
   pipe: true,
   enableExtensions: true,
   // Headless cannot click the debugging infobar. The permission itself is still requested from the page.
-  args: ['--no-first-run', '--silent-debugger-extension-api'],
+  // GitHub-hosted runners need the sandbox off. Local runs keep the default sandbox.
+  args: [
+    '--no-first-run',
+    '--silent-debugger-extension-api',
+    ...(process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] : []),
+  ],
   targetFilter: (target) => {
     if (!shieldHttp) return true;
     const url = target.url();

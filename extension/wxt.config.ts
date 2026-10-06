@@ -3,6 +3,19 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   srcDir: 'src',
   modules: ['@wxt-dev/module-svelte'],
+  // Package name @detour/extension would zip as "detourextension-…". Store files are detour-<version>-<browser>.zip.
+  zip: {
+    name: 'detour',
+    excludeSources: [
+      '**/.env',
+      '**/.env.*',
+      '**/*.pem',
+      '**/*.p12',
+      '**/credentials/**',
+      '**/secrets/**',
+      '**/.wxt/**',
+    ],
+  },
   // WXT defaults Firefox/Safari to MV2; Detour targets MV3 everywhere.
   manifestVersion: 3,
   manifest: ({ browser }) => ({

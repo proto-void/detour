@@ -1,0 +1,98 @@
+# Free-tier GitHub Actions. No store credentials. Local Bridge is not built here.
+# pnpm 12.9.1 matches extension/package.json "packageManager".
+# Local equivalent: docs/distribution/README.md
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type == 'branch' }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.9.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: extension/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Chrome build
+        run: pnpm build
+
+      - name: Firefox build
+        run: pnpm build:firefox
+
+      - name: Install Chrome for Testing
+        env:
+          CHROME_CACHE: ${{ runner.temp }}/chrome
+        run: |
+          set -euo pipefail
+          line=$(node scripts/install-chrome.mjs)
+          echo "CHROME=${line}" >> "$GITHUB_ENV"
+          sudo env PATH="$PATH" CHROME_CACHE="$CHROME_CACHE" node scripts/install-chrome.mjs --deps
+
+      - name: Chrome e2e
+        run: pnpm e2e:chrome
+
+      - name: Package store zips
+        run: |
+          pnpm zip
+          pnpm zip:firefox
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: detour-packages
+          path: extension/.output/*.zip
+          if-no-files-found: error
+
+  release:
+    needs: verify
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: detour-packages
+          path: packages
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${GITHUB_REF_NAME}" packages/*.zip \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --verify-tag
