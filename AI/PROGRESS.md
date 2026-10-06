@@ -37,8 +37,9 @@
 
 ## Next
 
-1. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
-2. npm publish of `@detour/cli` is still out of scope
+1. Plan 018: rewrite `integrity` in `setHTMLUnsafe` even when `runScripts` is omitted or not strictly true (Approved, Hamza, 2026-10-07)
+2. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
+3. npm publish of `@detour/cli` is still out of scope
 
 ## Open questions (not blocking)
 
@@ -49,7 +50,6 @@
 - Packed Chromium rows store the tab URL, not the subresource. Is that enough, or should packed builds stay limited to unpacked-style request URLs some other way?
 - Firefox does not record DNR matches (no feedback API; `webRequest` was not added). Is that gap acceptable?
 - Inline JS injections are not log rows. Worth a later note, or leave them to the apply report?
-- `setHTMLUnsafe` with `runScripts` omitted or false leaves the page's hashes in place. A stylesheet in that inert call can still be rejected. Worth rewriting those strings too?
 - `Document.parseHTMLUnsafe` is not hooked. Scripting is disabled on the document it creates. A page that later moves those nodes into a live document can still keep the page's hash. Worth a later pass?
 - `setAttributeNode` and `setAttributeNodeNS` are not hooked. A page that moves an `Attr` node that way can keep the page's hash. Worth a later pass?
 
