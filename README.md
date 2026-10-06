@@ -23,12 +23,14 @@ WXT + TypeScript + Svelte 5 + CodeMirror 6 + valibot; Node CLI for Local Bridge.
 
 ## Workspace status
 
-`rule-model` and `engine-core` are **Approved** and built in [`extension/`](extension/) (no UI yet). Other specs are Draft. No `cli/` yet.
+`rule-model`, `engine-core`, and `workspace-ui` slice 1 (popup: on/off switch, RO import, applied/refused report) are **Approved** and built in [`extension/`](extension/). Other specs are Draft. No `cli/` yet.
 
 ```sh
 cd extension
 corepack pnpm install
 corepack pnpm test          # Vitest
+corepack pnpm typecheck     # tsc + svelte-check
 corepack pnpm build         # .output/chrome-mv3
 corepack pnpm build:firefox # .output/firefox-mv3
+CHROME=<Chrome for Testing binary> corepack pnpm e2e:chrome  # real-browser smoke (after build)
 ```

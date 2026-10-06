@@ -14,11 +14,14 @@
 - [x] **rule-model** + **engine-core** specs Approved (Hamza, 2026-10-06)
 - [x] Plan `002-rule-model-engine-core`: `extension/` scaffold (WXT 0.21, TS 6, Svelte 5 module, valibot, Vitest 5, pnpm), rule schema, matcher, storage, Detour export/import, RO v1/v2 import, DNR compiler, limits, atomic apply, coalescer, background wiring. 87 unit tests; Chrome + Firefox MV3 builds green
 
+- [x] Hamza's plan-002 answers applied: gecko id `detour@protovoid.com`; RO page scoping preserved via `pageDomains` (ADR-006); imported RO rules include `main_frame`; single-rule fallback kept
+- [x] **workspace-ui slice 1** Approved (Hamza, 2026-10-06) and built (plan 003): Svelte 5 popup with a global switch, RO/Detour import, and an applied/refused report. 130 unit tests; Chrome + Firefox builds warning-free; real Chrome 154 smoke `pnpm e2e:chrome` 14/14
+
 ## Next
 
-1. **Manual browser check** (engine-core verification): load `extension/.output/chrome-mv3` and `firefox-mv3`, seed a workspace in `storage.local`, and confirm a redirect/header/block on a sample page. There's no UI yet, so seed it from the service-worker console
-2. **Hamza decisions** (see plan 002 open questions): Firefox gecko id; RO tab-URL group scoping; `main_frame` default for imported RO rules
-3. **Next spec to review/Approve:** `workspace-ui` (minimal popup + options: toggle, RO import, apply report). That gives engine-core a real surface and a manual test path. `page-inject` / `api-mock` are next in build order if UI should wait
+1. **Firefox manual check** (steps in plan 003), especially the tab-based importer
+2. **Next spec to review/Approve:** the `workspace-ui` remainder (rule editor + group toggles is the most-needed piece) or `page-inject` / `api-mock` per build order
+3. Consider running `e2e:chrome` in CI once `distribution`/CI work is approved
 
 ## Blocked
 

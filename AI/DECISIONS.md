@@ -126,3 +126,25 @@ engine-core must batch updates, keep group/rule order as priority, and never dro
 
 - Positional ids carry no meaning across refreshes, so observability must map ids through `applyReport`
 - A full replace costs one call even for a single edit; that's fine at Detour scale and keeps state simple
+
+## ADR-006 — Page scoping and the global switch
+
+**Status:** Accepted  
+**Date:** 2026-10-06 (Hamza's answers to plan 002 questions + workspace-ui slice 1)
+
+### Context
+
+Resource Override gates groups by tab URL; DNR has no tab condition. The popup needs an on/off switch that doesn't lose rules.
+
+### Decision
+
+- Groups carry optional `pageDomains`. A scoped rule compiles to a `main_frame` rule with `requestDomains`, plus a subresource rule with `topDomains` (feature-detected via `RuleConditionKeys`), falling back to `initiatorDomains`
+- RO tab patterns map to hosts. Port/path parts produce a warning. A pattern that can't be expressed imports the group disabled with a reason
+- Imported RO rules list all resource types, including `main_frame`
+- Global off = `storage.local.enabled === false` → apply an empty rule set; the workspace is untouched
+- Keep the single-rule fallback on unexplained rejections
+
+### Consequences
+
+- Firefox / Chrome < 145 scope subresources by initiator, so a cross-site iframe on a scoped page isn't covered
+- One Detour rule can cost two DNR rules toward quotas

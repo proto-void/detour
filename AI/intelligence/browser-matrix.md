@@ -1,6 +1,6 @@
 # Browser matrix
 
-**Last verified:** 2026-10-06 (DNR quotas added)
+**Last verified:** 2026-10-06 (DNR quotas, domain conditions)
 
 ## Supported targets (product intent)
 
@@ -21,6 +21,16 @@
 | Safari | `MAX_NUMBER_OF_DYNAMIC_AND_SESSION_RULES` | — | no separate cap |
 
 Source: Chrome DNR reference + MDN (2026-10-06). Detour reads the constants at runtime.
+
+## DNR domain conditions (page scoping)
+
+| Condition | Chrome | Firefox | Detour use |
+|-----------|--------|---------|------------|
+| `requestDomains` | 101+ | 128+ | `main_frame` half of a page-scoped rule |
+| `initiatorDomains` | 101+ | 128+ | subresource half when `topDomains` is missing |
+| `topDomains` | **145+** | **not on MDN** | subresource half when `RuleConditionKeys` lists it |
+
+All three match subdomains too. Chrome for Testing 154 verified end to end (`pnpm e2e:chrome`, 2026-10-06).
 
 ## Notes
 

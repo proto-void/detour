@@ -41,14 +41,28 @@
 ## WXT / build
 
 - WXT defaults Firefox and Safari to **MV2**; Detour sets `manifestVersion: 3`. Firefox MV3 output uses `background.scripts` (event page), not `service_worker`
-- Firefox MV3 build warns that the extension needs a `browser_specific_settings.gecko.id`, which is still unset (distribution decision)
+- Firefox gecko id is `detour@protovoid.com` (Hamza, 2026-10-06), with `data_collection_permissions: { required: ['none'] }`; the Firefox build is warning-free
 - Never call `browser.*` at module top level in entrypoints; WXT imports them in Node with a fake browser
+- Svelte 5: a `const` derived from a prop captures only its initial value (`state_referenced_locally`); use `$derived`. `typecheck` runs `svelte-check --fail-on-warnings`
+
+## Page scoping (`pageDomains`)
+
+- DNR has no "tab URL" condition. A page-scoped rule compiles to two DNR rules: `main_frame` with `requestDomains` (the page load is checked against its own URL, like RO), and subresources with `topDomains` (Chrome 145+), or `initiatorDomains` where that isn't available
+- `initiatorDomains` is the frame that made the request, not the top page, so iframes from other sites aren't covered on Firefox / older Chrome
+- An unknown condition key (e.g. `topDomains` on old Chrome) rejects the **whole** batch, so Detour feature-detects with `RuleConditionKeys` (Chrome 145+) before using it
+- Domain conditions match hosts only and include subdomains; ports and paths in RO tab patterns can't be enforced (import warning)
+
+## Popup
+
+- Firefox closes the popup when a file picker opens, so the importer opens `popup.html?view=tab` in a tab there
+- `applyReport` holds ids only; the popup joins them with the workspace for labels, and split page-scoped rules show once
 
 ## Resource Override import
 
 - v1 (master): `{ v: 1, data: [{ id: "d1", matchUrl, on, rules }] }`, file bodies inline in `rule.file`
 - v2 (mv3): the original exporter wrote `{ v: 2, ruleGroups }`, while the importer read `data`. Fixed in PR #73 to `{ v: 2, data }`. Groups use `name`, but older exports wrote `matchUrl`
-- A group's `matchUrl`/`name` gates rules by **tab URL**, which DNR can't express as a glob. Detour imports such groups ungated with a `page-scope-dropped` warning
+- A group's `matchUrl`/`name` gates rules by **tab URL**. Detour maps the host to `pageDomains`. A port/path it can't enforce gives a `page-scope-approximated` warning. A pattern with no usable host (e.g. `*` host with a path) imports the group **disabled** with a `page-scope-unsupported` reason
+- RO applied rules to page loads too, so imported rules list every resource type explicitly, including `main_frame`
 - RO globs pair `*` runs by length (`**` ↔ `**`); Detour treats any run as one wildcard, with a `wildcard-groups-simplified` warning
 - Header strings look like `set name: value;remove name`, with URI-encoded parts and lowercased names
 - The RO mv3 exporter (before PR #73) could write `{}`; Detour rejects it with an explicit message
@@ -73,6 +87,8 @@
 - `--load-extension` removed from Chrome-branded builds (Chrome 137+)
 - Use CDP **`Extensions.loadUnpacked`** with `--enable-unsafe-extension-debugging` for automation (RO PR #73)
 - `--disable-features=DisableLoadExtensionCommandLineSwitch` stopped working after Chrome 142
+- What works (verified on Chrome for Testing 154): puppeteer-core `launch({ pipe: true, enableExtensions: true })` + `browser.installExtension(dir)`, which uses that CDP path. See `extension/e2e/chrome-smoke.mjs`
+- When writing test rules, a redirect target on the same path (e.g. `*/a.js` → `http://127.0.0.1:8002/a.js`) matches its own pattern and is refused as `redirect-loop`. Scope the pattern (`*:8001/a.js`)
 
 ## Permissions UX
 

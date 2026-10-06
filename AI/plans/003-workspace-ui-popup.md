@@ -1,6 +1,6 @@
 # 003 — workspace-ui slice 1: popup
 
-**Status:** In progress  
+**Status:** Done  
 **Date:** 2026-10-06  
 **Spec:** [workspace-ui](../specs/workspace-ui.md) — Approved for slice 1 only
 
@@ -19,13 +19,31 @@ A Svelte 5 popup with a global on/off switch, RO/Detour file import, and an appl
 
 ## Tasks
 
-- [ ] T1 `enabled` setting + `syncRules` off path + background listener — tests
-- [ ] T2 `appendImported` + `importIntoStorage` — tests
-- [ ] T3 `describeReport` — tests
-- [ ] T4 Svelte popup + `svelte-check` in `typecheck`
-- [ ] T5 builds (chrome, firefox)
-- [ ] T6 real-browser check (Chrome for Testing + CDP `Extensions.loadUnpacked`): import RO sample in popup, redirect fires
-- [ ] T7 KB write-back
+- [x] T1 `enabled` setting + `syncRules` off path + background listener — tests
+- [x] T2 `appendImported` + `importIntoStorage` — tests
+- [x] T3 `describeReport` — tests
+- [x] T4 Svelte popup + `svelte-check` in `typecheck`
+- [x] T5 builds (chrome, firefox)
+- [x] T6 real-browser check (Chrome for Testing + CDP `Extensions.loadUnpacked`): import RO sample in popup, redirect fires
+- [x] T7 KB write-back
+
+## Results (2026-10-06)
+
+- 130 unit tests pass; `tsc` + `svelte-check` clean; `wxt build` chrome-mv3 (~79 KB) and firefox-mv3 build with no warnings
+- **Real browser (Chrome for Testing 154, headless):** `CHROME=<binary> pnpm build && pnpm e2e:chrome` → 14/14 checks:
+  - empty state shows before import
+  - RO v1 import through the popup file input shows a summary: 4 rules, 1 skipped file override, and a port-scope warning
+  - report reads 3 applied / 1 refused, and the deliberate loop rule shows "Redirect loop" with its message
+  - script redirect fires; `main_frame` redirect fires
+  - page-scoped group fires on `localhost:8001` but not on `127.0.0.1:8001`
+  - switch off: requests pass through; switch on: redirects are back
+- **Not run in a real browser:** Firefox, and the Firefox tab-import path. Manual steps:
+  1. `pnpm build:firefox`
+  2. In `about:debugging#/runtime/this-firefox`, choose Load Temporary Add-on and pick `.output/firefox-mv3/manifest.json`
+  3. Open the Detour popup and click **Open importer…**. A tab opens; choose an RO export
+  4. Check the summary, then load a page the rule matches and confirm the redirect in the Network panel
+  5. Toggle **Enabled** off and confirm the request reaches prod again
+- Deviation: light theme moved to the spec's Remainder ("dark by default")
 
 ## Out of scope
 
