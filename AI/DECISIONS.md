@@ -146,5 +146,22 @@ Resource Override gates groups by tab URL; DNR has no tab condition. The popup n
 
 ### Consequences
 
-- Firefox / Chrome < 145 scope subresources by initiator, so a cross-site iframe on a scoped page isn't covered
+- Firefox / Chrome < 145 scope subresources by initiator, so a cross-site iframe on a scoped page isn't covered. Accepted by Hamza (2026-10-06); warned about in the editor on those browsers only
 - One Detour rule can cost two DNR rules toward quotas
+
+## ADR-007 — Import provenance and the editor save model
+
+**Status:** Accepted  
+**Date:** 2026-10-06 (Hamza's answers to plan 003 questions + workspace-ui slice 2)
+
+### Decision
+
+- Imported groups carry `importedFrom { file, sha256 }`. A new import replaces every group whose file name **or** content hash matches, at the first such group's position. Otherwise it appends. Groups the user created never carry `importedFrom`, so imports never touch them
+- Editing a group by hand doesn't clear `importedFrom`: re-importing the file deliberately overwrites it, and the import summary says how many groups were replaced
+- The editor works on a draft and writes only on an explicit **Save** (validated with the same schemas as storage). Group and rule switches are part of the draft
+- CI will run `pnpm e2e:chrome` once the `distribution` spec is Approved
+
+### Consequences
+
+- Two unrelated exports that share a file name (e.g. both `export.json`) replace each other. The summary makes this visible; matching by name is what makes "re-export after editing in RO" work
+- Switch flips need a Save; the editor makes unsaved state obvious

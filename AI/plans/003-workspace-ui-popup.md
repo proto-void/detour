@@ -45,6 +45,12 @@ A Svelte 5 popup with a global on/off switch, RO/Detour file import, and an appl
   5. Toggle **Enabled** off and confirm the request reaches prod again
 - Deviation: light theme moved to the spec's Remainder ("dark by default")
 
+## Hamza's answers (2026-10-06)
+
+1. **Re-import** replaces the groups that came from the same source file: the same file name or the same content hash, kept in place and in order. Groups the user created are never touched. Built in plan 004 T2
+2. **Iframe coverage gap** (Firefox, Chrome < 145, site-scoped groups) is accepted. Documented in gotchas and the spec, and warned about in the editor on affected browsers only. Plan 004 T4
+3. **CI**: `pnpm e2e:chrome` will run in CI. Recorded in the `distribution` spec, and not built until that spec is Approved
+
 ## Out of scope
 
 Everything in the spec's "Remainder" (editor, CM6, recipes, tester, group toggles, options page, DevTools panel).

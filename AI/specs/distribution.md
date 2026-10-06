@@ -20,6 +20,7 @@ Define how Detour is built, versioned, and published to browser stores and GitHu
 - [ ] Store listing title/subtitle distinguishes resource override (AMO has unrelated Detour proxy)
 - [ ] Permissions justification doc for reviewers
 - [ ] CI pipeline plan: lint, unit test, build artifacts (implementation later)
+- [ ] CI runs the Chrome real-browser smoke `pnpm e2e:chrome` (Chrome for Testing via `@puppeteer/browsers`) on every PR. Decided by Hamza 2026-10-06; build it only once this spec is Approved
 - [ ] GitHub Release assets for extension zip + CLI
 - [ ] LICENSE MIT at repo root when packaging
 - [ ] Privacy policy: no account; local data; telemetry off by default
