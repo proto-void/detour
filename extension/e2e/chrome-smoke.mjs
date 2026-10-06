@@ -122,13 +122,13 @@ try {
   const nav = await run('http://127.0.0.1:8001/old.html');
   check('main_frame page load redirected', [nav.title, nav.url], ['NEW', 'http://127.0.0.1:8002/new.html']);
 
-  await popup.click('button[role=switch]');
+  await popup.click('#detour-enabled');
   await popup.waitForFunction(() => document.body.innerText.includes('Detour is off'), { timeout: 10000 });
-  check('switch reports off', await popup.$eval('button[role=switch]', (b) => b.getAttribute('aria-checked')), 'false');
+  check('switch reports off', await popup.$eval('#detour-enabled', (b) => b.getAttribute('aria-checked')), 'false');
   const off = await run('http://localhost:8001/page.html');
   check('switch off stops redirects', [off.A, off.B], ['PROD', 'PROD']);
 
-  await popup.click('button[role=switch]');
+  await popup.click('#detour-enabled');
   await popup.waitForFunction(() => /\d+ applied/.test(document.body.innerText), { timeout: 10000 });
   const on = await run('http://localhost:8001/page.html');
   check('switch on restores redirects', [on.A, on.B], ['LOCAL', 'LOCAL']);
@@ -358,10 +358,91 @@ try {
 
   await editor.bringToFront();
 
+  // Light theme persists, a popup group switch gates that group's rules, and a recipe redirects.
+  await popup.bringToFront();
+  await popup.click('#theme-light');
+  await popup.waitForFunction(() => document.documentElement.dataset.theme === 'light');
+  check('light theme background', await popup.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(244, 246, 248)');
+  await popup.reload();
+  await popup.waitForFunction(() => document.documentElement.dataset.theme === 'light', { timeout: 10000 });
+  check('light theme persists across reload', await popup.$eval('#theme-light', (b) => b.getAttribute('aria-checked')), 'true');
+  await popup.click('#theme-light');
+  await popup.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
+
+  const setPopupGroup = async (name, enabled) => {
+    await popup.bringToFront();
+    await popup.evaluate(
+      (label, on) => {
+        const button = [...document.querySelectorAll('button[role="switch"]')].find((el) => el.getAttribute('aria-label') === label);
+        if (!button) throw new Error(`missing switch ${label}`);
+        if ((button.getAttribute('aria-checked') === 'true') !== on) button.click();
+      },
+      `Enable ${name}`,
+      enabled,
+    );
+    await popup.waitForFunction(
+      (label, on) => {
+        const button = [...document.querySelectorAll('button[role="switch"]')].find((el) => el.getAttribute('aria-label') === label);
+        return button?.getAttribute('aria-checked') === String(on);
+      },
+      { timeout: 10000 },
+      `Enable ${name}`,
+      enabled,
+    );
+    // The switch flips before the background finishes applying.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  };
+
+  await setPopupGroup('*', false);
+  const grouped = await browser.newPage();
+  await grouped.goto('http://127.0.0.1:8001/c.js', { waitUntil: 'load' });
+  check('popup group off stops that group', grouped.url(), 'http://127.0.0.1:8001/c.js');
+  await setPopupGroup('*', true);
+  await grouped.goto('http://127.0.0.1:8001/c.js', { waitUntil: 'load' });
+  check('popup group on restores that group', grouped.url(), 'http://127.0.0.1:8002/c.js');
+  await grouped.close();
+
+  await editor.bringToFront();
+  await editor.reload();
+  await editor.waitForSelector('#recipes');
+  await (await editor.waitForSelector('#recipes button')).click();
+  const host = await editor.waitForSelector('#recipe-host');
+  await host.click();
+  await host.type('127.0.0.1:9');
+  const origin = await editor.waitForSelector('#recipe-origin');
+  await origin.evaluate((el, value) => {
+    el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, 'http://127.0.0.1:8002');
+  await editor.click('#recipe-add');
+  // The group name lives in an input and a clipped heading, so innerText misses it.
+  await editor.waitForFunction(() => document.body.textContent.includes('127.0.0.1:9 → 127.0.0.1:8002'), { timeout: 5000 });
+  await editor.click('button.primary');
+  await editor.waitForFunction(() => document.querySelector('[data-testid=save-state]')?.textContent.includes('All changes saved'), { timeout: 10000 });
+  const recipeHit = await browser.newPage();
+  await recipeHit.goto('http://127.0.0.1:9/a.js', { waitUntil: 'load' });
+  check('localhost recipe redirects the host', recipeHit.url(), 'http://127.0.0.1:8002/a.js');
+  await recipeHit.close();
+
+  const manifest = JSON.parse(fs.readFileSync(path.join(EXT, 'manifest.json'), 'utf8'));
+  check('devtools page declared', manifest.devtools_page, 'devtools.html');
+  const panel = await browser.newPage();
+  const panelErrors = [];
+  panel.on('pageerror', (err) => panelErrors.push(String(err)));
+  await panel.goto(`chrome-extension://${id}/devtools-panel.html`);
+  await panel.waitForFunction(() => document.body.innerText.includes('Open this panel from the browser'), { timeout: 10000 });
+  check('devtools panel explains itself outside DevTools', panelErrors, []);
+  await panel.close();
+
+  await editor.bringToFront();
   await editor.setViewport({ width: 1100, height: 900 });
   await editor.screenshot({ path: path.join(outDir, 'editor.png'), fullPage: true });
   console.log('screenshot', path.join(outDir, 'editor.png'));
-  await pageGroup.screenshot({ path: path.join(outDir, 'page-rules.png') });
+  const pageShot = await editor.evaluateHandle(() => {
+    const groups = [...document.querySelectorAll('section.group')];
+    return groups.find((group) => group.querySelector('input')?.value === 'Page rules') ?? groups.at(-1);
+  });
+  await pageShot.asElement().screenshot({ path: path.join(outDir, 'page-rules.png') });
   console.log('screenshot', path.join(outDir, 'page-rules.png'));
 
   await popup.setViewport({ width: 400, height: 600 });
