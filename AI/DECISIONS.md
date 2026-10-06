@@ -217,3 +217,28 @@ MV3 Chromium cannot rewrite response bodies with blocking `webRequest`. `data:` 
 - Chrome shows a debugging infobar and conflicts with DevTools on that tab
 - A redirect rule for the same URL can still move the request before the body is replaced
 - Out-of-process iframes and Firefox service-worker script streams are not covered yet
+
+---
+
+## ADR-010 — Match log is session-local; DNR attribution uses the feedback API
+
+**Status:** Accepted  
+**Date:** 2026-10-06 (observability badge + match log)
+
+### Context
+
+Developers need to see which rule just matched. `declarativeNetRequest` does not tell the extension the request URL in a packed build. `webRequest` would, and Chrome warns that it can read browsing history. Rule bodies must never leave the device.
+
+### Decision
+
+- Badge: `action.setBadgeText` per tab, count of matches since that tab's last navigation. `storage.local.showBadge` (missing means on) persists. Off, or Detour off, clears the text
+- Log: `storage.session` ring of 50. Each row is rule id, group id, label (group name + match pattern), URL, source. No action bodies. Map DNR ids through `applyReport.applied`
+- Chromium: permission `declarativeNetRequestFeedback` (no install warning). Unpacked builds listen to `onRuleMatchedDebug` (request URL). Packed builds poll `getMatchedRules` and store the tab URL. Do not add `webRequest` for this
+- Firefox has no DNR feedback API. Log page, mock, and body matches Detour already sees. The Chrome `debugger` permission is unchanged
+
+### Consequences
+
+- A packed Chromium log can name the rule and the tab, not the subresource
+- Firefox will not badge a pure redirect until a feedback API exists
+- Inline JS matches stay off the log
+- The service worker's "since navigation" clock resets when the worker restarts, so the badge can briefly count older session rows

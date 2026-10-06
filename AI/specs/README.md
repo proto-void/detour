@@ -15,7 +15,7 @@ Specs live **only** here. Status is **Draft** until a human Approves. See projec
 | 5 | [engine-deep](engine-deep.md) | **Approved** — body override (Hamza, 2026-10-06). Local Bridge still Draft |
 | 6 | [local-bridge](local-bridge.md) | Draft |
 | 7 | [workspace-ui](workspace-ui.md) | **Approved — slices 1–4** (popup, editor, rule tester, remainder) (Hamza, 2026-10-06) |
-| 8 | [observability](observability.md) | Draft |
+| 8 | [observability](observability.md) | **Approved** — badge + match log (Hamza, 2026-10-06). Local Bridge still Draft |
 | 9 | [distribution](distribution.md) | Draft |
 
 Capability overview: [000-capability-map.md](000-capability-map.md).
