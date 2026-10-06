@@ -96,7 +96,7 @@ function duplicateId(groups: { id: string; rules: { id: string }[] }[]): string 
 
 export const WorkspaceSchema = v.pipe(
   v.object({ groups: v.array(GroupSchema) }),
-  v.check((ws) => duplicateId(ws.groups) === undefined, (issue) => `Duplicate group/rule id "${duplicateId((issue.input as Workspace).groups)}"`),
+  v.check((ws) => duplicateId(ws.groups) === undefined, (issue) => `Duplicate group/rule id "${duplicateId((issue.input as { groups: Group[] }).groups)}"`),
 );
 
 /** Envelope shared by export files and the stored workspace. */

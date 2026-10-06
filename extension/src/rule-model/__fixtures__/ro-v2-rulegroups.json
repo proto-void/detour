@@ -1,0 +1,14 @@
+{
+  "v": 2,
+  "ruleGroups": [
+    {
+      "id": 1,
+      "matchUrl": "*",
+      "on": true,
+      "rules": [
+        { "id": 1, "type": "normalOverride", "match": "/^https://cdn\\.example\\.com/(.*)$/", "replace": "http://localhost:8080/\\1", "on": true },
+        { "id": 2, "type": "headerRule", "match": "*", "requestRules": "set User-Agent: Detour%3B test", "responseRules": "", "on": true }
+      ]
+    }
+  ]
+}
