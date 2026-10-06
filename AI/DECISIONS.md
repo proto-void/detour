@@ -380,5 +380,33 @@ The hash has to be the same bytes the body engine will fulfill. The page must no
 - A bundler that sets `integrity` before the element is fetched runs the override. A sibling it sets with a bad hash still fails that check
 - The page can read which URL patterns are overridden and the SHA-384 of the replacement. It cannot read the source text from this list. The match log and apply report stay free of bodies
 - The page can edit the meta before the snapshot. A forged entry can only substitute a SHA-384. The wrong hash blocks the script. It cannot make the browser accept a file the body engine is not already replacing, because the hook does not remove `integrity`
-- `innerHTML` and `insertAdjacentHTML` are not hooked. Documents that are not rewritten (rewriting off, non-UTF-8, over 2 MiB) do not get the list, so a later assignment keeps the page's hash
+- Amended 2026-10-07 by [ADR-016](#adr-016--markup-insertion-uses-the-same-integrity-hash): `innerHTML` and `insertAdjacentHTML` are hooked. Documents that are not rewritten (rewriting off, non-UTF-8, over 2 MiB) do not get the list, so a markup string on those pages keeps the page's hash
 - Open pages keep a hook that was installed before the rule was turned off until the next load
+
+---
+
+## ADR-016 — Markup insertion uses the same integrity hash
+
+**Status:** Accepted  
+**Date:** 2026-10-07 (Hamza approved markup integrity)
+
+### Context
+
+ADR-015 substitutes `integrity` when page JavaScript assigns the attribute. Bundlers also build a tag as a markup string and pass it to `innerHTML` or `insertAdjacentHTML`. The HTML fragment parser copies `integrity` from that string onto the element. It does not call the property setter, so the page's hash stays and the browser can reject the override. A stylesheet inserted this way is fetched and checked. A script element inserted this way is marked already started and does not run by itself.
+
+The hash list is already in `<meta name="detour-sri">`. This slice does not add a second list or a second content script.
+
+### Decision
+
+- While the MAIN-world hook from ADR-015 is installed, rewrite a string assigned to `Element.innerHTML` or passed to `Element.insertAdjacentHTML` before the original method runs
+- Use the same tag scan as the document rewrite. On a script or stylesheet tag whose URL matches a snapshotted entry, set `integrity` to that `sha384-`. Leave every other hash in the string as written. Do not inject the meta tag into the fragment
+- Pass a non-string value through unchanged. TrustedHTML is not turned into a string, so this hook does not bypass Trusted Types
+- A string with no `integrity`, an empty list, a missing meta, or a string longer than 2 MiB is left unchanged
+- Do not hook `outerHTML`, `setAttributeNS`, `ShadowRoot.innerHTML`, `Range.createContextualFragment`, or `setHTMLUnsafe` in this slice
+
+### Consequences
+
+- A matching tag in that markup carries Detour's hash after the browser parses it. A sibling tag in the same string keeps the page's hash
+- The fragment parser still does not execute those scripts. A page that copies the parsed attributes onto a new script element, without going through the integrity setter, runs the override only when this rewrite happened
+- `createContextualFragment` and `setHTMLUnsafe({ runScripts: true })` can still execute a script whose hash is the one in the markup
+- The substituted value is a publishable SHA-384. It cannot break out of the attribute, and it cannot remove a hash the page set
