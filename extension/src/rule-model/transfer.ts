@@ -13,6 +13,13 @@ export const exportWorkspace = (workspace: Workspace): Envelope => ({ v: SCHEMA_
 
 export const serializeExport = (workspace: Workspace): string => `${JSON.stringify(exportWorkspace(workspace), null, 2)}\n`;
 
+/** Appends imported groups after the existing ones, re-identifying them so repeat imports never collide. */
+export function appendImported(base: Workspace, incoming: Workspace, newId: () => string): Workspace {
+  return {
+    groups: [...base.groups, ...incoming.groups.map((g) => ({ ...g, id: newId(), rules: g.rules.map((r) => ({ ...r, id: newId() })) }))],
+  };
+}
+
 const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
 
 /**
