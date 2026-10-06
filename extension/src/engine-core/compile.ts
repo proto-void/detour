@@ -10,7 +10,9 @@ export type RefusalReason =
   | 'unsupported-regex'
   | 'regex-limit'
   | 'rule-limit'
-  | 'browser-rejected';
+  | 'browser-rejected'
+  | 'user-scripts-unavailable'
+  | 'inject-failed';
 
 export interface Refusal {
   groupId: string;

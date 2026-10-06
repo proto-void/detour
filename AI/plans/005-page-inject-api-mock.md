@@ -27,7 +27,7 @@ New rule actions `injectJs`, `injectCss`, `mock`, compiled into browser registra
 
 - [x] T1 Docs: specs Approved, plan 005, ADR-008, answers recorded in plan 004
 - [x] T2 Schema: new actions + compile skip — tests
-- [ ] T3 `planPage` (scoping, switches, refusals) — tests
+- [x] T3 `planPage` (scoping, switches, refusals) — tests
 - [ ] T4 Mock runtime (fetch + XHR, hold-until-config, abort, pass-through) — tests
 - [ ] T5 Bridge + MAIN entrypoints, `syncPage`, background wiring, permissions, report merge — tests with fake APIs
 - [ ] T6 Editor UI: inject/mock fields, CodeMirror, failures, user-scripts banner

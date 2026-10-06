@@ -32,6 +32,8 @@ export const REASON_LABELS: Record<RefusalReason, string> = {
   'regex-limit': 'Regex limit reached',
   'rule-limit': 'Rule limit reached',
   'browser-rejected': 'Rejected by browser',
+  'user-scripts-unavailable': 'User scripts off',
+  'inject-failed': 'Injection failed',
 };
 
 export function summarizeRule(rule: Rule): string {
