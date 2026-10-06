@@ -14,7 +14,7 @@ Specs live **only** here. Status is **Draft** until a human Approves. See projec
 | 4 | [api-mock](api-mock.md) | **Approved** (Hamza, 2026-10-06) |
 | 5 | [engine-deep](engine-deep.md) | Draft |
 | 6 | [local-bridge](local-bridge.md) | Draft |
-| 7 | [workspace-ui](workspace-ui.md) | **Approved — slice 1 (popup) + slice 2 (editor, group/rule switches)** (Hamza, 2026-10-06); remainder (recipes, tester, DevTools, light theme) Draft |
+| 7 | [workspace-ui](workspace-ui.md) | **Approved — slice 1 (popup) + slice 2 (editor) + slice 3 (rule tester)** (Hamza, 2026-10-06); remainder (recipes, DevTools, light theme, popup group toggles) Draft |
 | 8 | [observability](observability.md) | Draft |
 | 9 | [distribution](distribution.md) | Draft |
 

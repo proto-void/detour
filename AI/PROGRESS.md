@@ -25,7 +25,7 @@
 ## Next
 
 1. **Firefox manual check** (plans 003–005): tab importer, editor, iframe warning, user-scripts permission, CSS inject, fetch/XHR mock
-2. **Next spec to review/Approve:** `workspace-ui` remainder — the rule tester is the most useful next piece. `engine-deep` is next in engine build order if body override comes first
+2. **workspace-ui slice 3 (rule tester)** Approved (Hamza, 2026-10-06) — plan [006](plans/006-workspace-ui-rule-tester.md) in progress. After that, the remainder is recipes, DevTools, light theme, and popup group toggles. `engine-deep` is next in engine build order if body override comes first
 3. `distribution` approval unlocks CI (unit + build + `e2e:chrome`)
 
 ## Blocked

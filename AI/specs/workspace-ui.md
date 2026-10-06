@@ -1,10 +1,10 @@
 # Spec: workspace-ui
 
-**Status:** Approved — **slice 1 (popup)** and **slice 2 (rule editor + group/rule switches)** (both by Hamza, 2026-10-06). Everything under "Remainder" stays Draft.  
+**Status:** Approved — **slice 1 (popup)**, **slice 2 (rule editor + group/rule switches)**, and **slice 3 (rule tester)** (Hamza, 2026-10-06). Everything under "Remainder" stays Draft.  
 **Last updated:** 2026-10-06  
 **Build order:** 7  
 **Depends on:** rule-model (engines as available)  
-**Plans:** [003-workspace-ui-popup](../plans/003-workspace-ui-popup.md), [004-workspace-ui-editor](../plans/004-workspace-ui-editor.md). CodeMirror for inject/mock bodies is plan [005](../plans/005-page-inject-api-mock.md).
+**Plans:** [003-workspace-ui-popup](../plans/003-workspace-ui-popup.md), [004-workspace-ui-editor](../plans/004-workspace-ui-editor.md), [006-workspace-ui-rule-tester](../plans/006-workspace-ui-rule-tester.md). CodeMirror for inject/mock bodies is plan [005](../plans/005-page-inject-api-mock.md).
 
 ## Objective
 
@@ -56,19 +56,42 @@ Deliver Detour's primary UX: popup quick controls, full workspace editor, recipe
 
 CodeMirror was deferred from this slice and landed with page-inject (plan 005). Still out of scope here: drag-and-drop reorder, moving rules between groups, undo history, import from the editor page.
 
+## Approved scope — slice 3 (rule tester)
+
+### User stories
+
+- As a developer, I paste a URL on the rules page and see which rule wins for that request.
+- As a developer, I can set the method, the kind of request, and the page it comes from, so inject, mock, and network rules are judged the way the engines judge them.
+- As a developer, I can open the tester from the popup.
+
+### Acceptance criteria
+
+- [ ] Options page has a tester: a URL field, plus optional method, resource type, page URL, and “page is inside a frame”
+- [ ] Resolves the workspace on screen (the editor draft) with the engines’ precedence: group order, rule order, on/off, site scoping (`pageDomains` + subdomain match), and action type
+- [ ] Fetch/XHR: the first matching mock wins, and network rules do not (the request never leaves the page). Other resource types ignore mocks
+- [ ] Otherwise the earliest matching block or redirect wins. Redirects show the target with the same wildcard / `\1` expansion as the compiler. Header rules all apply; on one header an earlier set or remove wins, and later appends still apply
+- [ ] Inject rules run against the page URL (all of them, in order). They do not run when this probe is a page load that is redirected or blocked. Inline JS is not applied when user scripts are off
+- [ ] A rule the compiler would refuse (redirect loop, non-ASCII pattern, and the same) does not win; the tester says it matched but is not applied
+- [ ] Shows the group name, a short rule summary, and the outcome (redirect target, block, headers, inject, or mock status and body), or “No rule matches.”
+- [ ] Popup has a control that opens the tester
+- [ ] Notes when Detour is off or the draft has unsaved edits
+- [ ] Dark, keyboard accessible, result text is not color-only, and the result is announced
+
+### Slice 3 out of scope
+
+Recipes, DevTools panel, light theme, popup group toggles. The tester does not model the initiatorDomains cross-site iframe gap (it uses the page URL’s host, i.e. top-frame scoping). It does not call Firefox `testMatchOutcome`.
+
 ## Remainder (Draft — not approved)
 
 ### User stories
 
 - As a developer, I can toggle a group from the popup in two clicks.
-- As a developer, I can paste a URL into the **rule tester** and see which rule wins.
 - As a developer, I can apply a **recipe** (e.g. Vite).
 - As a developer, I can use a light theme.
 
 ### Acceptance criteria
 
 - [ ] Popup: top groups toggle
-- [ ] Rule tester matches compiler priority semantics across the whole workspace
 - [ ] Recipes installable from built-in list
 - [ ] DevTools panel
 - [ ] Light theme toggle
@@ -100,5 +123,6 @@ CodeMirror was deferred from this slice and landed with page-inject (plan 005). 
 
 - Slice 1: unit tests for import/report logic; real-browser smoke (`pnpm e2e:chrome`)
 - Slice 2: unit tests for editor operations, validation, preview and status; e2e creates a rule through the editor and confirms it fires; e2e re-import replaces instead of duplicating
+- Slice 3: unit tests for resolution precedence (order, on/off, site scope, resource type, mock-over-network, header stacking, inject vs redirect); e2e opens the tester, pastes a URL, and sees the winning rule
 - A11y: keyboard-only pass over popup and editor
 - Theme: dark by default on first run
