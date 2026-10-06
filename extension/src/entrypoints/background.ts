@@ -8,6 +8,7 @@ import { BODY_CONSENT_KEY } from '../engine-deep/permissions';
 import { createBodyEngine, type PermissionQuery } from '../engine-deep/sync';
 import { fetchText, handleBridgeMessage, type Sender } from '../page-inject/background-handlers';
 import { RESYNC_MESSAGE, type PageApi } from '../page-inject/sync';
+import { BRIDGE_SESSION_KEY } from '../local-bridge/session';
 import { ENABLED_KEY, WORKSPACE_KEY } from '../rule-model/storage';
 import { startMatchLog, type ActionBadgeApi, type MatchLogDeps } from '../observability/install';
 
@@ -74,7 +75,7 @@ export default defineBackground(() => {
   browser.permissions.onAdded.addListener(refreshSafely);
   browser.permissions.onRemoved.addListener(refreshSafely);
   browser.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === 'local' && (WORKSPACE_KEY in changes || ENABLED_KEY in changes)) void refreshSafely();
+    if (areaName === 'local' && (WORKSPACE_KEY in changes || ENABLED_KEY in changes || BRIDGE_SESSION_KEY in changes)) void refreshSafely();
   });
 
   browser.runtime.onMessage.addListener((message: unknown, sender) => {

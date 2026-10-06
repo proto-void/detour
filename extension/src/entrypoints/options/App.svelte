@@ -12,6 +12,7 @@
   import ThemeToggle from '../../ui/ThemeToggle.svelte';
   import { BODY_CONSENT_KEY, bodyPermissions, workspaceHasBodyRules } from '../../engine-deep/permissions';
   import { addGroup, exportFileName, isAwaitingApply, isDirty, newGroup, validateWorkspace } from '../../workspace-ui/editor';
+import BridgePanel from './BridgePanel.svelte';
 import GroupCard from './GroupCard.svelte';
 import MatchLog from './MatchLog.svelte';
 import RecipePicker from './RecipePicker.svelte';
@@ -315,6 +316,8 @@ import RecipePicker from './RecipePicker.svelte';
   {/if}
 
     {#if saved}
+    <BridgePanel {area} />
+
     <MatchLog area={browser.storage.session} />
 
     <RuleTester workspace={draft} {enabled} {dirty} userScripts={userScriptsReady} />

@@ -55,7 +55,8 @@ type RequestHit =
   | { kind: 'redirect'; ref: Ref; to: string }
   | { kind: 'block'; ref: Ref }
   | { kind: 'mock'; ref: Ref; status: number; body: string; method: string }
-  | { kind: 'overrideBody'; ref: Ref; contentType?: string };
+  | { kind: 'overrideBody'; ref: Ref; contentType?: string }
+  | { kind: 'serveLocal'; ref: Ref; path: string };
 
 interface Resolved {
   idle: boolean;
@@ -95,6 +96,8 @@ const summaryOf = (rule: Rule): string => {
       return `Mock ${rule.action.method ?? 'ANY'} ${pattern}`;
     case 'overrideBody':
       return `Replace body ${pattern}`;
+    case 'serveLocal':
+      return `Serve local file ${rule.action.path} for ${pattern}`;
   }
 };
 
@@ -190,6 +193,16 @@ export function resolveProbe(workspace: Workspace, probe: Probe): Resolved {
       const ref: Ref = { groupName: group.name, summary: summaryOf(rule) };
       const { action } = rule;
 
+      if (action.type === 'serveLocal') {
+        if (!resourceMatches(rule, ctx.resourceType) || !urlMatches(rule, ctx.url)) continue;
+        const host = ctx.resourceType === 'main_frame' ? hostnameOf(ctx.url) : hostnameOf(ctx.pageUrl);
+        if (!siteMatches(group, host)) continue;
+        if (request?.kind === 'overrideBody') overlap = true;
+        if (request) continue;
+        request = { kind: 'serveLocal', ref, path: action.path };
+        continue;
+      }
+
       if (isDnrAction(action)) {
         if (!resourceMatches(rule, ctx.resourceType) || !urlMatches(rule, ctx.url)) continue;
         const host = ctx.resourceType === 'main_frame' ? hostnameOf(ctx.url) : hostnameOf(ctx.pageUrl);
@@ -222,7 +235,7 @@ export function resolveProbe(workspace: Workspace, probe: Probe): Resolved {
         if (!resourceMatches(rule, ctx.resourceType) || !urlMatches(rule, ctx.url)) continue;
         const host = ctx.resourceType === 'main_frame' ? hostnameOf(ctx.url) : hostnameOf(ctx.pageUrl);
         if (!siteMatches(group, host)) continue;
-        if (request?.kind === 'redirect' || request?.kind === 'block') {
+        if (request?.kind === 'redirect' || request?.kind === 'block' || request?.kind === 'serveLocal') {
           overlap = true;
           continue;
         }
@@ -256,14 +269,14 @@ export function resolveProbe(workspace: Workspace, probe: Probe): Resolved {
     return { idle: false, request: mock, headers: [], page, suppressed: null, notApplied, overlap: false };
   }
 
-  const navigationStopped = ctx.resourceType === 'main_frame' && (request?.kind === 'redirect' || request?.kind === 'block');
+  const navigationStopped = ctx.resourceType === 'main_frame' && (request?.kind === 'redirect' || request?.kind === 'block' || request?.kind === 'serveLocal');
   return {
     idle: false,
     request,
     headers: mergeHeaders(headerRules),
     page: navigationStopped ? [] : page,
     // Only mention injects that actually matched and were dropped.
-    suppressed: navigationStopped && page.length > 0 ? (request?.kind === 'redirect' ? 'redirected' : 'blocked') : null,
+    suppressed: navigationStopped && page.length > 0 ? (request?.kind === 'block' ? 'blocked' : 'redirected') : null,
     notApplied,
     overlap,
   };
@@ -283,6 +296,11 @@ export function describeResolution(result: Resolved): TesterView {
   } else if (result.request?.kind === 'overrideBody') {
     const type = result.request.contentType ? ` and sets Content-Type to ${result.request.contentType}` : '';
     lines.push({ ...result.request.ref, outcome: `Replaces the response body${type}.` });
+  } else if (result.request?.kind === 'serveLocal') {
+    lines.push({
+      ...result.request.ref,
+      outcome: `Serves ${result.request.path} from Local Bridge on 127.0.0.1. Connect the bridge or this rule is refused.`,
+    });
   }
   for (const header of result.headers) {
     lines.push({ ...header.ref, outcome: sentence(header.applied.map((item) => describeOp(item.op, item.side))) });
@@ -299,7 +317,7 @@ export function describeResolution(result: Resolved): TesterView {
     return { headline: result.notApplied.length > 0 ? 'No rule is applied.' : 'No rule matches.', lines, notes };
   }
 
-  const decisive = result.request?.kind === 'redirect' || result.request?.kind === 'block' || result.request?.kind === 'mock' || result.request?.kind === 'overrideBody';
+  const decisive = result.request?.kind === 'redirect' || result.request?.kind === 'block' || result.request?.kind === 'mock' || result.request?.kind === 'overrideBody' || result.request?.kind === 'serveLocal';
   const onlyHeaders = !result.request && result.page.length === 0;
   const onlyInjects = !result.request && result.headers.length === 0;
   const headline = decisive || lines.length === 1

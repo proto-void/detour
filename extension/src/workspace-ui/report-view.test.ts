@@ -80,6 +80,7 @@ describe('summarizeRule for page actions', () => {
     [{ type: 'mock', method: 'POST', status: 201, headers: [], body: '', delayMs: 0 }, 'Mock POST https://app/* → 201'],
     [{ type: 'mock', method: 'ANY', status: 200, headers: [], body: '', delayMs: 0 }, 'Mock https://app/* → 200'],
     [{ type: 'overrideBody', body: 'x' }, 'Replace body of https://app/*'],
+    [{ type: 'serveLocal', path: 'assets/app.js' }, 'Serve assets/app.js for https://app/*'],
   ])('%j', (action, expected) => {
     expect(summarizeRule({ ...base, action } as never)).toBe(expected);
   });

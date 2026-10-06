@@ -1,9 +1,10 @@
 import type { BodyEngine } from '../engine-deep/sync';
+import { loadBridgeSession, probeBridge, workspaceNeedsBridge, type BridgeSession } from '../local-bridge/session';
 import { planPage, type InjectedKind } from '../page-inject/plan';
 import { syncPage, userScriptsAvailable, type PageApi } from '../page-inject/sync';
 import { emptyWorkspace, type Workspace } from '../rule-model/schema';
 import { loadEnabled, loadWorkspace, type StorageAreaLike } from '../rule-model/storage';
-import { compileWorkspace, type Candidate, type Refusal } from './compile';
+import { compileWorkspace, type Candidate, type CompileOptions, type Refusal } from './compile';
 import { supportsTopDomains, type DnrApi, type DnrRule } from './dnr';
 import { enforceLimits, readLimits } from './limits';
 
@@ -56,8 +57,10 @@ const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e)
  * Replaces all dynamic rules with the compiled workspace in one atomic `updateDynamicRules` call.
  * Priority is positional: the first enabled rule of the first enabled group gets the highest value.
  */
-export async function applyWorkspace(dnr: DnrApi, workspace: Workspace, now = () => new Date()): Promise<ApplyReport> {
-  const compiled = compileWorkspace(workspace, { topDomains: supportsTopDomains(dnr) });
+export type BridgeProbe = (session: BridgeSession) => Promise<{ ok: boolean }>;
+
+export async function applyWorkspace(dnr: DnrApi, workspace: Workspace, now = () => new Date(), options: CompileOptions = {}): Promise<ApplyReport> {
+  const compiled = compileWorkspace(workspace, { topDomains: supportsTopDomains(dnr), ...options });
   const regexChecked = await refuseUnsupportedRegex(dnr, compiled.candidates);
   const { kept, refused: overLimit } = enforceLimits(regexChecked.supported, readLimits(dnr));
   const refused = [...compiled.refused, ...regexChecked.refused, ...overLimit];
@@ -119,14 +122,26 @@ export async function applyWorkspace(dnr: DnrApi, workspace: Workspace, now = ()
  * When the global switch is off, installs nothing but keeps the workspace. An unreadable workspace
  * leaves the current rules and registrations in place.
  */
-export async function syncRules(dnr: DnrApi, area: StorageAreaLike, now = () => new Date(), page?: PageApi, body?: BodyEngine): Promise<ApplyReport> {
+export async function syncRules(
+  dnr: DnrApi,
+  area: StorageAreaLike,
+  now = () => new Date(),
+  page?: PageApi,
+  body?: BodyEngine,
+  probe: BridgeProbe = probeBridge,
+): Promise<ApplyReport> {
   const enabled = await loadEnabled(area);
   const loaded = enabled ? await loadWorkspace(area) : { ok: true as const, value: emptyWorkspace() };
   let report: ApplyReport;
   if (!loaded.ok) {
     report = { appliedAt: now().toISOString(), applied: [], refused: [], fallback: false, disabled: false, errors: loaded.errors };
   } else {
-    report = { ...(await applyWorkspace(dnr, loaded.value, now)), disabled: !enabled };
+    let bridge: CompileOptions['bridge'];
+    if (workspaceNeedsBridge(loaded.value)) {
+      const session = await loadBridgeSession(area);
+      bridge = { session, up: session !== null && (await probe(session)).ok };
+    }
+    report = { ...(await applyWorkspace(dnr, loaded.value, now, bridge ? { bridge } : {})), disabled: !enabled };
     if (page) {
       const plan = planPage(loaded.value, { userScripts: await userScriptsAvailable(page) });
       const result = await syncPage(page, area, plan);

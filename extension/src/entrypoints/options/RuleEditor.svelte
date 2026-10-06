@@ -176,6 +176,7 @@
             <option value="injectCss">Inject CSS</option>
             <option value="mock">Mock the response</option>
             <option value="overrideBody">Replace response body</option>
+            <option value="serveLocal">Serve local file</option>
           </select>
         {/snippet}
       </Field>
@@ -205,6 +206,28 @@
       <PageActionFields action={rule.action} ruleId={rule.id} {validation} {showAll} {userScriptsReady} onchange={(action) => set({ action })} />
     {:else if rule.action.type === 'overrideBody'}
       <BodyFields action={rule.action} ruleId={rule.id} {validation} {showAll} onchange={(action) => set({ action })} />
+    {:else if rule.action.type === 'serveLocal'}
+      {@const filePath = rule.action.path}
+      <Field
+        id="{id}-path"
+        label="File in the bridge folder"
+        hint="Relative to the folder you passed to detour bridge, like assets/app.js. Connect Local Bridge above, then save. The page is redirected to 127.0.0.1. A strict Content-Security-Policy can still block that. Pasted text stays on Replace response body."
+        error={errorFor('action.path', filePath)}
+      >
+        {#snippet children({ describedby, invalid })}
+          <input
+            id="{id}-path"
+            type="text"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="assets/app.js"
+            value={filePath}
+            aria-invalid={invalid}
+            aria-describedby={describedby}
+            oninput={(e) => set({ action: { type: 'serveLocal', path: e.currentTarget.value } })}
+          />
+        {/snippet}
+      </Field>
     {/if}
 
     <div class="grid options" class:single={pageRule}>
@@ -268,7 +291,7 @@
       <output for="{id}-sample {id}-pattern" class="result" aria-live="polite" data-testid="preview">
         {#if preview.kind === 'match'}
           <strong>✓ Matches.</strong>
-          {#if preview.outcome === 'redirect'}It would go to <code>{preview.to}</code>{:else if preview.outcome === 'block'}It would be blocked.{:else if preview.outcome === 'modifyHeaders'}Its headers would change.{:else if preview.outcome === 'mock'}It would get the mocked response.{:else if preview.outcome === 'overrideBody'}Its response body would be replaced.{:else}The code would be injected into this page.{/if}
+          {#if preview.outcome === 'redirect'}It would go to <code>{preview.to}</code>{:else if preview.outcome === 'block'}It would be blocked.{:else if preview.outcome === 'modifyHeaders'}Its headers would change.{:else if preview.outcome === 'mock'}It would get the mocked response.{:else if preview.outcome === 'overrideBody'}Its response body would be replaced.{:else if preview.outcome === 'serveLocal'}It would be served from Local Bridge.{:else}The code would be injected into this page.{/if}
         {:else if preview.kind === 'no-match'}
           <strong>✕ Doesn't match.</strong>
         {:else if preview.kind === 'invalid'}

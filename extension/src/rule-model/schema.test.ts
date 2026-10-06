@@ -104,6 +104,13 @@ describe('page actions (inject / mock)', () => {
     });
   });
 
+  it('accepts a local file path and rejects a parent segment', () => {
+    expect(parseRule(rule({ type: 'serveLocal', path: ' assets/app.js ' }))).toMatchObject({ ok: true, value: { action: { type: 'serveLocal', path: 'assets/app.js' } } });
+    const escaped = parseRule(rule({ type: 'serveLocal', path: '../secret' }));
+    expect(escaped.ok).toBe(false);
+    if (!escaped.ok) expect(escaped.errors.join('\n')).toContain('action.path');
+  });
+
   it('accepts a body override and keeps the text byte-for-byte', () => {
     const parsed = parseRule(rule({ type: 'overrideBody', body: '  window.A = 1;\n', contentType: ' text/javascript ' }));
     expect(parsed).toMatchObject({ ok: true, value: { action: { type: 'overrideBody', body: '  window.A = 1;\n', contentType: 'text/javascript' } } });

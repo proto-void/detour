@@ -169,7 +169,8 @@ export function importResourceOverride(input: unknown, newId: () => string): { o
             rule,
           });
         }
-        // The file string is the new body. The original URL stays, so this is not a data: redirect.
+        // The export holds file bytes, not a disk path, so this stays an inline body.
+        // On-disk files are a serveLocal rule plus Local Bridge, not this import.
         return { match: { kind: 'glob', pattern: match }, action: { type: 'overrideBody', body: ro.file } };
       }
       case 'fileInject':

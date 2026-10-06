@@ -98,6 +98,8 @@ export function defaultAction(type: Action['type']): Action {
       return { type, method: 'GET', status: 200, headers: [{ name: 'content-type', value: 'application/json' }], body: '{}', delayMs: 0 };
     case 'overrideBody':
       return { type, body: '' };
+    case 'serveLocal':
+      return { type, path: '' };
   }
 }
 
@@ -229,6 +231,7 @@ export function validateRule(rule: Rule): RuleValidation {
     if (rule.match.pattern.trim() === '') errors['match.pattern'] = 'Enter a URL pattern, e.g. https://cdn.example.com/*.js';
     if (rule.action.type === 'redirect' && rule.action.to.trim() === '') errors['action.to'] = 'Enter where matching requests should go';
     if (rule.action.type === 'overrideBody' && rule.action.body.trim() === '') errors['action.body'] = 'Enter the replacement body';
+    if (rule.action.type === 'serveLocal' && rule.action.path.trim() === '') errors['action.path'] = 'Enter a path inside the bridge folder, like assets/app.js';
     if ((rule.action.type === 'injectJs' || rule.action.type === 'injectCss') && rule.action.source.kind === 'url' && rule.action.source.url.trim() === '') {
       errors['action.source.url'] = 'Enter the URL to load, e.g. http://localhost:5173/dev.js';
     }
@@ -328,7 +331,7 @@ export type Preview =
   | { kind: 'invalid'; message: string }
   | { kind: 'no-match' }
   | { kind: 'match'; outcome: 'redirect'; to: string }
-  | { kind: 'match'; outcome: 'block' | 'modifyHeaders' | 'injectJs' | 'injectCss' | 'mock' | 'overrideBody' };
+  | { kind: 'match'; outcome: 'block' | 'modifyHeaders' | 'injectJs' | 'injectCss' | 'mock' | 'overrideBody' | 'serveLocal' };
 
 /** Expands `\0`–`\9` and `\\` like DNR `regexSubstitution`. */
 function expandSubstitution(template: string, groups: RegExpExecArray): string {

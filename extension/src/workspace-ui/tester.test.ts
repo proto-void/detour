@@ -305,6 +305,14 @@ describe('resolveProbe action lanes', () => {
     expect(view.lines.map((line) => line.outcome)).toEqual(['Returns 201 with body "{}".']);
   });
 
+  it('describes a local file without a bridge token', () => {
+    const local = rule('s', { type: 'serveLocal', path: 'assets/app.js' }, { match: { kind: 'glob', pattern: 'https://cdn.example.com/*.js' }, resourceTypes: ['script'] });
+    const view = lines(ws(group('g', 'Disk', [local])), probe('https://cdn.example.com/app.js', { resourceType: 'script' }));
+    expect(view.headline).toBe('This rule wins.');
+    expect(view.lines[0]?.outcome).toContain('assets/app.js');
+    expect(view.lines[0]?.outcome).not.toMatch(/[0-9a-f]{64}/);
+  });
+
   it('scopes mocks and injects to the page host', () => {
     const mock = rule('mock', { type: 'mock', method: 'ANY', status: 200, headers: [], body: 'ok', delayMs: 0 }, { match: { kind: 'glob', pattern: '*' } });
     const scoped = group('g', 'App', [mock], { pageDomains: ['app.example.com'] });

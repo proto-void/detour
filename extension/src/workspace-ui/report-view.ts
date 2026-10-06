@@ -35,6 +35,8 @@ export const REASON_LABELS: Record<RefusalReason, string> = {
   'user-scripts-unavailable': 'User scripts off',
   'inject-failed': 'Injection failed',
   'body-permission-denied': 'Permission needed',
+  'bridge-not-connected': 'Bridge not connected',
+  'bridge-down': 'Bridge not running',
 };
 
 export function summarizeRule(rule: Rule): string {
@@ -58,6 +60,8 @@ export function summarizeRule(rule: Rule): string {
       return `Mock ${rule.action.method === 'ANY' ? '' : `${rule.action.method} `}${pattern} → ${rule.action.status}`;
     case 'overrideBody':
       return `Replace body of ${pattern}`;
+    case 'serveLocal':
+      return `Serve ${rule.action.path} for ${pattern}`;
   }
 }
 

@@ -1,3 +1,4 @@
+import { bridgeDownMessage, bridgeFileUrl, BRIDGE_NOT_CONNECTED, serveLocalCompileMessage } from '../local-bridge/paths';
 import { countWildcards, globToRegexSource, matchesUrl } from '../rule-model/match';
 import { isDnrAction, type HeaderOp, type Rule, type Workspace } from '../rule-model/schema';
 import type { DnrAction, DnrCondition, DnrHeaderInfo } from './dnr';
@@ -13,7 +14,9 @@ export type RefusalReason =
   | 'browser-rejected'
   | 'user-scripts-unavailable'
   | 'inject-failed'
-  | 'body-permission-denied';
+  | 'body-permission-denied'
+  | 'bridge-not-connected'
+  | 'bridge-down';
 
 export interface Refusal {
   groupId: string;
@@ -143,9 +146,18 @@ export function compileRule(rule: Rule): RuleResult {
   };
 }
 
+export interface BridgeCompileState {
+  /** Null when the user has not connected. */
+  session: { port: number; token: string } | null;
+  /** False when /health failed. Ignored when `session` is null. */
+  up: boolean;
+}
+
 export interface CompileOptions {
   /** Browser accepts the `topDomains` condition (Chrome 145+). */
   topDomains?: boolean;
+  /** How `serveLocal` rules compile. Omitted = not connected. */
+  bridge?: BridgeCompileState;
 }
 
 /**
@@ -178,11 +190,32 @@ export function compileWorkspace(workspace: Workspace, options: CompileOptions =
   for (const group of workspace.groups) {
     if (!group.enabled) continue;
     for (const rule of group.rules) {
-      if (!rule.enabled || !isDnrAction(rule.action)) continue;
-      const result = compileRule(rule);
+      if (!rule.enabled) continue;
       const ids = { groupId: group.id, ruleId: rule.id };
+      let network = rule;
+      if (rule.action.type === 'serveLocal') {
+        const session = options.bridge?.session ?? null;
+        if (!session) {
+          refused.push({ ...ids, reason: 'bridge-not-connected', message: BRIDGE_NOT_CONNECTED });
+          continue;
+        }
+        if (!options.bridge?.up) {
+          refused.push({ ...ids, reason: 'bridge-down', message: bridgeDownMessage(session.port) });
+          continue;
+        }
+        const to = bridgeFileUrl(session, rule.action.path);
+        if (!to) {
+          refused.push({ ...ids, reason: 'bridge-not-connected', message: BRIDGE_NOT_CONNECTED });
+          continue;
+        }
+        network = { ...rule, action: { type: 'redirect', to } };
+      } else if (!isDnrAction(rule.action)) {
+        continue;
+      }
+      const result = compileRule(network);
       if (!result.ok) {
-        refused.push({ ...ids, reason: result.reason, message: result.message });
+        const message = rule.action.type === 'serveLocal' ? serveLocalCompileMessage(result.reason, result.message) : result.message;
+        refused.push({ ...ids, reason: result.reason, message });
         continue;
       }
       const compiled = group.pageDomains ? scopeToPages(result.value, group.pageDomains, options) : [result.value];

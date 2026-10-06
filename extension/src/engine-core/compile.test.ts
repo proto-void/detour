@@ -249,3 +249,38 @@ describe('page actions', () => {
     expect(() => compileRule(ws.groups[0]!.rules[0]!)).toThrow(/not a network rule/);
   });
 });
+
+describe('serveLocal', () => {
+  const token = 'ab'.repeat(32);
+  const rule = {
+    id: 's',
+    enabled: true,
+    match: { kind: 'glob' as const, pattern: 'https://cdn.example.com/*.js' },
+    action: { type: 'serveLocal' as const, path: 'assets/app.js' },
+    resourceTypes: ['script' as const],
+  };
+  const ws: Workspace = { groups: [{ id: 'g', name: 'g', enabled: true, rules: [rule] }] };
+
+  it('stays out of DNR until the bridge is connected and healthy', () => {
+    expect(compileWorkspace(ws).refused.map((r) => r.reason)).toEqual(['bridge-not-connected']);
+    const down = compileWorkspace(ws, { bridge: { session: { port: 47321, token }, up: false } });
+    expect(down.candidates).toEqual([]);
+    expect(down.refused.map((r) => r.reason)).toEqual(['bridge-down']);
+    expect(JSON.stringify(down)).not.toContain(token);
+  });
+
+  it('compiles to an opaque loopback redirect that a *.js pattern does not also match', () => {
+    const { candidates, refused } = compileWorkspace(ws, { bridge: { session: { port: 47321, token }, up: true } });
+    expect(refused).toEqual([]);
+    const url = candidates[0]?.action.type === 'redirect' ? candidates[0].action.redirect : undefined;
+    expect(url).toEqual({ url: `http://127.0.0.1:47321/d/${token}/YXNzZXRzL2FwcC5qcw` });
+    expect(JSON.stringify(candidates[0]?.condition)).toContain('cdn.example.com');
+  });
+
+  it('refuses a pattern that would also match the bridge, without the token', () => {
+    const broad: Workspace = { groups: [{ id: 'g', name: 'g', enabled: true, rules: [{ ...rule, match: { kind: 'glob', pattern: '*' } }] }] };
+    const { refused } = compileWorkspace(broad, { bridge: { session: { port: 47321, token }, up: true } });
+    expect(refused.map((r) => r.reason)).toEqual(['redirect-loop']);
+    expect(refused[0]?.message).not.toContain(token);
+  });
+});

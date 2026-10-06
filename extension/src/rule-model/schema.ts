@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { isSafeRelative } from '../local-bridge/paths';
 
 export const SCHEMA_VERSION = 1;
 
@@ -89,6 +90,17 @@ export const ActionSchema = v.variant('type', [
     /** Replaces the response Content-Type. Omitted = keep the server's. */
     contentType: v.optional(
       v.pipe(v.string(), v.trim(), v.minLength(1, 'Content-Type is empty'), v.maxLength(200, 'Content-Type is too long'), v.check((s) => !/[\r\n]/.test(s), 'Content-Type must be a single line')),
+    ),
+  }),
+  v.object({
+    type: v.literal('serveLocal'),
+    /** Relative to the folder passed to `detour bridge`. Not a full disk path. */
+    path: v.pipe(
+      v.string(),
+      v.trim(),
+      v.minLength(1, 'Enter a path inside the bridge folder, like assets/app.js'),
+      v.maxLength(512, 'Path is too long'),
+      v.check(isSafeRelative, 'That path leaves the bridge folder. Use a relative path without ..'),
     ),
   }),
   v.object({

@@ -34,7 +34,7 @@
 <Field
   id="{id}-body"
   label="Replacement body"
-  hint="The address of the file stays the same, so the page’s Content-Security-Policy still allows it. This is not a data: redirect."
+  hint="The address of the file stays the same, so the page’s Content-Security-Policy still allows it. This is not a data: redirect. Files on disk use Serve local file and Local Bridge instead of pasting them here."
   error={errorFor('action.body', action.body)}
 >
   {#snippet children({ describedby, invalid })}
