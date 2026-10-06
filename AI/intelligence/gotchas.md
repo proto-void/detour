@@ -116,8 +116,10 @@
 - While an `overrideBody` or in-place `serveLocal` rule is armed, UTF-8 HTML up to 2 MiB gets `sha384-` of the override bytes on each matching script or stylesheet tag. Other tags keep the page's hashes. The browser still checks the new hash
 - The hash and the fulfilled body come from the same read. A failed read leaves the published hash. Non-UTF-8 documents and documents over 2 MiB are left unchanged
 - A redirect to `127.0.0.1` (rewriting off) does not change the document, so the page's hash can still reject the file
-- JavaScript that sets `integrity` after the document is parsed is not rewritten
-- Chrome pauses documents with Fetch `resourceType: Document` (a bare `*` pattern already pauses them) and fulfills the HTML. Firefox opens `filterResponseData` from `onBeforeRequest` and drops `content-encoding` on those documents, because the stream is already decoded. HTML documents are `Cache-Control: no-store` on Firefox while a body rule is armed; Chrome sets that only when a hash changed
+- Page JavaScript that sets `integrity` after parse is handled by a MAIN-world `document_start` hook, registered only while a body rule is armed (ADR-015). The hook reads a `<meta name="detour-sri">` hash list embedded by the document rewrite. It substitutes `sha384-` of the override and does not clear `integrity`. The list has match patterns and hashes, not rule bodies or the bridge token. The page can read it. A later edit of the meta is ignored after the first snapshot. A forged hash can only make the check fail
+- `innerHTML`, `insertAdjacentHTML`, and `setAttributeNS` are not hooked. Documents that are not rewritten (rewriting off, non-UTF-8, over 2 MiB) do not get the list, so those assignments keep the page's hash
+- Open pages keep the hook until the next load after the body rule is turned off
+- Chrome pauses documents with Fetch `resourceType: Document` (a bare `*` pattern already pauses them) and fulfills the HTML. Firefox opens `filterResponseData` from `onBeforeRequest` and drops `content-encoding` on those documents, because the stream is already decoded. HTML documents are `Cache-Control: no-store` on Firefox while a body rule is armed. Chrome sets that when the document bytes change, which includes publishing the hash list
 
 ## Chrome 137+ extension loading
 
@@ -142,7 +144,7 @@
 - CDP `Fetch.fulfillRequest` body is base64. `continueResponse` with only `requestId` leaves a non-document response alone. HTML documents are the exception: `Fetch.getResponseBody` then fulfill, so a matching `integrity` hash can be rewritten. Do not call `Fetch.getResponseBody` for the script or stylesheet being replaced
 - Drop `content-encoding`, `content-length`, and `transfer-encoding` on the replacement or Chrome tries to gunzip the new bytes
 - A regex or bare `*` Fetch pattern pauses every response in the tab. Specific globs stay narrow. The editor warns
-- Matching script and stylesheet tags in the HTML get a SHA-384 hash of the replacement. See SRI above. A tag the page sets from JavaScript is unchanged
+- Matching script and stylesheet tags in the HTML get a SHA-384 hash of the replacement. The same list is embedded for page JavaScript that sets `integrity` later. See SRI above
 - A DNR redirect for the same URL can move the request before Fetch sees the response. The tester notes the overlap; the compiler does not suppress either rule
 - Mocks still win for `xmlhttprequest` (the page answers first)
 - Out-of-process iframes are not auto-attached. Firefox does not filter service-worker script streams

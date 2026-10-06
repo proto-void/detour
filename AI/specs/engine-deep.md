@@ -1,14 +1,16 @@
 # Spec: engine-deep
 
-**Status:** Approved — body override (Hamza, 2026-10-06); SRI hashes (Hamza, 2026-10-07)  
+**Status:** Approved — body override (Hamza, 2026-10-06); SRI hashes (Hamza, 2026-10-07); page-world integrity (Hamza, 2026-10-07)  
 **Last updated:** 2026-10-07  
 **Build order:** 5  
 **Depends on:** rule-model, engine-core  
-**Plan:** [008-engine-deep-body](../plans/008-engine-deep-body.md), [013-sri-handling](../plans/013-sri-handling.md)
+**Plan:** [008-engine-deep-body](../plans/008-engine-deep-body.md), [013-sri-handling](../plans/013-sri-handling.md), [014-sri-page-integrity](../plans/014-sri-page-integrity.md)
 
 Amended 2026-10-07 (Hamza, in-place bridge read): the same fulfill / filter path may replace a response with bytes the extension read from Local Bridge. Disk mapping, the token, and path confinement stay in [local-bridge](local-bridge.md) and [ADR-013](../DECISIONS.md). Consent is still `bodyEngineConsent`. This spec does not grow a folder browser.
 
 Amended 2026-10-07 (Hamza, SRI): while those rules are armed, Detour rewrites UTF-8 HTML documents so a script or stylesheet tag whose URL matches an override gets a SHA-384 `integrity` of the bytes Detour will serve. Other tags keep the page's hashes. [ADR-014](../DECISIONS.md).
+
+Amended 2026-10-07 (Hamza, page-world integrity): the same hash list is applied when page JavaScript assigns `integrity` after parse. The hook runs only while body rewriting is consented and a rule is armed. It substitutes the hash; it does not clear one. [ADR-015](../DECISIONS.md).
 
 ## Objective
 
@@ -23,6 +25,7 @@ Hamza approved **engine-deep** for body override on 2026-10-06. Local Bridge sta
 - As a developer, I can turn the rule or Detour off and the browser stops rewriting bodies.
 - As a developer, I can import a Resource Override `fileOverride` and get this action instead of a skip.
 - As a developer, I can replace a script or stylesheet that the page protects with Subresource Integrity, and the browser runs my file.
+- As a developer, I can override a script whose `integrity` is assigned by page JavaScript after the HTML is parsed.
 
 ## Acceptance criteria
 
@@ -39,6 +42,8 @@ Hamza approved **engine-deep** for body override on 2026-10-06. Local Bridge sta
 - [x] The hash and the fulfilled body come from the same read. If that read fails, the published hash stays
 - [x] Documents that are not UTF-8 HTML, or are over 2 MiB, are left unchanged
 - [x] The rules page says Detour updates that hash, that other files keep theirs, and that a redirect with rewriting off does not change the page
+- [x] While those rules are armed, the rewritten HTML carries the same hash list (match, resource types, sites, SHA-384 — no rule body). A MAIN-world `document_start` hook, registered only then, substitutes that hash when page JavaScript sets `integrity` on a script or stylesheet link whose URL matches. A URL that does not match keeps the value the page assigned
+- [x] The hook does not remove `integrity`. A missing hash leaves the page's value. Rewriting off does not register the hook
 
 ## Browser support table
 
@@ -56,6 +61,8 @@ Hamza approved **engine-deep** for body override on 2026-10-06. Local Bridge sta
 - Chrome pauses document responses with a Fetch pattern whose `resourceType` is `Document`, then fulfills the HTML. [Fetch.RequestPattern](https://chromedevtools.github.io/devtools-protocol/tot/Fetch/#type-RequestPattern). Firefox buffers the document with `filterResponseData` opened from `onBeforeRequest`
 - Only an armed `overrideBody` or in-place `serveLocal` rule updates a tag. The hash is SHA-384 of those bytes. The browser still enforces it
 - A redirect to `127.0.0.1` (rewriting off) does not change the document, so the page's hash can still reject the file. [SRI checks the response that is used](https://w3c.github.io/webappsec-subresource-integrity/#does-response-match-metadatalist)
+- The hash list in the page is readable by that page. The hook copies it once and then ignores later edits. A forged list can only substitute a SHA-384, so a wrong hash blocks the script. The hook never clears `integrity`, and the body engine still matches the real rules. [ADR-015](../DECISIONS.md)
+- `innerHTML`, `insertAdjacentHTML`, and `setAttributeNS` are not hooked. A script inserted that way keeps the hash the markup carried
 - The URL does not change, so page CSP still applies to that URL. That is why this is not a `data:` redirect
 - A DNR redirect for the same URL can change the address before Fetch sees the response. The tester says so
 - Response `content-encoding` / `content-length` are dropped on the replaced response so the browser does not decode the new bytes as gzip
@@ -65,7 +72,6 @@ Hamza approved **engine-deep** for body override on 2026-10-06. Local Bridge sta
 
 - Local-folder mapping and external editors. [local-bridge](local-bridge.md) may call this fulfill path with bytes it already read. The token never enters this module’s apply report
 - Binary bodies and `data:` redirects
-- JavaScript that sets `integrity` after the document is parsed
 - Rewriting the document when response rewriting is off
 - Non-UTF-8 HTML and documents over 2 MiB
 - Attaching to out-of-process iframes (`Target.setAutoAttach`)
@@ -75,7 +81,7 @@ Hamza approved **engine-deep** for body override on 2026-10-06. Local Bridge sta
 ## Verification
 
 - Unit tests: planning, match, header rewrite, Chrome session (attach / fulfill / continue / detach / cancel), Firefox filter, permission refusal, RO import, tester, document integrity rewrite (matching tag, sibling tag, failed read, non-HTML)
-- Chrome smoke: a script whose `integrity` is the hash of the production file runs the override; a sibling with a valid hash still runs; a sibling with a bad hash stays blocked. Verified 2026-10-07, Chrome for Testing 155, `pnpm e2e:chrome` 72/72, including an in-place bridge file whose page hash was for the production bytes
+- Chrome smoke: a script whose `integrity` is the hash of the production file runs the override; a sibling with a valid hash still runs; a sibling with a bad hash stays blocked. Verified 2026-10-07, Chrome for Testing 155, `pnpm e2e:chrome` 77/77, including an in-place bridge file whose page hash was for the production bytes, and a page that set `integrity` from JavaScript after parse (override ran, non-matching sibling stayed blocked)
 - `pnpm test`, `pnpm typecheck`, `pnpm build`, `pnpm build:firefox`
 - Chrome smoke: one script body changes and a sibling script does not. Verified 2026-10-06, Chrome for Testing 154, `pnpm e2e:chrome` 57/57, after Allow debugger
 - Firefox headless: Firefox 157.0.1 installs the temporary add-on, then BiDi refuses `moz-extension://` navigation, so the Allow click and a live `filterResponseData` path were not driven. Firefox filter behavior is unit-tested

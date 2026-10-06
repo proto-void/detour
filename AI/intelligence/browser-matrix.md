@@ -1,6 +1,6 @@
 # Browser matrix
 
-**Last verified:** 2026-10-07 (DNR quotas, domain conditions, page engines, body override, badge and match log, Local Bridge redirect and in-place, SRI hash update. Chrome for Testing 155 e2e 72/72. Firefox 157 importer, editor, inject, mock, tester). Firefox 157 BiDi still cannot open `moz-extension://` pages, so the live filter path, the Firefox match-log UI, and a Firefox bridge click-through were not driven. CI does not run a Firefox UI smoke. In-place `serveLocal` uses the same body engines as `overrideBody` (debugger on Chrome, `filterResponseData` on Firefox). Without that consent both browsers redirect to `127.0.0.1`. While those rules are armed, matching script and stylesheet `integrity` values in UTF-8 HTML become SHA-384 of the override.
+**Last verified:** 2026-10-07 (DNR quotas, domain conditions, page engines, body override, badge and match log, Local Bridge redirect and in-place, SRI hash update, page-world integrity. Chrome for Testing 155 e2e 77/77. Firefox 157 importer, editor, inject, mock, tester). Firefox 157 BiDi still cannot open `moz-extension://` pages, so the live filter path, the Firefox match-log UI, and a Firefox bridge click-through were not driven. CI does not run a Firefox UI smoke. In-place `serveLocal` uses the same body engines as `overrideBody` (debugger on Chrome, `filterResponseData` on Firefox). Without that consent both browsers redirect to `127.0.0.1`. While those rules are armed, matching script and stylesheet `integrity` values become SHA-384 of the override, including when page JavaScript assigns the attribute.
 
 ## Supported targets (product intent)
 
@@ -51,7 +51,7 @@ Mocks and URL/CSS injection do not need the user-scripts toggle. Inline JS rules
 | DevTools on that tab | Detaches the override until the next load | Stays usable | — |
 | Out-of-process iframes | Not attached | n/a | — |
 | Service-worker scripts | Fetched like other scripts when the pattern matches | Not filtered (would need `webRequestFilterResponse.serviceWorkerScript`) | — |
-| Matching `integrity` in HTML | Document paused with Fetch `resourceType: Document`, hash rewritten, then fulfilled | Document buffered with `filterResponseData` from `onBeforeRequest` | — |
+| Matching `integrity` in HTML | Document paused with Fetch `resourceType: Document`, hash rewritten, then fulfilled. A MAIN-world `document_start` hook covers `integrity` assigned from page JavaScript | Document buffered with `filterResponseData` from `onBeforeRequest`, same hash list and the same hook | — |
 
 Verified on Chrome for Testing 154: after Allow debugger, one script body became the rule text and a sibling script did not (`pnpm e2e:chrome`, 62/62, including the badge count and the options match log).
 
@@ -72,7 +72,7 @@ Chrome `debugger` is unchanged. The log is `storage.session` only.
 | Serve a file from disk | In-place via `chrome.debugger` when Allow debugger is on. Otherwise a DNR redirect to `http://127.0.0.1` | In-place via `filterResponseData` when Allow response rewriting is on. Otherwise the same redirect | Not verified |
 | Bridge process | Node CLI on `127.0.0.1` only | Same process | Same process |
 
-Verified on Chrome for Testing 155 (`pnpm e2e:chrome`, 72/72), after Connect and Allow debugger: `*:8001/bridge.js` ran `window.BRIDGE = "DISK"` and the script URL stayed on port 8001. A document with `script-src 'self'` on port 8001 still ran `window.CSP_BRIDGE = "DISK"` and did not request the bridge port. Without that consent the rule is still a redirect, which that policy would block. The same run replaced `*:8001/sri.js` whose `integrity` was the production hash; the override ran, a sibling with a valid hash ran, and a sibling with a bad hash stayed blocked. An in-place `sri-disk.js` whose page hash was for the production file ran the disk bytes. Firefox document rewrite is unit-tested; the live filter was not driven (BiDi).
+Verified on Chrome for Testing 155 (`pnpm e2e:chrome`, 77/77), after Connect and Allow debugger: `*:8001/bridge.js` ran `window.BRIDGE = "DISK"` and the script URL stayed on port 8001. A document with `script-src 'self'` on port 8001 still ran `window.CSP_BRIDGE = "DISK"` and did not request the bridge port. Without that consent the rule is still a redirect, which that policy would block. The same run replaced `*:8001/sri.js` whose `integrity` was the production hash; the override ran, a sibling with a valid hash ran, and a sibling with a bad hash stayed blocked. An in-place `sri-disk.js` whose page hash was for the production file ran the disk bytes. A page that set `integrity` from JavaScript after parse ran `window.SRI_JS = "LOCAL"`; a sibling script whose hash that page set, and which did not match, stayed blocked. Firefox document rewrite is unit-tested; the live filter was not driven (BiDi).
 
 ## Notes
 

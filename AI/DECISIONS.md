@@ -344,7 +344,7 @@ Detour cannot know each page’s CSP when the rule is compiled. In-place works f
 - Chrome adds a Fetch pattern with `resourceType: Document` and fulfills the HTML. A bare `*` pattern already pauses documents. Firefox opens `filterResponseData` on document requests from `onBeforeRequest`
 - Do not rewrite documents when response rewriting is off. The redirect keeps the page's hash. Say so on the rules page
 - Do not strip hashes for the whole page. The user opted into specific overrides; other resources stay protected
-- JavaScript that assigns `integrity` after parse is out of this slice
+- JavaScript that assigns `integrity` after parse is [ADR-015](#adr-015--page-javascript-integrity-uses-the-same-hash)
 
 ### Consequences
 
@@ -353,3 +353,32 @@ Detour cannot know each page’s CSP when the rule is compiled. In-place works f
 - If the override bytes change between the HTML rewrite and the script response, the check fails closed until the next load
 - Rewriting is off for non-UTF-8 documents and documents over 2 MiB. Those pages can still reject the new file
 - Chrome shows the debugging infobar whenever a body rule is armed, same as before. Document responses are paused for the duration
+
+---
+
+## ADR-015 — Page JavaScript integrity uses the same hash
+
+**Status:** Accepted  
+**Date:** 2026-10-07 (Hamza approved page-world integrity)
+
+### Context
+
+ADR-014 rewrites `integrity` in the HTML because the parser copies that attribute onto the request before page JavaScript runs. Bundlers do the opposite: after parse they create a script or link and set `integrity` from JavaScript (`script.integrity` or `setAttribute`). The document rewrite never sees that assignment, so the browser checks the published hash and rejects the override.
+
+The hash has to be the same bytes the body engine will fulfill. The page must not receive the rule body or the bridge token.
+
+### Decision
+
+- Register a MAIN-world content script at `document_start` only while an `overrideBody` or in-place `serveLocal` rule is armed (consent and the browser permission are already required). Unregister it when they are not
+- While rewriting a UTF-8 HTML document, embed the armed hash list in `<meta name="detour-sri">`. Each entry is the match, case sensitivity, resource types, site list, and `sha384-` of the bytes that rule will serve. The same read fills the body cache. A failed read is omitted. The meta contains no rule body and no bridge token
+- The hook snapshots that list once. When page JavaScript assigns `integrity` on a script or a stylesheet link, and the element's URL matches an entry, set the attribute to that hash before the fetch starts. Any other assignment is written through unchanged
+- Never clear `integrity`. A missing list, a failed read, or a URL that does not match leaves the page's value
+- Do not register the hook, and do not embed the list, when response rewriting is off
+
+### Consequences
+
+- A bundler that sets `integrity` before the element is fetched runs the override. A sibling it sets with a bad hash still fails that check
+- The page can read which URL patterns are overridden and the SHA-384 of the replacement. It cannot read the source text from this list. The match log and apply report stay free of bodies
+- The page can edit the meta before the snapshot. A forged entry can only substitute a SHA-384. The wrong hash blocks the script. It cannot make the browser accept a file the body engine is not already replacing, because the hook does not remove `integrity`
+- `innerHTML` and `insertAdjacentHTML` are not hooked. Documents that are not rewritten (rewriting off, non-UTF-8, over 2 MiB) do not get the list, so a later assignment keeps the page's hash
+- Open pages keep a hook that was installed before the rule was turned off until the next load

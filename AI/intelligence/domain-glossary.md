@@ -13,8 +13,8 @@
 | **Inject** | Page JS/CSS insertion via extension scripting APIs |
 | **Mock** | Intercept fetch/XHR in page world to return synthetic responses |
 | **Deep engine** | Chromium `chrome.debugger` / CDP Fetch, and Firefox `filterResponseData`, for `overrideBody` and in-place `serveLocal` |
-| **overrideBody** | Replace a response’s bytes in place. Inline UTF-8 text, optional content type. Not a DNR rule. While armed, matching script and stylesheet `integrity` hashes in HTML become SHA-384 of those bytes |
-| **SRI hash update** | Document rewrite that sets `integrity` to the hash of an armed override. Other resources keep the page's hashes. Requires body-engine consent |
+| **overrideBody** | Replace a response’s bytes in place. Inline UTF-8 text, optional content type. Not a DNR rule. While armed, matching script and stylesheet `integrity` hashes become SHA-384 of those bytes, including when page JavaScript assigns the attribute |
+| **SRI hash update** | Document rewrite plus a MAIN-world hook that sets `integrity` to the hash of an armed override. Other resources keep the page's hashes. Requires body-engine consent. The page-world list has no rule body |
 | **Body consent** | `storage.local.bodyEngineConsent`. Set only by Allow debugger / Allow response rewriting. Absent means do not attach or filter |
 | **Local Bridge** | Optional Node CLI. Serves one folder on `127.0.0.1` after the user pastes its token. Not a remote server |
 | **serveLocal** | Rule action `{ path }` relative to that folder. In-place body replace when response rewriting is allowed; otherwise a DNR redirect while the bridge is up. Refused when the bridge is down or disconnected |
