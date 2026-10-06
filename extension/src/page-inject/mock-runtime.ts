@@ -4,7 +4,6 @@ import { siteHost, testUrl } from './page-match';
 /** DOM events between the isolated bridge and this MAIN-world runtime. Details are JSON strings. */
 export const CONFIG_EVENT = '__detour_mock_config';
 export const READY_EVENT = '__detour_mock_ready';
-export const MOCK_HIT_EVENT = '__detour_mock_hit';
 
 const NULL_BODY = new Set([204, 205, 304]);
 const headerPairs = (m: MockEntry): [string, string][] => m.headers.map((h) => [h.name, h.value]);
@@ -36,7 +35,7 @@ const abortError = (signal: AbortSignal) => signal.reason ?? new DOMException('T
  * Patches `fetch` and `XMLHttpRequest` in `win`. Matching requests get the first matching mock;
  * everything else goes to the native implementation with the original arguments.
  */
-export function installMocks(win: MockWindow, { holdMs = 1000, onHit }: { holdMs?: number; onHit?: (mock: MockEntry) => void } = {}): MockRuntime {
+export function installMocks(win: MockWindow, { holdMs = 1000 }: { holdMs?: number } = {}): MockRuntime {
   let mocks: MockEntry[] | undefined;
   let release!: () => void;
   const ready = new Promise<void>((resolve) => (release = resolve));
@@ -58,9 +57,7 @@ export function installMocks(win: MockWindow, { holdMs = 1000, onHit }: { holdMs
   };
   const decide = async (url: string, method: string) => {
     if (mocks === undefined) await ready;
-    const hit = find(url, method);
-    if (hit) onHit?.(hit);
-    return hit;
+    return find(url, method);
   };
   const wait = (ms: number, signal?: AbortSignal | null) =>
     new Promise<void>((resolve, reject) => {

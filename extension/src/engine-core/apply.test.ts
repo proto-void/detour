@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import type { Group, Rule, Workspace } from '../rule-model/schema';
 import { saveEnabled, saveWorkspace, WORKSPACE_KEY } from '../rule-model/storage';
+import type { PageApi } from '../page-inject/sync';
 import { createFakeDnr } from '../test/fake-dnr';
 import { APPLY_REPORT_KEY, applyWorkspace, syncRules } from './apply';
 
@@ -200,5 +201,31 @@ describe('syncRules', () => {
     expect(rules()).toHaveLength(1);
     expect(report.applied).toEqual([]);
     expect(report.errors[0]).toMatch(/^Stored workspace is invalid/);
+  });
+
+  it('syncs page rules too: injected in the report, unregistered while switched off', async () => {
+    const { dnr } = createFakeDnr();
+    const registered = new Set<string>();
+    const page: PageApi = {
+      scripting: {
+        getRegisteredContentScripts: async () => [...registered].map((id) => ({ id })),
+        registerContentScripts: async (scripts) => scripts.forEach((s) => registered.add(s.id)),
+        unregisterContentScripts: async ({ ids } = {}) => ids?.forEach((id) => registered.delete(id)),
+      },
+    };
+    const inline: Rule = { id: 'js', enabled: true, match: { kind: 'glob', pattern: '*' }, action: { type: 'injectJs', source: { kind: 'inline', code: 'x' }, runAt: 'document_start', allFrames: false, world: 'MAIN' } };
+    const mock: Rule = { id: 'm', enabled: true, match: { kind: 'glob', pattern: '*/api/*' }, action: { type: 'mock', method: 'ANY', status: 200, headers: [], body: '', delayMs: 0 } };
+    await saveWorkspace(area, ws(group('g', [redirect('a'), inline, mock])));
+
+    const report = await syncRules(dnr, area, fixedNow, page);
+    expect(report.applied.map((a) => a.ruleId)).toEqual(['a']);
+    expect(report.injected).toEqual([{ groupId: 'g', ruleId: 'm', kind: 'mock' }]);
+    expect(report.refused).toEqual([expect.objectContaining({ ruleId: 'js', reason: 'user-scripts-unavailable' })]);
+    expect([...registered].sort()).toEqual(['detour-bridge', 'detour-mock']);
+
+    await saveEnabled(area, false);
+    const off = await syncRules(dnr, area, fixedNow, page);
+    expect(off).toMatchObject({ disabled: true, injected: [], refused: [] });
+    expect(registered.size).toBe(0);
   });
 });

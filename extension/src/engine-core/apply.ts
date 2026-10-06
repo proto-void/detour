@@ -1,3 +1,5 @@
+import { planPage, type InjectedKind } from '../page-inject/plan';
+import { syncPage, userScriptsAvailable, type PageApi } from '../page-inject/sync';
 import { emptyWorkspace, type Workspace } from '../rule-model/schema';
 import { loadEnabled, loadWorkspace, type StorageAreaLike } from '../rule-model/storage';
 import { compileWorkspace, type Candidate, type Refusal } from './compile';
@@ -10,6 +12,8 @@ export const APPLY_REPORT_KEY = 'applyReport';
 export interface ApplyReport {
   appliedAt: string;
   applied: { dnrId: number; groupId: string; ruleId: string }[];
+  /** Inject/mock rules registered with the browser (absent in reports from before page-inject). */
+  injected?: { groupId: string; ruleId: string; kind: InjectedKind }[];
   refused: Refusal[];
   /** True when the batch was rejected without naming a rule and rules were added one by one. */
   fallback: boolean;
@@ -108,18 +112,23 @@ export async function applyWorkspace(dnr: DnrApi, workspace: Workspace, now = ()
 }
 
 /**
- * Loads the stored workspace and applies it. When the global switch is off, installs nothing but keeps
- * the workspace. An unreadable workspace leaves the current DNR rules in place.
+ * Loads the stored workspace and applies it (network rules, and page rules when `page` is given).
+ * When the global switch is off, installs nothing but keeps the workspace. An unreadable workspace
+ * leaves the current rules and registrations in place.
  */
-export async function syncRules(dnr: DnrApi, area: StorageAreaLike, now = () => new Date()): Promise<ApplyReport> {
+export async function syncRules(dnr: DnrApi, area: StorageAreaLike, now = () => new Date(), page?: PageApi): Promise<ApplyReport> {
+  const enabled = await loadEnabled(area);
+  const loaded = enabled ? await loadWorkspace(area) : { ok: true as const, value: emptyWorkspace() };
   let report: ApplyReport;
-  if (!(await loadEnabled(area))) {
-    report = { ...(await applyWorkspace(dnr, emptyWorkspace(), now)), disabled: true };
+  if (!loaded.ok) {
+    report = { appliedAt: now().toISOString(), applied: [], refused: [], fallback: false, disabled: false, errors: loaded.errors };
   } else {
-    const loaded = await loadWorkspace(area);
-    report = loaded.ok
-      ? await applyWorkspace(dnr, loaded.value, now)
-      : { appliedAt: now().toISOString(), applied: [], refused: [], fallback: false, disabled: false, errors: loaded.errors };
+    report = { ...(await applyWorkspace(dnr, loaded.value, now)), disabled: !enabled };
+    if (page) {
+      const plan = planPage(loaded.value, { userScripts: await userScriptsAvailable(page) });
+      const result = await syncPage(page, area, plan);
+      report = { ...report, injected: result.injected, refused: [...report.refused, ...result.refused], errors: [...report.errors, ...result.errors] };
+    }
   }
   await area.set({ [APPLY_REPORT_KEY]: report });
   return report;

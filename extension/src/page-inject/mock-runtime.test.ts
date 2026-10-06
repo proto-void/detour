@@ -172,13 +172,6 @@ describe('fetch', () => {
     installMocks(win).setConfig([entry({ request: { source: '.*', flags: '', domains: ['other.test'] } })]);
     expect((await win.fetch('https://app.test/api/x')).status).toBe(299);
   });
-
-  it('reports hits', async () => {
-    const onHit = vi.fn();
-    installMocks(win, { onHit }).setConfig([entry()]);
-    await win.fetch('https://app.test/api/x');
-    expect(onHit).toHaveBeenCalledWith(expect.objectContaining({ ruleId: 'r' }));
-  });
 });
 
 describe('XMLHttpRequest', () => {

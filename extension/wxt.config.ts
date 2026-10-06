@@ -8,11 +8,14 @@ export default defineConfig({
   manifest: ({ browser }) => ({
     name: 'Detour',
     description: 'Point production at your code.',
-    permissions: ['declarativeNetRequest', 'storage', 'unlimitedStorage'],
-    // redirect and modifyHeaders need host access to the request URL and initiator.
+    // scripting: page-inject bridge + mock runtime and insertCSS. userScripts: inline JS rules; Chrome
+    // still requires the user's "Allow User Scripts" toggle, Firefox only allows it as optional.
+    permissions: ['declarativeNetRequest', 'storage', 'unlimitedStorage', 'scripting', ...(browser === 'firefox' ? [] : ['userScripts'])],
+    // redirect and modifyHeaders need host access to the request URL and initiator; injection needs the page.
     host_permissions: ['<all_urls>'],
     ...(browser === 'firefox'
       ? {
+          optional_permissions: ['userScripts'],
           browser_specific_settings: {
             gecko: {
               id: 'detour@protovoid.com',
