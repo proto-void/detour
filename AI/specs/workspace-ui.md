@@ -24,7 +24,7 @@ Deliver Detour's primary UX: popup quick controls, full workspace editor, recipe
 - [ ] RO import via file picker (Detour exports also accepted); imported groups are appended; summary shows counts, skipped rules and warnings with reasons
 - [ ] Applied vs refused view built from `applyReport`, joined with the workspace for human labels; refused rows show reason + message; storage errors shown
 - [ ] Empty state explains "Point production at your code." and points to import
-- [ ] Dark theme by default (follows `prefers-color-scheme: light` only if the user's system asks for it)
+- [ ] Dark theme by default (light theme is in the Remainder)
 - [ ] Accessible: native controls, visible focus, switch exposed as `role="switch"` with `aria-checked`, status messages announced via `aria-live`, no color-only state
 
 ### Slice 1 out of scope

@@ -13,7 +13,7 @@
     "build:firefox": "wxt build -b firefox",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
-    "typecheck": "wxt prepare && tsc --noEmit",
+    "typecheck": "wxt prepare && tsc --noEmit && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "test": "vitest run",
     "test:watch": "vitest",
     "postinstall": "wxt prepare"
@@ -21,6 +21,7 @@
   "devDependencies": {
     "@wxt-dev/module-svelte": "^2.0.5",
     "svelte": "^5.57.1",
+    "svelte-check": "^4.7.6",
     "typescript": "~6.0.3",
     "vite": "^8.3.2",
     "vitest": "^5.0.3",
