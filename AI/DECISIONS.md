@@ -434,11 +434,46 @@ The hash list is already in `<meta name="detour-sri">`. This slice does not add 
 - Use the same tag scan as ADR-016. On a script or stylesheet tag whose URL matches a snapshotted entry, set `integrity` to that `sha384-`. Leave every other hash in the string as written. Do not inject the meta tag into the fragment
 - Pass a non-string value through unchanged, including when `runScripts` is true. TrustedHTML is not turned into a string, so this hook does not bypass Trusted Types. The native method still applies the page's Trusted Types policy to a string
 - A string with no `integrity`, an empty list, a missing meta, or a string longer than 2 MiB is left unchanged
-- Do not hook `outerHTML`, `setAttributeNS`, `ShadowRoot.innerHTML`, `Document.parseHTMLUnsafe`, or the safe `setHTML` methods in this slice. `parseHTMLUnsafe` creates a document with scripting disabled
+- Do not hook `outerHTML`, `setAttributeNS`, `ShadowRoot.innerHTML`, `Document.parseHTMLUnsafe`, or the safe `setHTML` methods in this slice. `parseHTMLUnsafe` creates a document with scripting disabled. Amended 2026-10-07 by [ADR-018](#adr-018--inert-markup-uses-the-same-integrity-hash): `outerHTML`, `ShadowRoot.innerHTML`, and `setAttributeNS` for `integrity` are hooked
 
 ### Consequences
 
 - A matching script inserted through `createContextualFragment`, or through `setHTMLUnsafe` with `runScripts: true`, carries Detour's hash and can run. A sibling tag in the same string keeps the page's hash
 - `setHTMLUnsafe` with scripts off does not execute scripts, and this slice leaves that string's hashes alone. A stylesheet in that inert call can still be checked against the page's hash
 - The substituted value is a publishable SHA-384. It cannot break out of the attribute, and it cannot remove a hash the page set
-- `outerHTML` and `ShadowRoot.innerHTML` can still carry the page's hash. They do not execute scripts
+- Amended 2026-10-07 by [ADR-018](#adr-018--inert-markup-uses-the-same-integrity-hash): `outerHTML` and `ShadowRoot.innerHTML` rewrite the string before the fragment parser runs. They still do not execute scripts
+
+---
+
+## ADR-018 — Inert markup uses the same integrity hash
+
+**Status:** Accepted  
+**Date:** 2026-10-07 (Hamza approved inert markup)
+
+### Context
+
+ADR-016 rewrites `integrity` in a string passed to `innerHTML` or `insertAdjacentHTML`. ADR-017 covers markup that can execute scripts. Three other calls still leave the page's hash in place:
+
+- `Element.outerHTML` parses a string with the HTML fragment parsing algorithm and replaces the element. Scripts in that fragment do not run. A stylesheet is fetched and checked. [outerHTML](https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-element-outerhtml)
+- `ShadowRoot.innerHTML` is a separate setter from `Element.innerHTML`. It parses the same way. A stylesheet in the shadow tree is fetched and checked. [ShadowRoot innerHTML](https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-shadowroot-innerhtml)
+- `Element.setAttributeNS` does not call `setAttribute`. Page code that copies attributes the parser wrote uses `setAttributeNS(namespaceURI, name, value)`. For an HTML `integrity` attribute, `namespaceURI` is null. The property hook never sees that call, so the page's hash is what the browser checks. [setAttributeNS](https://dom.spec.whatwg.org/#dom-element-setattributens)
+
+The hash list is already in `<meta name="detour-sri">`. This slice does not add a second list or a second content script.
+
+### Decision
+
+- While the MAIN-world hook from ADR-015 is installed, rewrite a string assigned to `Element.outerHTML` or `ShadowRoot.innerHTML` before the original setter runs
+- Use the same tag scan as ADR-016. On a script or stylesheet tag whose URL matches a snapshotted entry, set `integrity` to that `sha384-`. Leave every other hash in the string as written. Do not inject the meta tag into the fragment
+- Pass a non-string value through unchanged. TrustedHTML is not turned into a string, so this hook does not bypass Trusted Types
+- A string with no `integrity`, an empty list, a missing meta, or a string longer than 2 MiB is left unchanged
+- When `Element.setAttributeNS` sets `integrity` on a script or stylesheet link, substitute the same hash the `setAttribute` hook would write, then do not call the original method with the page's value. This applies when the namespace is null, omitted, empty, or `http://www.w3.org/1999/xhtml`, and when the qualified name is `integrity` or a prefixed name whose local part is `integrity`
+- Setting `src` or `href` through `setAttributeNS` in that same namespace re-resolves a hash the page already assigned, then the original method sets the URL. A copy can set the hash before the URL
+- An attribute in any other namespace is passed to the original method unchanged, including one whose local name is `integrity`. The hook does not clear `integrity`
+- Do not hook `Document.parseHTMLUnsafe`, the safe `setHTML` methods, or `setHTMLUnsafe` when `runScripts` is not strictly `true`
+
+### Consequences
+
+- A matching tag in `outerHTML` or a shadow root's `innerHTML` carries Detour's hash after the browser parses it. A sibling tag in the same string keeps the page's hash. Those scripts still do not run from the insertion alone. A stylesheet is fetched and checked
+- A script or stylesheet link whose `integrity` was copied with `setAttributeNS` carries Detour's hash when its URL matches. A copy that does not match keeps the page's hash
+- The substituted value is a publishable SHA-384. It cannot break out of the attribute, and it cannot remove a hash the page set
+- A namespaced attribute that is not HTML `integrity` is not rewritten, so this hook cannot alter SVG or XML attributes that share the local name
