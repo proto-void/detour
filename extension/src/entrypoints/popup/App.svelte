@@ -5,8 +5,8 @@
   import type { Workspace } from '../../rule-model/schema';
   import { loadEnabled, loadWorkspace, saveEnabled } from '../../rule-model/storage';
   import { describeReport } from '../../workspace-ui/report-view';
+  import Switch from '../../ui/Switch.svelte';
   import ImportPanel from './ImportPanel.svelte';
-  import PowerSwitch from './PowerSwitch.svelte';
   import ReportView from './ReportView.svelte';
 
   const area = browser.storage.local;
@@ -29,6 +29,11 @@
     await saveEnabled(area, next);
   }
 
+  async function openEditor() {
+    await browser.runtime.openOptionsPage();
+    if (!inTab) window.close();
+  }
+
   onMount(() => {
     void refresh();
     const onChanged = (_: unknown, areaName: string) => {
@@ -42,10 +47,13 @@
 <main class:tab={inTab}>
   <header>
     <h1>Detour</h1>
-    <PowerSwitch checked={enabled} onchange={setEnabled} />
+    <Switch checked={enabled} label="Enabled" labelVisible onchange={setEnabled} />
   </header>
   <ImportPanel {area} {inTab} />
   <ReportView {view} />
+  <footer>
+    <button type="button" class="btn" onclick={openEditor}>Edit rules…</button>
+  </footer>
 </main>
 
 <style>
@@ -74,5 +82,12 @@
   h1 {
     font-size: 1rem;
     font-weight: 650;
+  }
+
+  footer {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border);
   }
 </style>
