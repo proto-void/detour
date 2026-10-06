@@ -1,9 +1,10 @@
 # Spec: engine-core
 
-**Status:** Draft  
+**Status:** Approved (by Hamza, 2026-10-06)  
 **Last updated:** 2026-10-06  
 **Build order:** 2  
-**Depends on:** rule-model
+**Depends on:** rule-model  
+**Plan:** [002-rule-model-engine-core](../plans/002-rule-model-engine-core.md)
 
 ## Objective
 
