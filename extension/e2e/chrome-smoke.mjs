@@ -3,6 +3,7 @@
 // api-mock rules run in real pages.
 // Usage: pnpm build && CHROME=/path/to/chrome pnpm e2e:chrome
 // Needs Chrome for Testing or Chromium; branded Chrome 137+ ignores unpacked-extension loading flags.
+import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -30,6 +31,10 @@ const serve = (port, routes) =>
 
 const js = (text) => ({ type: 'text/javascript', text });
 const html = (text) => ({ type: 'text/html', text });
+const sha384 = (text) => `sha384-${createHash('sha384').update(text).digest('base64')}`;
+const sriProd = 'window.SRI = "PROD";';
+const sriKept = 'window.SRI_KEPT = "OK";';
+const sriBad = 'window.SRI_BAD = "NO";';
 const page = html('<!doctype html><title>t</title><script src="/a.js"></script><script src="/b.js"></script><script src="/c.js"></script>');
 
 const prod = await serve(8001, {
@@ -54,6 +59,14 @@ const prod = await serve(8001, {
     headers: { 'content-security-policy': "script-src 'self'" },
   },
   '/csp-bridge.js': js('window.CSP_BRIDGE = "PROD";'),
+  '/sri.html': html(
+    `<!doctype html><title>sri</title><script src="/sri.js" integrity="${sha384(sriProd)}" crossorigin="anonymous"></script><script src="/sri-kept.js" integrity="${sha384(sriKept)}" crossorigin="anonymous"></script><script src="/sri-bad.js" integrity="sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" crossorigin="anonymous"></script>`,
+  ),
+  '/sri.js': js(sriProd),
+  '/sri-kept.js': js(sriKept),
+  '/sri-bad.js': js(sriBad),
+  '/sri-disk.html': html(`<!doctype html><title>sri-disk</title><script src="/sri-disk.js" integrity="${sha384('window.SRI_DISK = "PROD";')}" crossorigin="anonymous"></script>`),
+  '/sri-disk.js': js('window.SRI_DISK = "PROD";'),
 });
 const local = await serve(8002, {
   '/a.js': js('window.A = "LOCAL";'),
@@ -570,12 +583,56 @@ try {
   check('unmatched script is untouched', replaced.KEPT, 'PROD');
   shieldPaths.length = 0;
 
+  // The published integrity hash is of the production file. Detour must swap in a hash of the override or the script never runs.
+  shieldPaths.push('/sri.html');
+  await editor.bringToFront();
+  await editor.click('#add-group');
+  await editor.keyboard.type('SRI');
+  const sriGroup = (await editor.$$('section.group')).at(-1);
+  const sriRule = await addPageRule(sriGroup, '*:8001/sri.js', 'overrideBody');
+  await typeCode(sriRule, 'window.SRI = "LOCAL";');
+  await saveAndSettle();
+  await waitStatus(sriRule, 'Applied');
+  const sriWorkerTarget = await browser.waitForTarget((t) => t.type() === 'service_worker' && t.url().includes(id), { timeout: 10000 });
+  const sriWorker = await sriWorkerTarget.worker();
+  const sriPage = await sriWorker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () => ({ SRI: window.SRI, SRI_KEPT: window.SRI_KEPT, SRI_BAD: window.SRI_BAD }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/sri.html');
+  check('integrity-protected script runs the override', sriPage.SRI, 'LOCAL');
+  check('sibling with a valid integrity hash still runs', sriPage.SRI_KEPT, 'OK');
+  check('sibling with a bad integrity hash stays blocked', sriPage.SRI_BAD, undefined);
+  shieldPaths.length = 0;
+
   // Local Bridge: consent is already on, so serveLocal is fulfilled in place (the URL stays on port 8001).
   shieldPaths.push('/bridge.html', '/csp-bridge.html');
   const bridgeDir = path.join(outDir, 'bridge-root');
   fs.mkdirSync(bridgeDir);
   fs.writeFileSync(path.join(bridgeDir, 'bridge.js'), 'window.BRIDGE = "DISK";\n');
   fs.writeFileSync(path.join(bridgeDir, 'csp-bridge.js'), 'window.CSP_BRIDGE = "DISK";\n');
+  fs.writeFileSync(path.join(bridgeDir, 'sri-disk.js'), 'window.SRI_DISK = "DISK";\n');
   const cli = path.resolve(import.meta.dirname, '../../cli/src/cli.ts');
   bridgeProc = spawn(process.execPath, ['--experimental-strip-types', cli, 'bridge', bridgeDir, '--port', '8099'], { stdio: ['ignore', 'pipe', 'pipe'] });
   let bridgeLog = '';
@@ -653,6 +710,7 @@ try {
         func: () => ({
           BRIDGE: window.BRIDGE,
           CSP_BRIDGE: window.CSP_BRIDGE,
+          SRI_DISK: window.SRI_DISK,
           urls: performance.getEntriesByType('resource').map((entry) => entry.name),
         }),
       });
@@ -667,6 +725,15 @@ try {
   const fromCsp = await readBridgePage('http://127.0.0.1:8001/csp-bridge.html');
   check('CSP that blocks the bridge port still runs the disk script', fromCsp.CSP_BRIDGE, 'DISK');
   check('CSP page never requested the bridge port', fromCsp.urls.some((item) => item.includes(':8099')), false);
+
+  const sriDiskRule = await addPageRule(bridgeGroup, '*:8001/sri-disk.js', 'serveLocal');
+  await (await sriDiskRule.$('input[id$="-path"]')).type('sri-disk.js');
+  await saveAndSettle();
+  await waitStatus(sriDiskRule, 'Applied');
+  shieldPaths.push('/sri-disk.html');
+  const fromSriDisk = await readBridgePage('http://127.0.0.1:8001/sri-disk.html');
+  check('in-place file runs when the page integrity hash was for the production file', fromSriDisk.SRI_DISK, 'DISK');
+  shieldPaths.length = 0;
 } finally {
   bridgeProc?.kill('SIGTERM');
   await browser.close();
