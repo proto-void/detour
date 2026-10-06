@@ -1,6 +1,6 @@
 # Tech baseline
 
-**Last verified:** 2026-10-06
+**Last verified:** 2026-10-07
 
 ## Locked (ADR-001)
 
@@ -25,20 +25,24 @@
 | valibot | 1.5.0 | Runtime dependency |
 | vitest | 5.0.3 | `WxtVitest()` plugin → `fakeBrowser` storage in tests |
 | puppeteer-core | 25.12 | `e2e/chrome-smoke.mjs`; Chrome for Testing via `CHROME=` |
+| @puppeteer/browsers | 3.2.3 | `scripts/install-chrome.mjs` installs `chrome@stable` and prints the binary path |
 | @codemirror/* | 6.x | `@codemirror/view` 6.43, lang-javascript/css/json; ~435 KB options chunk |
 
 ## Tooling (ADR-004)
 
 - **pnpm 12** via `packageManager` field; run with `corepack pnpm …` (no global pnpm needed)
 - `extension/` is a standalone package; add a root `pnpm-workspace.yaml` when `cli/` exists
-- Scripts: `test`, `typecheck` (`wxt prepare && tsc --noEmit && svelte-check --fail-on-warnings`), `build`, `build:firefox`, `dev`, `dev:firefox`, `zip`, `zip:firefox`, `e2e:chrome`
+- Scripts: `test`, `typecheck` (`wxt prepare && tsc --noEmit && svelte-check --fail-on-warnings`), `build`, `build:firefox`, `dev`, `dev:firefox`, `zip`, `zip:firefox`, `e2e:chrome`, `chrome:install`, `ci`
+- Node **24** (`.node-version`). CI installs pnpm 12.9.1 with `pnpm/action-setup` so it matches `packageManager` without Corepack’s signature check
 - Output: `extension/.output/{chrome-mv3,firefox-mv3}/` (gitignored, as are `.wxt/` and `node_modules/`)
-- E2E: `pnpm build && CHROME=/path/to/chrome pnpm e2e:chrome`. puppeteer-core `launch({ pipe: true, enableExtensions: true })` + `installExtension` (CDP `Extensions.loadUnpacked`). Chrome for Testing 154, 2026-10-06: 41/41
+- Zips (also gitignored): `detour-<version>-chrome.zip`, `detour-<version>-firefox.zip`, `detour-<version>-sources.zip`. `zip.name` is `detour` so the scoped package name is not collapsed to `detourextension`
+- E2E: `pnpm build && CHROME=/path/to/chrome pnpm e2e:chrome`. puppeteer-core `launch({ pipe: true, enableExtensions: true })` + `installExtension`. When `CI` is set, args add `--no-sandbox`, `--disable-dev-shm-usage`, `--disable-gpu`. Chrome for Testing 155 stable, 2026-10-07, `CI=1`: 62/62
+- CI: `.github/workflows/ci.yml` on pull requests, `main`, and `v*` tags. The tag job attaches the three zips to a GitHub Release with `github.token`. No store API secrets. No remote in the workspace yet, so the workflow has not run on GitHub
 
 ## Ops / cost
 
 - **$0** recurring cloud: no Detour server, no mandatory BaaS
-- Distribution: browser stores + GitHub Releases
+- Distribution: browser stores (manual upload) + GitHub Releases from a `v*` tag. Docs in `docs/distribution/`. GitHub Actions free tier only
 - Optional analytics: only if privacy-safe and never includes rule bodies/file contents (default off). Firefox manifest declares `data_collection_permissions: { required: ['none'] }`.
 
 ## Free-for-life constraint

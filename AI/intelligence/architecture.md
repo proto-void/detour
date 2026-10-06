@@ -1,6 +1,6 @@
 # Architecture
 
-**Last verified:** 2026-10-06
+**Last verified:** 2026-10-07
 
 ## Pipeline
 
@@ -25,7 +25,7 @@ Rules → RuleCompiler → Core DNR            (built: engine-core)
 | `local-bridge` | Node CLI loopback file server | — |
 | `workspace-ui` | Popup, options, recipes, tester, RO import | `extension/src/workspace-ui/` (logic) + `src/entrypoints/popup/` (slice 1) + `src/entrypoints/options/` (slice 2) |
 | `observability` | Toolbar badge and session match log (no rule-body telemetry) | `extension/src/observability/` |
-| `distribution` | Stores, permissions narrative, CI artifacts | — |
+| `distribution` | Store listing docs, permission rationale, CI and zip artifacts | `.github/workflows/ci.yml`, `docs/distribution/`, `extension/scripts/install-chrome.mjs` |
 
 ## Core DNR data flow (as built)
 

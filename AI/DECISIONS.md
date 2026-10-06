@@ -1,6 +1,6 @@
 # Decisions (ADRs)
 
-**Last verified:** 2026-10-06
+**Last verified:** 2026-10-07
 
 ## ADR-001 — Stack: WXT + TypeScript + Svelte 5 + CodeMirror 6 + valibot; Node CLI
 
@@ -242,3 +242,30 @@ Developers need to see which rule just matched. `declarativeNetRequest` does not
 - Firefox will not badge a pure redirect until a feedback API exists
 - Inline JS matches stay off the log
 - The service worker's "since navigation" clock resets when the worker restarts, so the badge can briefly count older session rows
+
+---
+
+## ADR-011 — CI on GitHub Actions free tier; store upload stays manual
+
+**Status:** Accepted  
+**Date:** 2026-10-07 (distribution approved for CI + packaging)
+
+### Context
+
+Detour needs repeatable checks and store zips with **$0** recurring ops and no paid SaaS. Chrome Web Store, Edge, and AMO can be uploaded by a CLI, but that CLI wants publisher secrets. Local Bridge is still Draft, so there is no CLI artifact. The workspace has no git remote.
+
+### Decision
+
+- One workflow, `.github/workflows/ci.yml`, on pull requests, `main`, and `v*` tags
+- Gates: `pnpm test`, `pnpm typecheck`, `pnpm build`, `pnpm build:firefox`, Chrome for Testing **stable** via `@puppeteer/browsers`, `pnpm e2e:chrome`, then `pnpm zip` and `pnpm zip:firefox`
+- Node 24. pnpm 12.9.1 (the `packageManager` pin), installed in CI with `pnpm/action-setup`
+- A `v*` tag publishes the three zips to a GitHub Release using the automatic `GITHUB_TOKEN`
+- Store submission is documented for a person to do by hand. Do not call the store APIs until Hamza adds secrets on purpose
+- Do not push from this slice. Document `git remote add` and `git push -u origin main`
+
+### Consequences
+
+- CI does nothing until the repo is on GitHub
+- Firefox UI smoke stays manual (BiDi cannot open extension pages)
+- `chrome@stable` moves. 2026-10-07 it was 155, and `CI=1` e2e was 62/62. A future stable can fail the smoke test without a product change
+- The installed manifest name stays `Detour`. The store listing doc uses `Detour — Resource Override`

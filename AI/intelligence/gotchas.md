@@ -1,6 +1,6 @@
 # Gotchas
 
-**Last verified:** 2026-10-06
+**Last verified:** 2026-10-07
 
 ## DNR limits (verified against Chrome + MDN reference, 2026-10-06)
 
@@ -172,3 +172,12 @@
 - `tabs.onUpdated` often includes the URL again when `status` is `complete`. Reset the per-tab count on `loading` or a real URL change, not on complete, or the matches from that navigation fall outside the count. Match timestamps can precede `onUpdated` by a short time (`NAV_SLACK_MS` is 2s). The clock is in the service worker and resets when the worker restarts
 - The session log can hold request URLs, including tokens in a query string. It stays in `storage.session` on the device. Labels are the group name and match pattern. Never store or ship action bodies
 - Inline JS runs in the MAIN world and cannot message the extension, so those injections are not log rows. Options `h2` text is uppercased in `innerText` (`text-transform`); assert `textContent` for "Recent matches"
+
+## CI and packaging
+
+- `@detour/extension` run through WXT’s filename sanitizer becomes `detourextension`. `zip.name: 'detour'` is what makes `detour-<version>-chrome.zip`
+- `wxt zip -b firefox` also writes `detour-<version>-sources.zip` (AMO). Default excludes drop `node_modules`, `*.test.ts`, and `.output`. Extra excludes drop `.env`, keys, and `.wxt/`
+- Chrome for Testing **stable** is what CI installs (155.0.8059.39 on 2026-10-07). Pinned 154 builds still exist under `~/.cache/puppeteer` but are not what the workflow launches
+- GitHub-hosted Ubuntu cannot use Chrome’s sandbox. `e2e/chrome-smoke.mjs` adds `--no-sandbox`, `--disable-dev-shm-usage`, and `--disable-gpu` only when `CI` is set. Linux library install (`--deps`) must be root; `@puppeteer/browsers` refuses it otherwise
+- `chrome:install` prints the executable path and nothing else on stdout. A download of stable can take several minutes the first time
+- No `git remote` yet. The workflow file does not run until `main` is pushed. Tag `v*` after that to open a GitHub Release. Do not put CWS, Edge, or AMO tokens in the workflow

@@ -1,6 +1,6 @@
 # Intelligence — read/write protocol
 
-**Last verified:** 2026-10-06
+**Last verified:** 2026-10-07
 
 ## Read-first
 

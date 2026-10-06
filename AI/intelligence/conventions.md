@@ -1,6 +1,6 @@
 # Conventions
 
-**Last verified:** 2026-10-06
+**Last verified:** 2026-10-07
 
 ## Docs / KB
 
@@ -31,4 +31,5 @@
 ## Git
 
 - Conventional, why-focused commit messages; each commit builds and passes tests
-- Do not commit `node_modules/`, `.output/`, `.wxt/`, or credentials
+- Do not commit `node_modules/`, `.output/` (including store zips), `.wxt/`, or credentials
+- CI is GitHub Actions on the free tier. Store API tokens stay in GitHub secrets later, never in the repo. There is no git remote until one is added; do not push from an agent session unless asked

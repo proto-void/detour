@@ -1,6 +1,6 @@
 # Browser matrix
 
-**Last verified:** 2026-10-06 (DNR quotas, domain conditions, page engines, body override, badge and match log on Chrome 154 e2e 62/62; Firefox 157 importer, editor, inject, mock, tester). Firefox 157 BiDi still cannot open `moz-extension://` pages, so the live filter path and the Firefox match-log UI were not driven.
+**Last verified:** 2026-10-07 (DNR quotas, domain conditions, page engines, body override, badge and match log. Chrome for Testing 155 stable e2e 62/62 with `CI=1`. Firefox 157 importer, editor, inject, mock, tester). Firefox 157 BiDi still cannot open `moz-extension://` pages, so the live filter path and the Firefox match-log UI were not driven, and CI does not run a Firefox UI smoke.
 
 ## Supported targets (product intent)
 
@@ -73,5 +73,5 @@ Chrome `debugger` is unchanged. The log is `storage.session` only.
 
 ## Verification policy
 
-- CI smoke: Chromium + Firefox latest stable when implementation exists
-- Manual: one ESR Firefox check before major release
+- CI (`.github/workflows/ci.yml`): unit tests, typecheck, Chrome and Firefox builds, Chrome for Testing stable `e2e:chrome`, then the three store zips. Firefox UI smoke is not in CI
+- Manual: one ESR Firefox check before a store submission

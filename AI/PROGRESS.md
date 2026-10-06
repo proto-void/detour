@@ -1,6 +1,6 @@
 # Progress
 
-**Last verified:** 2026-10-06
+**Last verified:** 2026-10-07
 
 ## Done
 
@@ -26,10 +26,12 @@
 - [x] **workspace-ui slice 4** Approved (Hamza, 2026-10-06) and built (plan 007): light theme (persisted, dark default), popup group switches (first 8, immediate save), three starter recipes (localhost/Vite, CORS headers, SPA fallback), DevTools panel that reuses the rule tester for a page load. 281 unit tests; Chrome + Firefox builds clean; `pnpm e2e:chrome` 52/52. Firefox 157 installed the add-on headlessly; BiDi could not open extension pages
 - [x] **engine-deep body override** Approved (Hamza, 2026-10-06) and built (plan 008, ADR-009): `overrideBody` via CDP Fetch on Chrome and `filterResponseData` on Firefox. RO `fileOverride` imports as that action. Allow debugger gates attach (`bodyEngineConsent`); Chrome `debugger` is install-time. 304 unit tests; Chrome + Firefox builds clean; `pnpm e2e:chrome` 57/57 (replaced script `LOCAL`, sibling `PROD`). Firefox 157 BiDi still cannot open extension pages, so the live filter path was not driven. Local Bridge stays Draft
 - [x] **observability** Approved for badge + match log (Hamza, 2026-10-06) and built (plan 009, ADR-010): per-tab toolbar count, session match log (newest 50, label + URL, no action bodies). Chromium `declarativeNetRequestFeedback`. Popup badge switch and options `#log`. 327 unit tests; Chrome + Firefox builds clean; `pnpm e2e:chrome` 62/62. Firefox UI e2e not driven (BiDi). Chrome `debugger` unchanged. Local Bridge stays Draft
+- [x] **distribution** Approved for CI + packaging (Hamza, 2026-10-07) and built (plan 010, ADR-011): GitHub Actions on pull requests and `main` (unit tests, typecheck, Chrome + Firefox builds, `e2e:chrome` on Chrome for Testing stable, store zips). `v*` tags attach the zips to a GitHub Release with `GITHUB_TOKEN` only. Reviewer docs in `docs/distribution/`. Local check: 327 tests, typecheck clean, both builds, `CI=1` e2e 62/62 on Chrome 155, three zips. No store secrets. Not pushed (no remote). Local Bridge stays Draft
 
 ## Next
 
-1. `local-bridge` is still Draft. `distribution` approval unlocks CI (unit + build + `e2e:chrome`)
+1. `local-bridge` is still Draft
+2. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
 
 ## Open questions (not blocking)
 
