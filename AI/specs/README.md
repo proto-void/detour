@@ -10,8 +10,8 @@ Specs live **only** here. Status is **Draft** until a human Approves. See projec
 |---|------|--------|
 | 1 | [rule-model](rule-model.md) | **Approved** (Hamza, 2026-10-06) |
 | 2 | [engine-core](engine-core.md) | **Approved** (Hamza, 2026-10-06) |
-| 3 | [page-inject](page-inject.md) | Draft |
-| 4 | [api-mock](api-mock.md) | Draft |
+| 3 | [page-inject](page-inject.md) | **Approved** (Hamza, 2026-10-06) |
+| 4 | [api-mock](api-mock.md) | **Approved** (Hamza, 2026-10-06) |
 | 5 | [engine-deep](engine-deep.md) | Draft |
 | 6 | [local-bridge](local-bridge.md) | Draft |
 | 7 | [workspace-ui](workspace-ui.md) | **Approved — slice 1 (popup) + slice 2 (editor, group/rule switches)** (Hamza, 2026-10-06); remainder (recipes, tester, DevTools, light theme) Draft |

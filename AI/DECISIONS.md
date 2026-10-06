@@ -165,3 +165,28 @@ Resource Override gates groups by tab URL; DNR has no tab condition. The popup n
 
 - Two unrelated exports that share a file name (e.g. both `export.json`) replace each other. The summary makes this visible; matching by name is what makes "re-export after editing in RO" work
 - Switch flips need a Save; the editor makes unsaved state obvious
+- Amended 2026-10-06 (Hamza): re-import keeps each group's/rule's on/off state via `importKey`. A name-only match asks (Replace / Import as new / Cancel); identical content replaces silently
+
+## ADR-008 — Page-world engines: userScripts for user code, packaged runtimes for the rest
+
+**Status:** Accepted  
+**Date:** 2026-10-06 (page-inject + api-mock approved)
+
+### Context
+
+`scripting.registerContentScripts` takes only packaged file paths, and main-world content scripts are subject to the page's CSP (Chrome content-scripts doc). Chrome says `userScripts` "is required for extensions that run scripts provided by the user that cannot be shipped as part of your extension package". It needs a user toggle (Chrome) or an optional permission (Firefox 136+).
+
+### Decision
+
+- **Inline JS** → `userScripts.register`. If it's unavailable, refuse the rule with an actionable reason. Never `eval`, `new Function` or inline `<script>` text as a fallback (store-policy risk, and CSP-blocked anyway)
+- **JS URL** → a packaged bridge inserts `<script src>`. The page loads it, page CSP applies, and failures are reported
+- **CSS** → `scripting.insertCSS` from the background on the bridge's request (not subject to page CSP); URL CSS is fetched by the background
+- **Mocks** → a packaged MAIN-world runtime (`registerContentScripts`, `document_start`, `allFrames`) patches fetch/XHR synchronously and gets its config from the bridge, holding early requests until the config arrives. No toggle needed
+- Registrations exist only while matching enabled rules exist; nothing is registered when Detour is off
+- Permissions: `scripting` + `userScripts` (Chrome `permissions`; Firefox `optional_permissions`)
+
+### Consequences
+
+- Inline JS needs one-time user action (toggle or permission). The editor explains it, and the rules are refused (not silently dropped) until then
+- A mock wins over DNR for the same URL, because the request never leaves the page
+- The page can observe the patched fetch and the mock config

@@ -57,6 +57,12 @@ A workspace editor page (options page, opens in a tab) for groups and rules, wit
   4. Add a redirect rule, Save, and check that it shows ✓ Applied and that the redirect shows in the Network panel
   5. Re-import the same RO file from the popup tab; the summary says "Replaced …", and the editor shows a banner if it had unsaved edits
 
+## Hamza's answers (2026-10-06)
+
+1. **Re-import keeps switches.** Groups and rules carry `importKey` (RO id; otherwise position, plus type and match for rules; Detour exports use the file id). Replacing copies `enabled` from the matching entry and replaces everything else. Entries imported before keys existed match by position (+ match). Done, with tests
+2. **Name-only match asks.** Identical content replaces silently. Same name with different content shows Replace / Import as new / Cancel in the popup; with no prompt available it imports as new. Done, with tests (e2e in plan 005)
+3. **Request types:** a collapsed Advanced section has per-type checkboxes. "Custom…" makes the effective set explicit. An empty list is a field error, and imported lists are kept. Done, with tests
+
 ## Out of scope
 
 Spec "Remainder" and the slice 2 out-of-scope list (CodeMirror, drag-and-drop, cross-group moves, undo, import from the editor page).
