@@ -1,0 +1,24 @@
+{
+  "name": "@detour/cli",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Detour Local Bridge — serve a folder on 127.0.0.1 for serve-local rules.",
+  "type": "module",
+  "bin": {
+    "detour": "./bin/detour.js"
+  },
+  "files": ["bin", "src"],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --experimental-strip-types --test src/*.test.ts",
+    "start": "node --experimental-strip-types src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "~6.0.3"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
