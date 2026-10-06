@@ -147,6 +147,26 @@ try {
   const editorText = () => editor.evaluate(() => document.body.innerText);
   check('re-import kept 2 groups (no duplicates)', (await editor.$$('section.group')).length, 2);
   check('no iframe warning where topDomains is supported', /cross-site iframes/.test(await editorText()), false);
+  check('popup links to the rule tester', /Test a URL/.test(await popup.evaluate(() => document.body.innerText)), true);
+
+  // Rule tester: the imported redirect for a.js should win; a loop must not.
+  const testerInput = await editor.waitForSelector('#tester-url');
+  await testerInput.click({ clickCount: 3 });
+  await testerInput.type('http://127.0.0.1:8001/a.js');
+  await editor.waitForFunction(() => document.querySelector('[data-testid=tester-result]')?.textContent.includes('http://127.0.0.1:8002/a.js'), { timeout: 5000 });
+  const testerText = () => editor.$eval('[data-testid=tester-result]', (el) => el.textContent.replace(/\s+/g, ' ').trim());
+  check('rule tester shows the winning redirect', /This rule wins/.test(await testerText()) && (await testerText()).includes('http://127.0.0.1:8002/a.js'), true);
+
+  await testerInput.click({ clickCount: 3 });
+  await testerInput.type('http://127.0.0.1:9/none');
+  await editor.waitForFunction(() => document.querySelector('[data-testid=tester-result]')?.textContent.includes('No rule matches'), { timeout: 5000 });
+  check('rule tester says when nothing matches', /No rule matches/.test(await testerText()), true);
+
+  await testerInput.click({ clickCount: 3 });
+  await testerInput.type('http://127.0.0.1:8001/loop.js');
+  await editor.waitForFunction(() => /not applied/i.test(document.querySelector('[data-testid=tester-result]')?.textContent ?? ''), { timeout: 5000 });
+  const loopText = await testerText();
+  check('rule tester does not let a redirect loop win', /No rule is applied/.test(loopText) && /not applied/i.test(loopText) && !/Redirects to/.test(loopText), true);
 
   // Create a group and a rule through the editor, then confirm the rule fires.
   await editor.click('#add-group');
