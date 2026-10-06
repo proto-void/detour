@@ -1,5 +1,6 @@
-// Real-browser check for Detour slice 1: load the unpacked build, import an RO export
-// through the popup's file input, then confirm DNR redirects actually fire.
+// Real-browser check for Detour: load the unpacked build, import an RO export through the popup's
+// file input, confirm DNR redirects fire, edit rules in the options page, and prove page-inject +
+// api-mock rules run in real pages.
 // Usage: pnpm build && CHROME=/path/to/chrome pnpm e2e:chrome
 // Needs Chrome for Testing or Chromium; branded Chrome 137+ ignores unpacked-extension loading flags.
 import http from 'node:http';
@@ -36,6 +37,10 @@ const prod = await serve(8001, {
   '/b.js': js('window.B = "PROD";'),
   '/c.js': js('window.C = "PROD";'),
   '/old.html': html('<title>OLD</title>'),
+  // The page script records whether injected JS ran first (document_start).
+  '/inject.html': html('<!doctype html><title>inject</title><h1>hi</h1><script>window.SEEN = window.EARLY ?? "none";</script>'),
+  '/other.html': html('<!doctype html><title>other</title><h1>hi</h1><script>window.SEEN = window.EARLY ?? "none";</script>'),
+  '/api/real': { type: 'text/plain', text: 'REAL' },
 });
 const local = await serve(8002, {
   '/a.js': js('window.A = "LOCAL";'),
@@ -177,9 +182,167 @@ try {
   await editor.waitForFunction(() => document.querySelector('[data-testid=save-state]')?.textContent.includes('All changes saved'), { timeout: 10000 });
   check('rule switched off in the editor stops firing', (await run('http://localhost:8001/page.html')).C, 'PROD');
 
+  // ---- page-inject + api-mock ----------------------------------------------------------------
+  const ruleIn = async (group) => (await group.$$('article.rule')).at(-1);
+  const statusOf = (article) => article.$eval('[data-testid=rule-status]', (el) => el.textContent.trim());
+  const waitStatus = (article, text) =>
+    editor.waitForFunction((el, t) => el.querySelector('[data-testid=rule-status]')?.textContent.includes(t), { timeout: 10000 }, article, text).catch(async (e) => {
+      console.log(`--- waiting for "${text}", status is "${await statusOf(article)}" ---`);
+      throw e;
+    });
+  const typeCode = async (article, code) => {
+    const content = await article.waitForSelector('.cm-content', { timeout: 10000 }).catch(async (e) => {
+      console.log('--- rule without a code editor ---\n' + (await article.evaluate((el) => el.innerHTML.slice(0, 2000))));
+      throw e;
+    });
+    await content.click();
+    await editor.keyboard.type(code);
+  };
+  const addPageRule = async (group, pattern, actionType) => {
+    await (await group.$('button[id$="-add-rule"]')).click();
+    const article = await ruleIn(group);
+    await (await article.$('input[id$="-pattern"]')).type(pattern);
+    await article.$eval('select[id$="-action"]', (el, value) => {
+      el.value = value;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }, actionType);
+    return article;
+  };
+  const saveAndSettle = async () => {
+    await editor.bringToFront();
+    await editor.click('button.primary');
+    await editor.waitForFunction(() => document.querySelector('[data-testid=save-state]')?.textContent.includes('All changes saved'), { timeout: 10000 }).catch(async (e) => {
+      console.log('--- editor when save did not settle ---\n' + (await editorText()));
+      throw e;
+    });
+  };
+  const inPage = async (url, fn) => {
+    const p = await browser.newPage();
+    await p.goto(url, { waitUntil: 'load' });
+    const value = await p.evaluate(fn);
+    return { page: p, value };
+  };
+  const pageState = () => ({ seen: window.SEEN, color: getComputedStyle(document.querySelector('h1')).color });
+  // insertCSS goes bridge → background → tab, so it can land just after `load`.
+  const cssColor = (p, expected) =>
+    p.waitForFunction((c) => getComputedStyle(document.querySelector('h1')).color === c, { timeout: 3000, polling: 100 }, expected).then(
+      () => expected,
+      () => p.evaluate(() => getComputedStyle(document.querySelector('h1')).color),
+    );
+  const callApis = async () => {
+    const f = await fetch('/api/mocked');
+    const xhr = await new Promise((resolve) => {
+      const x = new XMLHttpRequest();
+      x.open('GET', '/api/mocked');
+      x.onload = () => resolve([x.status, x.responseText, x.getResponseHeader('content-type')]);
+      x.send();
+    });
+    const post = await fetch('/api/mocked', { method: 'POST' });
+    const real = await fetch('/api/real');
+    return { fetch: [f.status, await f.text()], xhr, post: post.status, real: [real.status, await real.text()] };
+  };
+
+  await editor.click('#add-group');
+  await editor.keyboard.type('Page rules');
+  const pageGroup = (await editor.$$('section.group')).at(-1);
+  const jsRule = await addPageRule(pageGroup, 'http://localhost:8001/inject.html', 'injectJs');
+  await typeCode(jsRule, 'window.EARLY = "injected";');
+  const cssRule = await addPageRule(pageGroup, 'http://localhost:8001/*', 'injectCss');
+  await typeCode(cssRule, 'h1 { color: rgb(1, 2, 3) }');
+  const mockRule = await addPageRule(pageGroup, '*/api/mocked', 'mock');
+  await mockRule.$eval('input[id$="-status"]', (el) => {
+    el.value = '201';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await saveAndSettle();
+
+  await waitStatus(cssRule, 'Applied');
+  await waitStatus(mockRule, 'Applied');
+  await waitStatus(jsRule, 'Refused');
+  check('inline JS refused while user scripts are off', await statusOf(jsRule), '✕ Refused: User scripts off');
+  check('user-scripts banner explains the toggle', /Allow User Scripts/.test(await editorText()) && (await editor.$('[data-testid=user-scripts-banner]')) !== null, true);
+
+  // What a user does on chrome://extensions/?id=…: flip "Allow User Scripts".
+  const manager = await browser.newPage();
+  await manager.goto(`chrome://extensions/?id=${id}`);
+  await manager.evaluate((extensionId) => chrome.developerPrivate.updateExtensionConfiguration({ extensionId, userScriptsAccess: true }), id);
+  await manager.close();
+  await editor.bringToFront();
+  await editor.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await waitStatus(jsRule, 'Applied');
+  check('inline JS applies once user scripts are allowed', await statusOf(jsRule), '✓ Applied');
+  check('banner gone after allowing', (await editor.$('[data-testid=user-scripts-banner]')) === null, true);
+
+  const matching = await inPage('http://localhost:8001/inject.html', pageState);
+  check('inline JS ran at document_start, before page scripts', matching.value.seen, 'injected');
+  check('inline CSS applies (computed style)', await cssColor(matching.page, 'rgb(1, 2, 3)'), 'rgb(1, 2, 3)');
+  const apis = await matching.page.evaluate(callApis);
+  check('fetch mock returns mocked status + body', apis.fetch, [201, '{}']);
+  check('XHR mock returns mocked status, body + headers', apis.xhr, [201, '{}', 'application/json']);
+  check('method mismatch passes through to the server', apis.post, 404);
+  check('non-matching fetch passes through', apis.real, [200, 'REAL']);
+
+  const other = await inPage('http://localhost:8001/other.html', pageState);
+  check('inline JS not injected on a non-matching page', other.value.seen, 'none');
+  await other.page.close();
+
+  // Mock switched off: the open page passes through without a reload.
+  await editor.bringToFront();
+  await (await mockRule.$('button[role=switch]')).click();
+  await saveAndSettle();
+  await waitStatus(mockRule, 'Off');
+  await matching.page.bringToFront();
+  await matching.page.waitForFunction(async () => (await fetch('/api/mocked')).status === 404, { timeout: 5000, polling: 200 }).catch(() => {});
+  check('mock off takes effect without reload', await matching.page.evaluate(async () => (await fetch('/api/mocked')).status), 404);
+  await matching.page.close();
+
+  // Group switched off: nothing injected on the next load.
+  await editor.bringToFront();
+  await (await pageGroup.$('button[role=switch]')).click();
+  await saveAndSettle();
+  await waitStatus(jsRule, 'Off');
+  const groupOff = await inPage('http://localhost:8001/inject.html', pageState);
+  await new Promise((r) => setTimeout(r, 500));
+  const offColor = await groupOff.page.evaluate(() => getComputedStyle(document.querySelector('h1')).color);
+  check('group off stops JS + CSS injection', [groupOff.value.seen, offColor === 'rgb(1, 2, 3)'], ['none', false]);
+  await groupOff.page.close();
+
+  // ---- re-import keeps switches; name-only match asks first ------------------------------------
+  await editor.bringToFront();
+  const firstGroup = (await editor.$$('section.group'))[0];
+  await (await firstGroup.$('article.rule button[role=switch]')).click();
+  await saveAndSettle();
+  check('imported rule a switched off before re-import', (await run('http://localhost:8001/page.html')).A, 'PROD');
+
+  const changedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'detour-e2e-changed-'));
+  const changedPath = path.join(changedDir, 'ro-export.json');
+  const changed = structuredClone(roExport);
+  changed.data[0].rules.push({ id: 'c', type: 'normalOverride', match: '*:8001/c.js', replace: 'http://127.0.0.1:8002/c.js', on: true });
+  fs.writeFileSync(changedPath, JSON.stringify(changed));
+  await popup.bringToFront();
+  await (await popup.$('input[type=file]')).uploadFile(changedPath);
+  const confirm = await popup.waitForSelector('[role=alertdialog]', { timeout: 10000 });
+  check('name-only match asks before replacing', /Replace the earlier import of ro-export\.json\?/.test(await confirm.evaluate((el) => el.textContent)), true);
+  await popup.click('#confirm-replace');
+  await popup.waitForFunction(() => document.body.innerText.includes('Replaced 2 groups'), { timeout: 10000 });
+  const stored = await popup.evaluate(async () => (await chrome.storage.local.get('workspace')).workspace.data);
+  const global = stored.groups.find((g) => g.importKey === 'global');
+  check(
+    're-import keeps the off switch, adds the new rule',
+    [global.rules.find((r) => r.importKey === 'a')?.enabled, global.rules.some((r) => r.importKey === 'c'), stored.groups.filter((g) => g.importKey === 'global').length],
+    [false, true, 1],
+  );
+  check('page-rule group untouched by re-import', stored.groups.some((g) => g.name === 'Page rules'), true);
+  const afterReimport = await run('http://localhost:8001/page.html');
+  check('kept-off rule stays off; new rule fires', [afterReimport.A, afterReimport.C], ['PROD', 'LOCAL']);
+
+  await editor.bringToFront();
+
   await editor.setViewport({ width: 1100, height: 900 });
   await editor.screenshot({ path: path.join(outDir, 'editor.png'), fullPage: true });
   console.log('screenshot', path.join(outDir, 'editor.png'));
+  await pageGroup.screenshot({ path: path.join(outDir, 'page-rules.png') });
+  console.log('screenshot', path.join(outDir, 'page-rules.png'));
 
   await popup.setViewport({ width: 400, height: 600 });
   await popup.screenshot({ path: path.join(outDir, 'popup.png'), fullPage: true });
