@@ -323,5 +323,33 @@ Detour cannot know each page’s CSP when the rule is compiled. In-place works f
 
 - Strict CSP pages work after the user allows response rewriting. Until they do, those pages can still block the redirect. The rules page says so.
 - Chrome shows the debugging infobar while a `serveLocal` rule is in place, same as `overrideBody`. DevTools on that tab disconnects the override.
-- Subresource Integrity still checks the new bytes. This decision does not strip `integrity`.
+- Amended 2026-10-07 by [ADR-014](#adr-014--matching-subresource-integrity-hashes-follow-the-override): in-place overrides update matching `integrity` hashes. This decision itself did not.
 - The page does not see the token in the in-place mode. It still can when the rule falls back to a redirect.
+
+---
+
+## ADR-014 — Matching Subresource Integrity hashes follow the override
+
+**Status:** Accepted  
+**Date:** 2026-10-07 (Hamza approved SRI handling)
+
+### Context
+
+`overrideBody` and in-place `serveLocal` replace response bytes but leave the page's `integrity` attribute alone. The HTML parser copies that attribute onto the request when it prepares a script, before any page script runs, so a MAIN-world content script cannot clear a parser-inserted hash. The browser then rejects the new bytes. SRI also checks a redirected response, so the loopback fallback fails the same way, and that fallback has no document-rewrite API without the debugger or `filterResponseData`.
+
+### Decision
+
+- While body rules are armed, rewrite UTF-8 HTML documents (2 MiB cap). For each `<script src>` or stylesheet `<link>` whose URL matches an armed rule, set `integrity` to `sha384-` of the bytes that rule will serve. Leave every other hash alone
+- Compute the hash from the same read the body engine fulfills, so the browser's check matches the file. If the read fails, leave the published hash
+- Chrome adds a Fetch pattern with `resourceType: Document` and fulfills the HTML. A bare `*` pattern already pauses documents. Firefox opens `filterResponseData` on document requests from `onBeforeRequest`
+- Do not rewrite documents when response rewriting is off. The redirect keeps the page's hash. Say so on the rules page
+- Do not strip hashes for the whole page. The user opted into specific overrides; other resources stay protected
+- JavaScript that assigns `integrity` after parse is out of this slice
+
+### Consequences
+
+- A matching script or stylesheet runs after Allow debugger / Allow response rewriting. The browser still enforces the new hash
+- A compromised CDN file that is not overridden still has the page's hash
+- If the override bytes change between the HTML rewrite and the script response, the check fails closed until the next load
+- Rewriting is off for non-UTF-8 documents and documents over 2 MiB. Those pages can still reject the new file
+- Chrome shows the debugging infobar whenever a body rule is armed, same as before. Document responses are paused for the duration

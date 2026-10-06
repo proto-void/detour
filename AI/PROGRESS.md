@@ -29,11 +29,12 @@
 - [x] **distribution** Approved for CI + packaging (Hamza, 2026-10-07) and built (plan 010, ADR-011): GitHub Actions on pull requests and `main` (unit tests, typecheck, Chrome + Firefox builds, `e2e:chrome` on Chrome for Testing stable, store zips). `v*` tags attach the zips to a GitHub Release with `GITHUB_TOKEN` only. Reviewer docs in `docs/distribution/`. Local check: 327 tests, typecheck clean, both builds, `CI=1` e2e 62/62 on Chrome 155, three zips. No store secrets. Not pushed (no remote). Local Bridge stays Draft
 - [x] **local-bridge** Approved (Hamza, 2026-10-07) and built (plan 011, ADR-012): `@detour/cli` serves a folder on `127.0.0.1` only. `serveLocal` redirects after the user connects and `/health` succeeds; otherwise the rule is refused and the production URL stays. RO `fileOverride` stays inline `overrideBody`. 18 CLI tests, 342 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 65/65 (script from disk is `DISK`). Firefox UI still not driven (BiDi). Not pushed
 - [x] **local-bridge in-place** Approved (Hamza, 2026-10-07) and built (plan 012, ADR-013): when Allow debugger / Allow response rewriting is on, `serveLocal` keeps the original URL and the extension reads the file from the bridge. Otherwise it still redirects. 18 CLI tests, 351 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 68/68 (disk script on a `script-src 'self'` page). Firefox live filter still not driven (BiDi). Not pushed
+- [x] **SRI hashes** Approved (Hamza, 2026-10-07) and built (plan 013, ADR-014): while a body rule is armed, UTF-8 HTML gets a SHA-384 `integrity` of the override on matching script and stylesheet tags. Other tags keep the page's hashes. Redirect mode does not rewrite the document. 363 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 72/72 on Chrome for Testing 155 (override runs, valid sibling runs, bad sibling stays blocked, in-place disk file runs). Firefox document path is unit-tested. Not pushed
 
 ## Next
 
 1. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
-2. npm publish of `@detour/cli` is still out of scope. SRI stripping is still out of scope
+2. npm publish of `@detour/cli` is still out of scope. JavaScript that sets `integrity` after the document is parsed is still out of scope
 
 ## Open questions (not blocking)
 
@@ -44,6 +45,7 @@
 - Packed Chromium rows store the tab URL, not the subresource. Is that enough, or should packed builds stay limited to unpacked-style request URLs some other way?
 - Firefox does not record DNR matches (no feedback API; `webRequest` was not added). Is that gap acceptable?
 - Inline JS injections are not log rows. Worth a later note, or leave them to the apply report?
+- A bundler that sets `script.integrity` from JavaScript, after the HTML is parsed, still gets the page's hash. Worth a later MAIN-world patch?
 
 ## Blocked
 

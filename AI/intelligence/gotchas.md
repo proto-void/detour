@@ -112,7 +112,12 @@
 
 ## SRI
 
-- Subresource Integrity blocks replaced scripts/styles (#45). Body override does not strip `integrity` in this slice; the editor says the page can still reject the new file
+- The HTML parser copies `integrity` onto the request when it prepares a script, before page JavaScript runs. A MAIN-world content script cannot see that write. Detour rewrites the document instead (ADR-014)
+- While an `overrideBody` or in-place `serveLocal` rule is armed, UTF-8 HTML up to 2 MiB gets `sha384-` of the override bytes on each matching script or stylesheet tag. Other tags keep the page's hashes. The browser still checks the new hash
+- The hash and the fulfilled body come from the same read. A failed read leaves the published hash. Non-UTF-8 documents and documents over 2 MiB are left unchanged
+- A redirect to `127.0.0.1` (rewriting off) does not change the document, so the page's hash can still reject the file
+- JavaScript that sets `integrity` after the document is parsed is not rewritten
+- Chrome pauses documents with Fetch `resourceType: Document` (a bare `*` pattern already pauses them) and fulfills the HTML. Firefox opens `filterResponseData` from `onBeforeRequest` and drops `content-encoding` on those documents, because the stream is already decoded. HTML documents are `Cache-Control: no-store` on Firefox while a body rule is armed; Chrome sets that only when a hash changed
 
 ## Chrome 137+ extension loading
 
@@ -134,10 +139,10 @@
 ## Body override
 
 - Do not use a `data:` redirect. CSP, CORS, and opaque responses break it. `overrideBody` keeps the URL and replaces the bytes
-- CDP `Fetch.fulfillRequest` body is base64. `continueResponse` with only `requestId` leaves the response alone. Do not call `Fetch.getResponseBody`
+- CDP `Fetch.fulfillRequest` body is base64. `continueResponse` with only `requestId` leaves a non-document response alone. HTML documents are the exception: `Fetch.getResponseBody` then fulfill, so a matching `integrity` hash can be rewritten. Do not call `Fetch.getResponseBody` for the script or stylesheet being replaced
 - Drop `content-encoding`, `content-length`, and `transfer-encoding` on the replacement or Chrome tries to gunzip the new bytes
 - A regex or bare `*` Fetch pattern pauses every response in the tab. Specific globs stay narrow. The editor warns
-- Subresource Integrity still checks the new bytes. This slice does not strip `integrity`
+- Matching script and stylesheet tags in the HTML get a SHA-384 hash of the replacement. See SRI above. A tag the page sets from JavaScript is unchanged
 - A DNR redirect for the same URL can move the request before Fetch sees the response. The tester notes the overlap; the compiler does not suppress either rule
 - Mocks still win for `xmlhttprequest` (the page answers first)
 - Out-of-process iframes are not auto-attached. Firefox does not filter service-worker script streams

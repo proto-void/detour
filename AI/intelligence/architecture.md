@@ -85,6 +85,7 @@ enabled workspace
 - Replaced responses drop `content-encoding`, `content-length`, and `transfer-encoding`. Status and other headers stay. Optional content type replaces `Content-Type`.
 - Cancelling Chrome’s debugging banner leaves that tab detached until the body-rule plan changes. DevTools on the tab detaches Detour.
 - RO `fileOverride` maps to `overrideBody` (the export holds file bytes). `fileInject` stays skipped. A file on disk is `serveLocal`, not this import.
+- While those rules are armed, Chrome also pauses `Document` responses and Firefox filters document streams. Matching script and stylesheet tags in UTF-8 HTML get `sha384-` of the bytes that rule will serve (ADR-014). A failed read leaves the published hash.
 
 ## Local Bridge (as built, ADR-012)
 
@@ -103,7 +104,7 @@ enabled serveLocal { path }
 - The filename is not in the bridge URL, so a redirect pattern like `*.js` does not also match the bridge and loop. In-place does not redirect, so that loop check does not apply.
 - Refusal text, the apply report, and the match log do not contain the token or file bytes. The match log stores the page’s request URL. The token is in the redirect URL only when the rule falls back to a redirect.
 - No `--host`. The filesystem root is refused. Symlinks that leave the folder are 404.
-- Inline `overrideBody` is unchanged. Subresource Integrity still checks replaced bytes.
+- Inline `overrideBody` is unchanged as a rule action. While either that rule or an in-place `serveLocal` rule is armed, HTML documents get a SHA-384 `integrity` of the replacement on matching script and stylesheet tags (ADR-014). The redirect fallback does not rewrite the document.
 
 ## UI (workspace-ui)
 

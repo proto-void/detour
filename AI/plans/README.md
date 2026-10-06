@@ -17,6 +17,7 @@ Implementation plans live **only** here. Numbered `NNN-short-name.md`.
 | [010-distribution-ci-packaging.md](010-distribution-ci-packaging.md) | Done |
 | [011-local-bridge.md](011-local-bridge.md) | Done |
 | [012-local-bridge-inplace.md](012-local-bridge-inplace.md) | Done |
+| [013-sri-handling.md](013-sri-handling.md) | Done |
 
 New plans only for **Approved** specs (`spec-workflow` gate).
 

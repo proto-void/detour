@@ -17,7 +17,7 @@ Detour lets developers **point production at their code** via rules compiled int
 | engine-core | Redirect, modifyHeaders, block; urlFilter-first DNR apply | Core DNR |
 | page-inject | Inject JS/CSS at document stages | Inject |
 | api-mock | Mock fetch/XHR JSON/text/status | Mock |
-| engine-deep | Body override via debugger (Chromium) | Deep |
+| engine-deep | Body override via debugger (Chromium). Matching SRI hashes while that engine is armed | Deep |
 | local-bridge | Serve local folder; map URL → file. In-place when rewriting is allowed, else loopback redirect | Bridge CLI + Deep |
 | workspace-ui | Popup, workspace, recipes, rule tester, dark default | — |
 | observability | Badge, match log, compile errors | — |

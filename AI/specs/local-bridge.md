@@ -57,7 +57,7 @@ Resource Override `fileOverride` still imports as inline `overrideBody`. Those e
 | Firefox | 128 ESR+ | In-place via `filterResponseData` when Allow response rewriting is on. Otherwise the same redirect. |
 | Safari | 17+ | Not verified. |
 
-A page with a Content-Security-Policy that does not allow `http://127.0.0.1` blocks the redirect. In-place keeps the original URL, so that policy still applies to the production address. Subresource Integrity still checks the new bytes. Inline `overrideBody` is unchanged.
+A page with a Content-Security-Policy that does not allow `http://127.0.0.1` blocks the redirect. In-place keeps the original URL, so that policy still applies to the production address. While that in-place rule is armed, HTML documents get a SHA-384 `integrity` of the file for matching script and stylesheet tags ([ADR-014](../DECISIONS.md)). The redirect path does not rewrite the document, so the page's hash can still reject the file. Inline `overrideBody` uses the same hash update.
 
 ## Limits and gotchas
 
