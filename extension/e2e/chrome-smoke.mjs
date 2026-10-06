@@ -50,6 +50,10 @@ const sriOuterProd = 'html{--sri-outer:prod}';
 const sriOuterBadCss = 'html{--sri-outer-bad:no}';
 const sriShadowProd = 'span{--sri-shadow:prod}';
 const sriShadowBadCss = 'span{--sri-shadow-bad:no}';
+const sriUnsafeCssProd = 'html{--sri-unsafe-css:prod}';
+const sriUnsafeCssBad = 'html{--sri-unsafe-css-bad:no}';
+const sriUnsafeShadowProd = 'span{--sri-unsafe-shadow:prod}';
+const sriUnsafeShadowBad = 'span{--sri-unsafe-shadow-bad:no}';
 const page = html('<!doctype html><title>t</title><script src="/a.js"></script><script src="/b.js"></script><script src="/c.js"></script>');
 
 const prod = await serve(8001, {
@@ -141,6 +145,17 @@ document.head.appendChild(sibling);
   '/sri-outer-bad.css': css(sriOuterBadCss),
   '/sri-shadow.css': css(sriShadowProd),
   '/sri-shadow-bad.css': css(sriShadowBadCss),
+  // setHTMLUnsafe with scripts off still fetches stylesheets and checks integrity.
+  '/sri-unsafe-css.html': html(`<!doctype html><title>sri-unsafe-css</title><div id="host"></div><div id="shadow-host"></div><script>
+var bad = 'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+document.getElementById('host').setHTMLUnsafe('<link rel="stylesheet" href="/sri-unsafe-css.css" integrity="${sha384(sriUnsafeCssProd)}" crossorigin="anonymous"><link rel="stylesheet" href="/sri-unsafe-css-bad.css" integrity="' + bad + '" crossorigin="anonymous">');
+var root = document.getElementById('shadow-host').attachShadow({ mode: 'open' });
+root.setHTMLUnsafe('<link rel="stylesheet" href="/sri-unsafe-shadow.css" integrity="${sha384(sriUnsafeShadowProd)}" crossorigin="anonymous"><link rel="stylesheet" href="/sri-unsafe-shadow-bad.css" integrity="' + bad + '" crossorigin="anonymous"><span id="probe">x</span>', { runScripts: false });
+</script>`),
+  '/sri-unsafe-css.css': css(sriUnsafeCssProd),
+  '/sri-unsafe-css-bad.css': css(sriUnsafeCssBad),
+  '/sri-unsafe-shadow.css': css(sriUnsafeShadowProd),
+  '/sri-unsafe-shadow-bad.css': css(sriUnsafeShadowBad),
 });
 const local = await serve(8002, {
   '/a.js': js('window.A = "LOCAL";'),
@@ -900,6 +915,68 @@ try {
   check('sibling stylesheet in that outerHTML stays blocked', sriInertPage.outerBad, '');
   check('shadow innerHTML stylesheet with a production integrity hash is accepted', sriInertPage.shadow, 'local');
   check('sibling stylesheet in that shadow root stays blocked', sriInertPage.shadowBad, '');
+
+  const sriUnsafeCssRule = await addPageRule(sriGroup, '*:8001/sri-unsafe-css.css', 'overrideBody');
+  await typeCode(sriUnsafeCssRule, 'html{--sri-unsafe-css:local}');
+  const sriUnsafeShadowRule = await addPageRule(sriGroup, '*:8001/sri-unsafe-shadow.css', 'overrideBody');
+  await typeCode(sriUnsafeShadowRule, 'span{--sri-unsafe-shadow:local}');
+  await saveAndSettle();
+  await waitStatus(sriUnsafeCssRule, 'Applied');
+  await waitStatus(sriUnsafeShadowRule, 'Applied');
+  shieldPaths.length = 0;
+  shieldPaths.push('/sri-unsafe-css.html');
+  const sriUnsafeCssPage = await sriWorker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () =>
+        new Promise((resolve) => {
+          const started = Date.now();
+          const tick = () => {
+            const host = document.getElementById('host');
+            const probe = document.getElementById('shadow-host')?.shadowRoot?.querySelector('#probe');
+            const value = {
+              css: getComputedStyle(document.documentElement).getPropertyValue('--sri-unsafe-css').trim(),
+              cssBad: getComputedStyle(document.documentElement).getPropertyValue('--sri-unsafe-css-bad').trim(),
+              sibling: host?.querySelector('link[href="/sri-unsafe-css-bad.css"]')?.getAttribute('integrity') ?? '',
+              shadow: probe ? getComputedStyle(probe).getPropertyValue('--sri-unsafe-shadow').trim() : '',
+              shadowBad: probe ? getComputedStyle(probe).getPropertyValue('--sri-unsafe-shadow-bad').trim() : '',
+              shadowSibling: document.getElementById('shadow-host')?.shadowRoot?.querySelector('link[href="/sri-unsafe-shadow-bad.css"]')?.getAttribute('integrity') ?? '',
+            };
+            const ready = value.css === 'local' && value.shadow === 'local';
+            if (ready || Date.now() - started > 3000) resolve(value);
+            else setTimeout(tick, 50);
+          };
+          tick();
+        }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/sri-unsafe-css.html');
+  const badIntegrity = 'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+  check('setHTMLUnsafe without runScripts accepts a stylesheet with a production integrity hash', sriUnsafeCssPage.css, 'local');
+  check('sibling stylesheet in that setHTMLUnsafe stays blocked', sriUnsafeCssPage.cssBad, '');
+  check('sibling hash in that setHTMLUnsafe stays', sriUnsafeCssPage.sibling, badIntegrity);
+  check('setHTMLUnsafe with runScripts false accepts a shadow stylesheet', sriUnsafeCssPage.shadow, 'local');
+  check('sibling stylesheet in that shadow setHTMLUnsafe stays blocked', sriUnsafeCssPage.shadowBad, '');
+  check('sibling hash in that shadow setHTMLUnsafe stays', sriUnsafeCssPage.shadowSibling, badIntegrity);
   shieldPaths.length = 0;
 
   // Local Bridge: consent is already on, so serveLocal is fulfilled in place (the URL stays on port 8001).
