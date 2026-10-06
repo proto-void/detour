@@ -55,6 +55,11 @@
     if (!inTab) window.close();
   }
 
+  async function openRecipes() {
+    await browser.tabs.create({ url: browser.runtime.getURL('/options.html#recipes') });
+    if (!inTab) window.close();
+  }
+
   onMount(() => {
     void refresh();
     const onChanged = (_: unknown, areaName: string) => {
@@ -89,6 +94,7 @@
   <ReportView {view} />
   <footer>
     <ThemeToggle {area} />
+    <button type="button" class="btn" onclick={openRecipes}>Recipes…</button>
     <button type="button" class="btn" onclick={openTester}>Test a URL…</button>
     <button type="button" class="btn" onclick={openEditor}>Edit rules…</button>
   </footer>

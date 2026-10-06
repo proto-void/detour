@@ -12,6 +12,7 @@
   import ThemeToggle from '../../ui/ThemeToggle.svelte';
   import { addGroup, exportFileName, isAwaitingApply, isDirty, newGroup, validateWorkspace } from '../../workspace-ui/editor';
   import GroupCard from './GroupCard.svelte';
+  import RecipePicker from './RecipePicker.svelte';
   import RuleTester from './RuleTester.svelte';
 
   const area = browser.storage.local;
@@ -266,6 +267,19 @@
 
     {#if saved}
     <RuleTester workspace={draft} {enabled} {dirty} userScripts={userScriptsReady} />
+
+    <RecipePicker
+      workspace={draft}
+      onadd={(next, groupId) => {
+        draft = next;
+        announce('Added to your rules. Save to apply it.');
+        void tick().then(() => {
+          const input = document.getElementById(`group-${groupId}-name`) as HTMLInputElement | null;
+          input?.focus();
+          input?.select();
+        });
+      }}
+    />
 
     <p class="muted intro">
       {draft.groups.length} group{draft.groups.length === 1 ? '' : 's'}, {ruleCount} rule{ruleCount === 1 ? '' : 's'}. Rules higher in the list win when several match the same request.

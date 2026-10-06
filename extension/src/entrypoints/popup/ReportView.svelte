@@ -24,7 +24,7 @@
     {:else if view.state === 'empty'}
       <div class="empty">
         <p><strong>Point production at your code.</strong></p>
-        <p class="muted">No active rules yet. Import a Resource Override export to get started.</p>
+        <p class="muted">No active rules yet. Import a Resource Override export, or add a recipe.</p>
       </div>
     {:else}
       <p class="counts">
