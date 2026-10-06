@@ -9,7 +9,10 @@ import { formatIssues, parseRule, RESOURCE_TYPES, type Group, type HeaderOp, typ
  * Group name/matchUrl is the *tab* URL pattern that gated its rules.
  */
 
+const RoId = v.optional(v.pipe(v.union([v.string(), v.number()]), v.transform(String)));
+
 const RoRuleSchema = v.looseObject({
+  id: RoId,
   type: v.string(),
   on: v.optional(v.boolean(), true),
   match: v.optional(v.string(), ''),
@@ -19,6 +22,7 @@ const RoRuleSchema = v.looseObject({
 });
 
 const RoGroupSchema = v.looseObject({
+  id: RoId,
   name: v.optional(v.string()),
   matchUrl: v.optional(v.string()),
   on: v.optional(v.boolean(), true),
@@ -187,7 +191,8 @@ export function importResourceOverride(input: unknown, newId: () => string): { o
         const mapped = mapRule(roRule, g, r);
         if (!mapped) return;
         // RO matched every request type, page loads included.
-        const checked = parseRule({ id: newId(), enabled: roRule.on, ...mapped, resourceTypes: [...RESOURCE_TYPES] });
+        const importKey = roRule.id ?? `#${r}:${roRule.type}:${roRule.match}`;
+        const checked = parseRule({ id: newId(), enabled: roRule.on, ...mapped, resourceTypes: [...RESOURCE_TYPES], importKey });
         if (checked.ok) rules.push(checked.value);
         else skipped.push({ code: 'invalid-after-mapping', message: checked.errors.join('; '), group: g, rule: r });
       });
@@ -196,6 +201,7 @@ export function importResourceOverride(input: unknown, newId: () => string): { o
         name: pagePattern || `Imported group ${g + 1}`,
         enabled,
         ...(scope.kind === 'domains' && { pageDomains: scope.domains }),
+        importKey: roGroup.id ?? `#${g}`,
         rules,
       };
     }),

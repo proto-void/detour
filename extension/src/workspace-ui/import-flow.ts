@@ -1,6 +1,6 @@
 import type { ImportNotice } from '../rule-model/ro-import';
 import { loadWorkspace, saveWorkspace, type StorageAreaLike } from '../rule-model/storage';
-import { importWorkspace, mergeImported, sha256Hex, type ImportResult } from '../rule-model/transfer';
+import { findSourceMatch, importWorkspace, mergeImported, sha256Hex, type ImportResult } from '../rule-model/transfer';
 
 export type ImportSummary =
   | {
@@ -13,18 +13,26 @@ export type ImportSummary =
       skipped: ImportNotice[];
       warnings: ImportNotice[];
     }
-  | { ok: false; errors: string[] };
+  | { ok: false; errors: string[]; cancelled?: boolean };
+
+/** Asked when only the file name matches an earlier import (different content). */
+export type NameOnlyChoice = 'replace' | 'new' | 'cancel';
 
 export interface ImportIntoStorageOptions {
   fileName: string;
   newId?: () => string;
+  /** Defaults to importing as new groups, so nothing is overwritten without asking. */
+  onNameOnlyMatch?: (info: { file: string; groups: number }) => Promise<NameOnlyChoice>;
 }
 
-/** Parses an export file, merges it into the stored workspace and saves; the background then applies it. */
+/**
+ * Parses an export file, merges it into the stored workspace and saves; the background then applies it.
+ * Identical content replaces the earlier import silently; a same-named file with different content asks.
+ */
 export async function importIntoStorage(
   text: string,
   area: StorageAreaLike,
-  { fileName, newId = () => crypto.randomUUID() }: ImportIntoStorageOptions,
+  { fileName, newId = () => crypto.randomUUID(), onNameOnlyMatch = async () => 'new' }: ImportIntoStorageOptions,
 ): Promise<ImportSummary> {
   const imported = importWorkspace(text, { newId });
   if (!imported.ok) return imported;
@@ -33,7 +41,19 @@ export async function importIntoStorage(
   if (!current.ok) {
     return { ok: false, errors: ['Your saved workspace is unreadable, so nothing was imported (to avoid overwriting it).', ...current.errors] };
   }
-  const merged = mergeImported(current.value, imported.workspace, { file: fileName, sha256: await sha256Hex(text) }, newId);
+  const source = { file: fileName, sha256: await sha256Hex(text) };
+  const match = findSourceMatch(current.value, source);
+  let mode: 'replace' | 'append' = 'replace';
+  if (match.kind === 'name') {
+    const choice = await onNameOnlyMatch({ file: fileName, groups: match.groups });
+    if (choice === 'cancel') return { ok: false, cancelled: true, errors: ['Import cancelled. Nothing was changed.'] };
+    mode = choice === 'replace' ? 'replace' : 'append';
+  }
+
+  // Re-read: the user may have taken a while to answer, and another page may have saved meanwhile.
+  const latest = match.kind === 'name' ? await loadWorkspace(area) : current;
+  if (!latest.ok) return { ok: false, errors: latest.errors };
+  const merged = mergeImported(latest.value, imported.workspace, source, newId, mode);
   const saved = await saveWorkspace(area, merged.workspace);
   if (!saved.ok) return saved;
 

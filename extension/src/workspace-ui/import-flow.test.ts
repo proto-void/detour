@@ -36,6 +36,53 @@ describe('importIntoStorage', () => {
     expect(await groupNames()).toEqual(['Mine', '*', 'https://app.example.com/*']);
   });
 
+  it('asks before replacing when only the file name matches, and honours each answer', async () => {
+    await importIntoStorage(roText, area, { fileName: 'ro.json' });
+    const edited = JSON.stringify({ ...roV1, data: roV1.data.slice(0, 1) });
+    const asked: unknown[] = [];
+
+    const cancelled = await importIntoStorage(edited, area, { fileName: 'ro.json', onNameOnlyMatch: async (info) => (asked.push(info), 'cancel') });
+    expect(asked).toEqual([{ file: 'ro.json', groups: 2 }]);
+    expect(cancelled).toMatchObject({ ok: false, cancelled: true });
+    expect(await groupNames()).toHaveLength(2);
+
+    const asNew = await importIntoStorage(edited, area, { fileName: 'ro.json', onNameOnlyMatch: async () => 'new' });
+    expect(asNew).toMatchObject({ ok: true, replaced: 0 });
+    expect(await groupNames()).toHaveLength(3);
+
+    const replaced = await importIntoStorage(edited, area, { fileName: 'ro.json', onNameOnlyMatch: async () => 'replace' });
+    expect(replaced).toMatchObject({ ok: true, replaced: 3 });
+    expect(await groupNames()).toEqual(['*']);
+  });
+
+  it('defaults to importing as new when nobody is asked', async () => {
+    await importIntoStorage(roText, area, { fileName: 'ro.json' });
+    await importIntoStorage(JSON.stringify({ ...roV1, data: roV1.data.slice(0, 1) }), area, { fileName: 'ro.json' });
+    expect(await groupNames()).toHaveLength(3);
+  });
+
+  it("keeps the user's group and rule switches across a re-import", async () => {
+    await importIntoStorage(roText, area, { fileName: 'ro.json' });
+    const before = await loadWorkspace(area);
+    if (!before.ok) throw new Error('load failed');
+    const [first, second] = before.value.groups;
+    await saveWorkspace(area, {
+      groups: [
+        { ...first!, enabled: false, rules: first!.rules.map((r, i) => (i === 0 ? { ...r, enabled: false } : r)) },
+        { ...second!, enabled: true },
+      ],
+    });
+
+    const changed = JSON.parse(roText);
+    changed.data[0].rules[0].replace = 'http://localhost:9999/*.js';
+    await importIntoStorage(JSON.stringify(changed), area, { fileName: 'ro.json', onNameOnlyMatch: async () => 'replace' });
+
+    const after = await loadWorkspace(area);
+    if (!after.ok) throw new Error('load failed');
+    expect(after.value.groups.map((g) => g.enabled)).toEqual([false, true]);
+    expect(after.value.groups[0]!.rules[0]).toMatchObject({ enabled: false, action: { to: 'http://localhost:9999/*.js' } });
+  });
+
   it('appends a different file with fresh ids so ids never collide', async () => {
     await importIntoStorage(roText, area, { fileName: 'ro.json' });
     const first = await loadWorkspace(area);

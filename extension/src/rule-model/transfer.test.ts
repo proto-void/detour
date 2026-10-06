@@ -5,7 +5,7 @@ import roV2Data from './__fixtures__/ro-v2-data.json';
 import roV2RuleGroups from './__fixtures__/ro-v2-rulegroups.json';
 import { parsePageScope, parseRoHeaderRules } from './ro-import';
 import { RESOURCE_TYPES } from './schema';
-import { importWorkspace, mergeImported, serializeExport, sha256Hex } from './transfer';
+import { findSourceMatch, importWorkspace, mergeImported, serializeExport, sha256Hex } from './transfer';
 import type { Group, ImportSource } from './schema';
 
 const sequentialIds = () => {
@@ -50,7 +50,7 @@ describe('Resource Override import', () => {
           name: '*',
           enabled: true,
           rules: [
-            { id: 'id1', enabled: true, match: { kind: 'glob', pattern: 'https://cdn.example.com/*.js' }, action: { type: 'redirect', to: 'http://localhost:8080/*.js' }, resourceTypes: ALL_TYPES },
+            { id: 'id1', enabled: true, match: { kind: 'glob', pattern: 'https://cdn.example.com/*.js' }, action: { type: 'redirect', to: 'http://localhost:8080/*.js' }, resourceTypes: ALL_TYPES, importKey: 'r1' },
             {
               id: 'id2',
               enabled: false,
@@ -67,8 +67,10 @@ describe('Resource Override import', () => {
                 ],
               },
               resourceTypes: ALL_TYPES,
+              importKey: 'r3',
             },
           ],
+          importKey: 'd1',
         },
         {
           id: 'id5',
@@ -82,8 +84,10 @@ describe('Resource Override import', () => {
               match: { kind: 'glob', pattern: 'https://**.example.com/*' },
               action: { type: 'redirect', to: 'https://**.staging.example.com/*' },
               resourceTypes: ALL_TYPES,
+              importKey: 'r5',
             },
           ],
+          importKey: 'd2',
         },
       ],
     });
@@ -235,5 +239,73 @@ describe('mergeImported', () => {
 
   it('hashes text as lowercase hex SHA-256', async () => {
     expect(await sha256Hex('abc')).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+  });
+});
+
+describe('mergeImported keeps on/off switches', () => {
+  const HASH_A = 'a'.repeat(64);
+  const HASH_B = 'b'.repeat(64);
+  const rule = (id: string, pattern: string, enabled = true, importKey?: string) => ({
+    id,
+    enabled,
+    match: { kind: 'glob' as const, pattern },
+    action: { type: 'block' as const },
+    ...(importKey && { importKey }),
+  });
+  const old: ImportSource = { file: 'ro.json', sha256: HASH_A };
+
+  it('pairs groups and rules by importKey and replaces everything else', () => {
+    const base = {
+      groups: [{ id: 'g-old', name: 'Old name', enabled: false, importedFrom: old, importKey: 'd1', rules: [rule('r-old', '*/old', false, 'r1')] }],
+    };
+    const incoming = { groups: [{ id: 'x', name: 'New name', enabled: true, importKey: 'd1', rules: [rule('y', '*/new', true, 'r1'), rule('z', '*/added', true, 'r2')] }] };
+    const { workspace } = mergeImported(base, incoming, { file: 'ro.json', sha256: HASH_B }, sequentialIds());
+    const [g] = workspace.groups;
+    expect(g).toMatchObject({ name: 'New name', enabled: false, importKey: 'd1' });
+    expect(g!.rules.map((r) => [r.match.pattern, r.enabled])).toEqual([
+      ['*/new', false],
+      ['*/added', true],
+    ]);
+  });
+
+  it('falls back to position (+ match for rules) for groups imported before keys existed', () => {
+    const base = { groups: [{ id: 'g', name: 'G', enabled: false, importedFrom: old, rules: [rule('a', '*/same', false), rule('b', '*/changed', false)] }] };
+    const incoming = { groups: [{ id: 'x', name: 'G', enabled: true, rules: [rule('1', '*/same'), rule('2', '*/different')] }] };
+    const { workspace } = mergeImported(base, incoming, old, sequentialIds());
+    expect(workspace.groups[0]!.enabled).toBe(false);
+    expect(workspace.groups[0]!.rules.map((r) => r.enabled)).toEqual([false, true]);
+  });
+
+  it('stamps file ids as import keys for Detour exports', () => {
+    const { workspace } = mergeImported({ groups: [] }, { groups: [{ id: 'g-file', name: 'G', enabled: true, rules: [rule('r-file', '*')] }] }, old, sequentialIds());
+    expect(workspace.groups[0]).toMatchObject({ id: 'id1', importKey: 'g-file' });
+    expect(workspace.groups[0]!.rules[0]).toMatchObject({ id: 'id2', importKey: 'r-file' });
+  });
+
+  it('appends instead of replacing in append mode', () => {
+    const base = { groups: [{ id: 'g', name: 'G', enabled: true, importedFrom: old, rules: [] }] };
+    const { workspace, replaced } = mergeImported(base, { groups: [{ id: 'x', name: 'X', enabled: true, rules: [] }] }, old, sequentialIds(), 'append');
+    expect(replaced).toBe(0);
+    expect(workspace.groups.map((g) => g.name)).toEqual(['G', 'X']);
+  });
+
+  it('tells identical content from a name-only match', () => {
+    const base = { groups: [{ id: 'g', name: 'G', enabled: true, importedFrom: old, rules: [] }] };
+    expect(findSourceMatch(base, old)).toEqual({ kind: 'hash', groups: 1 });
+    expect(findSourceMatch(base, { file: 'ro.json', sha256: HASH_B })).toEqual({ kind: 'name', groups: 1 });
+    expect(findSourceMatch(base, { file: 'other.json', sha256: HASH_B })).toEqual({ kind: 'none', groups: 0 });
+  });
+});
+
+describe('RO import keys', () => {
+  it('uses RO ids, or position + type + match when ids are missing', () => {
+    const result = importFixture({ v: 2, data: [{ name: '*', rules: [{ type: 'normalOverride', match: 'https://a/*', replace: 'http://b/*' }] }] });
+    if (!result.ok) throw new Error(result.errors.join());
+    expect(result.workspace.groups[0]!.importKey).toBe('#0');
+    expect(result.workspace.groups[0]!.rules[0]!.importKey).toBe('#0:normalOverride:https://a/*');
+    const v1 = importFixture(roV1);
+    if (!v1.ok) throw new Error(v1.errors.join());
+    expect(v1.workspace.groups[0]!.importKey).toBe('d1');
+    expect(v1.workspace.groups[0]!.rules[0]!.importKey).toBe('r1');
   });
 });

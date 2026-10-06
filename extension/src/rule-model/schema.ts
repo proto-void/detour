@@ -76,6 +76,8 @@ export const RuleSchema = v.object({
   resourceTypes: v.optional(v.pipe(v.array(v.picklist(RESOURCE_TYPES)), v.minLength(1, 'Use at least one resource type or omit the field'))),
   caseSensitive: v.optional(v.boolean()),
   note: v.optional(v.string()),
+  /** Stable identity within its import source (RO rule id, or position + match); keeps on/off state across re-imports. */
+  importKey: v.optional(v.string()),
 });
 
 const Domain = v.pipe(
@@ -96,6 +98,8 @@ export const GroupSchema = v.object({
   /** Only run on pages whose host is (a subdomain of) one of these. Omitted = every page. */
   pageDomains: v.optional(v.pipe(v.array(Domain), v.minLength(1, 'Use at least one domain or omit the field'))),
   importedFrom: v.optional(ImportSourceSchema),
+  /** Stable identity within its import source (RO group id, or position). */
+  importKey: v.optional(v.string()),
   rules: v.array(RuleSchema),
 });
 

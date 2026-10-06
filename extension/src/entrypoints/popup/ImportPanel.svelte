@@ -1,13 +1,24 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { browser } from 'wxt/browser';
   import type { StorageAreaLike } from '../../rule-model/storage';
-  import { importIntoStorage, type ImportSummary } from '../../workspace-ui/import-flow';
+  import { importIntoStorage, type ImportSummary, type NameOnlyChoice } from '../../workspace-ui/import-flow';
 
   let { area, inTab }: { area: StorageAreaLike; inTab: boolean } = $props();
 
   let input: HTMLInputElement | undefined = $state();
   let busy = $state(false);
   let summary: ImportSummary | undefined = $state();
+  let confirm: { file: string; groups: number; answer: (choice: NameOnlyChoice) => void } | undefined = $state();
+
+  async function askNameOnly(info: { file: string; groups: number }): Promise<NameOnlyChoice> {
+    const choice = new Promise<NameOnlyChoice>((resolve) => (confirm = { ...info, answer: resolve }));
+    await tick();
+    document.getElementById('confirm-replace')?.focus();
+    const answer = await choice;
+    confirm = undefined;
+    return answer;
+  }
 
   // Firefox closes the popup as soon as a file picker opens, so pick the file from a tab instead.
   const pickInTab = $derived(import.meta.env.FIREFOX && !inTab);
@@ -29,7 +40,7 @@
     busy = true;
     summary = undefined;
     try {
-      summary = await importIntoStorage(await file.text(), area, { fileName: file.name });
+      summary = await importIntoStorage(await file.text(), area, { fileName: file.name, onNameOnlyMatch: askNameOnly });
     } catch (e) {
       summary = { ok: false, errors: [`Could not read ${file.name}: ${(e as Error).message}`] };
     } finally {
@@ -53,6 +64,29 @@
     </button>
   </div>
   <input bind:this={input} type="file" accept=".json,application/json" hidden onchange={onFile} data-testid="import-file" />
+
+  {#if confirm}
+    {@const answer = confirm.answer}
+    <div
+      class="confirm"
+      role="alertdialog"
+      aria-modal="false"
+      aria-labelledby="confirm-title"
+      aria-describedby="confirm-desc"
+      tabindex="-1"
+      onkeydown={(e) => e.key === 'Escape' && answer('cancel')}
+    >
+      <p id="confirm-title"><strong>Replace the earlier import of {confirm.file}?</strong></p>
+      <p id="confirm-desc" class="muted">
+        A different file with this name was imported before ({plural(confirm.groups, 'group')}). Replacing keeps your on/off switches; importing as new keeps both.
+      </p>
+      <div class="choices">
+        <button type="button" class="btn primary" id="confirm-replace" onclick={() => answer('replace')}>Replace</button>
+        <button type="button" class="btn" onclick={() => answer('new')}>Import as new</button>
+        <button type="button" class="btn" onclick={() => answer('cancel')}>Cancel</button>
+      </div>
+    </div>
+  {/if}
 
   <div aria-live="polite" class="result">
     {#if summary?.ok}
@@ -83,6 +117,8 @@
           </ul>
         </details>
       {/if}
+    {:else if summary && !summary.ok && summary.cancelled}
+      <p class="muted">Import cancelled. Nothing was changed.</p>
     {:else if summary}
       <div role="alert" class="error">
         <p><strong>Import failed.</strong> Nothing was changed.</p>
@@ -125,6 +161,21 @@
   .secondary:disabled {
     cursor: progress;
     opacity: 0.7;
+  }
+
+  .confirm {
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid var(--warning);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+
+  .choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
   }
 
   .result:empty {
