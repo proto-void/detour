@@ -35,6 +35,8 @@ const sha384 = (text) => `sha384-${createHash('sha384').update(text).digest('bas
 const sriProd = 'window.SRI = "PROD";';
 const sriKept = 'window.SRI_KEPT = "OK";';
 const sriBad = 'window.SRI_BAD = "NO";';
+const sriJsProd = 'window.SRI_JS = "PROD";';
+const sriJsBad = 'window.SRI_JS_BAD = "NO";';
 const page = html('<!doctype html><title>t</title><script src="/a.js"></script><script src="/b.js"></script><script src="/c.js"></script>');
 
 const prod = await serve(8001, {
@@ -67,6 +69,12 @@ const prod = await serve(8001, {
   '/sri-bad.js': js(sriBad),
   '/sri-disk.html': html(`<!doctype html><title>sri-disk</title><script src="/sri-disk.js" integrity="${sha384('window.SRI_DISK = "PROD";')}" crossorigin="anonymous"></script>`),
   '/sri-disk.js': js('window.SRI_DISK = "PROD";'),
+  // Integrity is assigned after parse, the way a bundler sets script.integrity.
+  '/sri-js.html': html(
+    `<!doctype html><title>sri-js</title><script>var s=document.createElement('script');s.src='/sri-js.js';s.integrity='${sha384(sriJsProd)}';s.crossOrigin='anonymous';document.head.appendChild(s);var b=document.createElement('script');b.src='/sri-js-bad.js';b.integrity='sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';b.crossOrigin='anonymous';document.head.appendChild(b);</script>`,
+  ),
+  '/sri-js.js': js(sriJsProd),
+  '/sri-js-bad.js': js(sriJsBad),
 });
 const local = await serve(8002, {
   '/a.js': js('window.A = "LOCAL";'),
@@ -549,6 +557,7 @@ try {
   await saveAndSettle();
   await waitStatus(bodyRule, 'Applied');
   check('body rule shows applied', await statusOf(bodyRule), '✓ Applied');
+  check('body editor says page JavaScript integrity is updated', (await editorText()).includes('page JavaScript'), true);
 
   shieldPaths.push('/body.html');
   const workerTarget = await browser.waitForTarget((t) => t.type() === 'service_worker' && t.url().includes(id), { timeout: 10000 });
@@ -624,6 +633,46 @@ try {
   check('integrity-protected script runs the override', sriPage.SRI, 'LOCAL');
   check('sibling with a valid integrity hash still runs', sriPage.SRI_KEPT, 'OK');
   check('sibling with a bad integrity hash stays blocked', sriPage.SRI_BAD, undefined);
+
+  const sriJsRule = await addPageRule(sriGroup, '*:8001/sri-js.js', 'overrideBody');
+  await typeCode(sriJsRule, 'window.SRI_JS = "LOCAL";');
+  await saveAndSettle();
+  await waitStatus(sriJsRule, 'Applied');
+  shieldPaths.push('/sri-js.html');
+  const sriJsPage = await sriWorker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () => ({
+        SRI_JS: window.SRI_JS,
+        SRI_JS_BAD: window.SRI_JS_BAD,
+        meta: document.querySelector('meta[name="detour-sri"]')?.getAttribute('content') ?? '',
+      }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/sri-js.html');
+  check('page script that sets integrity after parse runs the override', sriJsPage.SRI_JS, 'LOCAL');
+  check('sibling whose JavaScript integrity does not match stays blocked', sriJsPage.SRI_JS_BAD, undefined);
+  check('integrity list is on the page', sriJsPage.meta.length > 0, true);
+  check('integrity list does not include the override source', sriJsPage.meta.includes('window.SRI_JS = "LOCAL"'), false);
   shieldPaths.length = 0;
 
   // Local Bridge: consent is already on, so serveLocal is fulfilled in place (the URL stays on port 8001).
