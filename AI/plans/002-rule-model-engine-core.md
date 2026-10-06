@@ -1,6 +1,6 @@
 # 002 — rule-model + engine-core (first vertical slice)
 
-**Status:** In progress  
+**Status:** Done (manual browser check pending)  
 **Date:** 2026-10-06  
 **Specs:** [rule-model](../specs/rule-model.md) (Approved), [engine-core](../specs/engine-core.md) (Approved)
 
@@ -42,16 +42,34 @@ extension/                  pnpm, standalone package (no root workspace until cl
 ## Tasks
 
 - [x] T0 Approve specs in KB; this plan
-- [ ] T1 Scaffold `extension/` (WXT 0.21 + TS + Svelte 5 module + valibot + Vitest); `.gitignore` covers outputs; both browser builds green
-- [ ] T2 rule-model schema + issue formatting — accept/reject fixture tests
-- [ ] T3 glob/regex matcher (`globToRegexSource`, `compileMatcher`) — tests
-- [ ] T4 storage layer (load/save, invalid data preserved) — tests
-- [ ] T5 Detour export/import round trip (golden file) — tests
-- [ ] T6 RO import v1 + v2 (+ `ruleGroups`, legacy `matchUrl`, `{}` export bug) — fixture mapping tests
-- [ ] T7 engine-core compiler (urlFilter vs regex, priority, actions) — tests
-- [ ] T8 limits + apply (single batch, ceiling, rejected-rule retry, fallback) + coalescer — tests with fake DNR
-- [ ] T9 background wiring; `wxt build` + `wxt build -b firefox`; inspect manifests
-- [ ] T10 KB write-back (architecture, conventions, gotchas, tech-baseline, DECISIONS, PROGRESS)
+- [x] T1 Scaffold `extension/` (WXT 0.21 + TS + Svelte 5 module + valibot + Vitest); `.gitignore` covers outputs; both browser builds green
+- [x] T2 rule-model schema + issue formatting — accept/reject fixture tests
+- [x] T3 glob/regex matcher (`globToRegexSource`, `compileMatcher`) — tests
+- [x] T4 storage layer (load/save, invalid data preserved) — tests
+- [x] T5 Detour export/import round trip (golden file) — tests
+- [x] T6 RO import v1 + v2 (+ `ruleGroups`, legacy `matchUrl`, `{}` export bug) — fixture mapping tests
+- [x] T7 engine-core compiler (urlFilter vs regex, priority, actions) — tests
+- [x] T8 limits + apply (single batch, ceiling, rejected-rule retry, fallback) + coalescer — tests with fake DNR
+- [x] T9 background wiring; `wxt build` + `wxt build -b firefox`; inspect manifests
+- [x] T10 KB write-back (architecture, conventions, gotchas, tech-baseline, DECISIONS ADR-004/005, PROGRESS)
+- [ ] T11 Manual check in Chrome + Firefox (spec Verification), needs a seeded workspace; no UI yet
+
+## Results
+
+- 87 Vitest tests across 7 files; `tsc --noEmit` clean
+- `wxt build` → `chrome-mv3` (service worker, ~14.6 kB); `wxt build -b firefox` → `firefox-mv3` (event page). The only warning is the missing gecko id
+
+## Deviations from spec
+
+- None against acceptance criteria. Additions: a `redirect-loop` refusal, and `caseSensitive`, `resourceTypes` and `note` rule fields
+- RO `fileOverride` / `fileInject` are skipped (structured reasons) rather than mapped, because no approved engine can serve bodies without `data:` redirects (see gotchas)
+
+## Open questions (Hamza)
+
+1. **Firefox gecko id**: AMO needs `browser_specific_settings.gecko.id` for MV3. Which id should we use (ties to distribution / domain)?
+2. **RO tab-URL group scoping**: imported groups with a non-`*` page pattern now apply on every page (with a warning). Should we add optional group scoping via DNR `initiatorDomains` / `topDomains` (topDomains is newer Chrome only), or import those groups disabled?
+3. **`main_frame` default**: Detour follows the DNR default (all types except main_frame). RO mv3 matched main_frame too. Should RO imports set explicit all-types to stay faithful?
+4. **Fallback cost**: the per-rule fallback can issue n calls on an unexplained rejection. That's acceptable as an error path, but should we bisect instead?
 
 ## Out of scope
 

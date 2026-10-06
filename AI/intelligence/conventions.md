@@ -14,16 +14,21 @@
 - Product: **Detour**
 - Spec files: `kebab-case.md`
 - Plans: `NNN-kebab-case.md`
-- Future packages: prefer `@detour/*` on npm (unscoped `detour` taken)
+- npm: `@detour/*` (unscoped `detour` taken); extension package is `@detour/extension`
 
-## Code (when it exists)
+## Code
 
-- TypeScript strict; valibot at trust boundaries (import, storage load)
-- Prefer small modules; RuleCompiler owns engine selection
+- TypeScript strict + `noUncheckedIndexedAccess`; valibot at trust boundaries (import, storage load/save)
+- One folder per spec module under `extension/src/` (`rule-model/`, `engine-core/`); entrypoints stay wiring-only
+- Types come from schemas (`v.InferOutput`), not hand-written duplicates
+- Browser APIs are injected as narrow interfaces (`DnrApi`, `StorageAreaLike`) so logic is testable without a browser; cast `browser.*` once at the entrypoint
+- Fallible pure functions return `{ ok: true, value } | { ok: false, errors }`; user-facing errors carry a dot path (`data.groups.0.rules.2.match.pattern: …`)
+- Refusals / import notices use a stable `reason`/`code` string plus a human message; never include rule bodies or file contents
+- Tests colocated as `*.test.ts`; fixtures in `__fixtures__/`; DNR fake in `src/test/fake-dnr.ts`; storage via `fakeBrowser` from `wxt/testing/fake-browser`
 - Match WXT + Svelte 5 idioms; no drive-by refactors
 - UI: dark default; accessibility for popup toggles
 
 ## Git
 
-- Conventional, why-focused commit messages
-- Do not commit `node_modules/`, build outputs, or credentials
+- Conventional, why-focused commit messages; each commit builds and passes tests
+- Do not commit `node_modules/`, `.output/`, `.wxt/`, or credentials

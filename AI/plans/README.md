@@ -6,7 +6,7 @@ Implementation plans live **only** here. Numbered `NNN-short-name.md`.
 |------|--------|
 | [000-workspace-setup.md](000-workspace-setup.md) | Done |
 | [001-research-and-specs.md](001-research-and-specs.md) | Done |
-| [002-rule-model-engine-core.md](002-rule-model-engine-core.md) | In progress |
+| [002-rule-model-engine-core.md](002-rule-model-engine-core.md) | Done (manual browser check pending) |
 
 New plans only for **Approved** specs (`spec-workflow` gate).
 

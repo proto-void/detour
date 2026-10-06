@@ -23,4 +23,12 @@ WXT + TypeScript + Svelte 5 + CodeMirror 6 + valibot; Node CLI for Local Bridge.
 
 ## Workspace status
 
-AI Project Intelligence + addyosmani skills installed. Specs are **Draft** for human review. No `extension/` or `cli/` code yet.
+`rule-model` and `engine-core` are **Approved** and built in [`extension/`](extension/) (no UI yet). Other specs are Draft. No `cli/` yet.
+
+```sh
+cd extension
+corepack pnpm install
+corepack pnpm test          # Vitest
+corepack pnpm build         # .output/chrome-mv3
+corepack pnpm build:firefox # .output/firefox-mv3
+```

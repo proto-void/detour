@@ -18,3 +18,8 @@
 | **Rule tester** | UI that shows which rule matches a pasted URL |
 | **RO** | Resource Override (kylepaulsen) — upstream inspiration |
 | **SDD** | Spec-driven development — Draft → Approved before implementation |
+| **Workspace** | All groups the user has; stored/exported as `{ v, data }` envelope |
+| **Candidate** | A compiled DNR rule before ids/priority are assigned |
+| **Refusal** | A rule engine-core did not install, with a `reason` code (e.g. `regex-limit`, `browser-rejected`) |
+| **Apply report** | `storage.local.applyReport` — what was applied/refused on the last refresh (ids only) |
+| **Unsafe rule** | Chrome DNR term: any action besides block/allow/allowAllRequests/upgradeScheme; separate 5000 cap |

@@ -80,3 +80,49 @@ Keep product name **Detour**. Use scoped npm names and a store subtitle that cla
 
 - Document store subtitle early in `distribution` spec
 - Re-check CWS/AMO at publish time
+
+---
+
+## ADR-004 — Extension tooling: pnpm, standalone package, MV3 everywhere
+
+**Status:** Accepted  
+**Date:** 2026-10-06
+
+### Context
+
+tech-baseline left "pnpm or npm" open. WXT 0.21 defaults Firefox to MV2. TypeScript 7 (native compiler) is now `latest`.
+
+### Decision
+
+- **pnpm** (pinned through `packageManager`, run via `corepack pnpm`), with `extension/` as a standalone package; add a root workspace when `cli/` lands
+- Force `manifestVersion: 3` for every target (Firefox gets an MV3 event page)
+- Pin TypeScript `~6.0`; revisit 7.x when Svelte/WXT tooling supports the native compiler
+
+### Consequences
+
+- No global installs needed beyond Node + corepack
+- One manifest shape across browsers; Firefox MV3 still needs a gecko id before AMO submission
+
+---
+
+## ADR-005 — Core DNR apply model
+
+**Status:** Accepted  
+**Date:** 2026-10-06
+
+### Context
+
+engine-core must batch updates, keep group/rule order as priority, and never drop to zero rules at a quota (RO mv3 / PR #73).
+
+### Decision
+
+- Each refresh **replaces all** dynamic rules in one atomic `updateDynamicRules` call; DNR ids are positional (1..n) and recorded in `applyReport`
+- Priority = `n − position` over enabled rules (unique, so tie-break order never matters)
+- Quotas are enforced in priority order **before** the call; later rules are refused, earlier ones always apply
+- On rejection: drop the rule named in `Rule with id N` and retry; otherwise fall back to per-rule adds
+- Globs compile to `urlFilter` unless they need regex
+
+### Consequences
+
+- Positional ids carry no meaning across refreshes, so observability must map ids through `applyReport`
+- A full replace costs one call even for a single edit; that's fine at Detour scale and keeps state simple
