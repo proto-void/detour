@@ -39,6 +39,10 @@ const sriJsProd = 'window.SRI_JS = "PROD";';
 const sriJsBad = 'window.SRI_JS_BAD = "NO";';
 const sriHtmlProd = 'window.SRI_HTML = "PROD";';
 const sriHtmlBad = 'window.SRI_HTML_BAD = "NO";';
+const sriExecProd = 'window.SRI_EXEC = "PROD";';
+const sriExecBad = 'window.SRI_EXEC_BAD = "NO";';
+const sriUnsafeProd = 'window.SRI_UNSAFE = "PROD";';
+const sriUnsafeBad = 'window.SRI_UNSAFE_BAD = "NO";';
 const page = html('<!doctype html><title>t</title><script src="/a.js"></script><script src="/b.js"></script><script src="/c.js"></script>');
 
 const prod = await serve(8001, {
@@ -94,6 +98,18 @@ slot.querySelectorAll('script').forEach(function (old) {
 </script>`),
   '/sri-html.js': js(sriHtmlProd),
   '/sri-html-bad.js': js(sriHtmlBad),
+  // These two APIs execute scripts. The production hash is in the markup string.
+  '/sri-exec.html': html(`<!doctype html><title>sri-exec</title><div id="unsafe"></div><script>
+var bad = 'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+var range = document.createRange();
+range.selectNode(document.documentElement);
+document.body.append(range.createContextualFragment('<script src="/sri-exec.js" integrity="${sha384(sriExecProd)}" crossorigin="anonymous"><' + '/script><script src="/sri-exec-bad.js" integrity="' + bad + '" crossorigin="anonymous"><' + '/script>'));
+document.getElementById('unsafe').setHTMLUnsafe('<script src="/sri-unsafe.js" integrity="${sha384(sriUnsafeProd)}" crossorigin="anonymous"><' + '/script><script src="/sri-unsafe-bad.js" integrity="' + bad + '" crossorigin="anonymous"><' + '/script>', { runScripts: true });
+</script>`),
+  '/sri-exec.js': js(sriExecProd),
+  '/sri-exec-bad.js': js(sriExecBad),
+  '/sri-unsafe.js': js(sriUnsafeProd),
+  '/sri-unsafe-bad.js': js(sriUnsafeBad),
 });
 const local = await serve(8002, {
   '/a.js': js('window.A = "LOCAL";'),
@@ -578,6 +594,7 @@ try {
   check('body rule shows applied', await statusOf(bodyRule), '✓ Applied');
   check('body editor says page JavaScript integrity is updated', (await editorText()).includes('page JavaScript'), true);
   check('body editor says markup integrity is updated', (await editorText()).includes('insertAdjacentHTML'), true);
+  check('body editor says script-running markup integrity is updated', (await editorText()).includes('createContextualFragment'), true);
 
   shieldPaths.push('/body.html');
   const workerTarget = await browser.waitForTarget((t) => t.type() === 'service_worker' && t.url().includes(id), { timeout: 10000 });
@@ -736,6 +753,59 @@ try {
   }, 'http://127.0.0.1:8001/sri-html.html');
   check('insertAdjacentHTML with a production integrity hash runs the override', sriHtmlPage.SRI_HTML, 'LOCAL');
   check('sibling inserted in that markup stays blocked', sriHtmlPage.SRI_HTML_BAD, undefined);
+
+  const sriExecRule = await addPageRule(sriGroup, '*:8001/sri-exec.js', 'overrideBody');
+  await typeCode(sriExecRule, 'window.SRI_EXEC = "LOCAL";');
+  const sriUnsafeRule = await addPageRule(sriGroup, '*:8001/sri-unsafe.js', 'overrideBody');
+  await typeCode(sriUnsafeRule, 'window.SRI_UNSAFE = "LOCAL";');
+  await saveAndSettle();
+  await waitStatus(sriExecRule, 'Applied');
+  await waitStatus(sriUnsafeRule, 'Applied');
+  shieldPaths.push('/sri-exec.html');
+  const sriExecPage = await sriWorker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () =>
+        new Promise((resolve) => {
+          const started = Date.now();
+          const tick = () => {
+            const value = {
+              SRI_EXEC: window.SRI_EXEC,
+              SRI_EXEC_BAD: window.SRI_EXEC_BAD,
+              SRI_UNSAFE: window.SRI_UNSAFE,
+              SRI_UNSAFE_BAD: window.SRI_UNSAFE_BAD,
+            };
+            if ((value.SRI_EXEC !== undefined && value.SRI_UNSAFE !== undefined) || Date.now() - started > 3000) resolve(value);
+            else setTimeout(tick, 50);
+          };
+          tick();
+        }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/sri-exec.html');
+  check('createContextualFragment with a production integrity hash runs the override', sriExecPage.SRI_EXEC, 'LOCAL');
+  check('sibling inserted by createContextualFragment stays blocked', sriExecPage.SRI_EXEC_BAD, undefined);
+  check('setHTMLUnsafe with runScripts and a production integrity hash runs the override', sriExecPage.SRI_UNSAFE, 'LOCAL');
+  check('sibling inserted by setHTMLUnsafe stays blocked', sriExecPage.SRI_UNSAFE_BAD, undefined);
   shieldPaths.length = 0;
 
   // Local Bridge: consent is already on, so serveLocal is fulfilled in place (the URL stays on port 8001).
