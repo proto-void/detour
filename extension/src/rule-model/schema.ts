@@ -83,12 +83,19 @@ const Domain = v.pipe(
   v.regex(/^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)*$/, 'Domain must be a lowercase ASCII hostname without scheme, port or path (punycode for IDNs)'),
 );
 
+/** Where an imported group came from; a later import of the same file replaces it. */
+export const ImportSourceSchema = v.object({
+  file: v.string(),
+  sha256: v.pipe(v.string(), v.regex(/^[0-9a-f]{64}$/, 'Must be a lowercase hex SHA-256')),
+});
+
 export const GroupSchema = v.object({
   id: Id,
   name: v.string(),
   enabled: v.boolean(),
   /** Only run on pages whose host is (a subdomain of) one of these. Omitted = every page. */
   pageDomains: v.optional(v.pipe(v.array(Domain), v.minLength(1, 'Use at least one domain or omit the field'))),
+  importedFrom: v.optional(ImportSourceSchema),
   rules: v.array(RuleSchema),
 });
 
@@ -117,6 +124,7 @@ export type Match = v.InferOutput<typeof MatchSchema>;
 export type Action = v.InferOutput<typeof ActionSchema>;
 export type ResourceType = (typeof RESOURCE_TYPES)[number];
 export type Rule = v.InferOutput<typeof RuleSchema>;
+export type ImportSource = v.InferOutput<typeof ImportSourceSchema>;
 export type Group = v.InferOutput<typeof GroupSchema>;
 export type Workspace = v.InferOutput<typeof WorkspaceSchema>;
 export type Envelope = v.InferOutput<typeof EnvelopeSchema>;

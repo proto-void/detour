@@ -27,7 +27,7 @@
     busy = true;
     summary = undefined;
     try {
-      summary = await importIntoStorage(await file.text(), area);
+      summary = await importIntoStorage(await file.text(), area, { fileName: file.name });
     } catch (e) {
       summary = { ok: false, errors: [`Could not read ${file.name}: ${(e as Error).message}`] };
     } finally {
@@ -56,6 +56,9 @@
       <p>
         Imported {plural(summary.rules, 'rule')} in {plural(summary.groups, 'group')}
         <span class="muted">({summary.source === 'detour' ? 'Detour' : 'Resource Override'})</span>.
+        {#if summary.replaced > 0}
+          Replaced {plural(summary.replaced, 'group')} from an earlier import of this file.
+        {/if}
       </p>
       {#if summary.skipped.length > 0}
         <details>

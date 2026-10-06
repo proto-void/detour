@@ -5,7 +5,8 @@ import roV2Data from './__fixtures__/ro-v2-data.json';
 import roV2RuleGroups from './__fixtures__/ro-v2-rulegroups.json';
 import { parsePageScope, parseRoHeaderRules } from './ro-import';
 import { RESOURCE_TYPES } from './schema';
-import { importWorkspace, serializeExport } from './transfer';
+import { importWorkspace, mergeImported, serializeExport, sha256Hex } from './transfer';
+import type { Group, ImportSource } from './schema';
 
 const sequentialIds = () => {
   let n = 0;
@@ -193,5 +194,46 @@ describe('Resource Override page scoping', () => {
     if (!result.ok) throw new Error(result.errors.join());
     expect(result.workspace.groups[0]!.rules[0]!.resourceTypes).toContain('main_frame');
     expect(result.workspace.groups[0]!.rules[0]!.resourceTypes).toEqual(ALL_TYPES);
+  });
+});
+
+describe('mergeImported', () => {
+  const HASH_A = 'a'.repeat(64);
+  const HASH_B = 'b'.repeat(64);
+  const group = (id: string, importedFrom?: ImportSource): Group => ({ id, name: id, enabled: true, ...(importedFrom && { importedFrom }), rules: [] });
+  const incoming = { groups: [group('x'), group('y')] };
+  const names = (groups: Group[]) => groups.map((g) => g.name);
+
+  it('appends and stamps provenance when nothing came from this source', () => {
+    const { workspace, replaced } = mergeImported({ groups: [group('mine')] }, incoming, { file: 'ro.json', sha256: HASH_A }, sequentialIds());
+    expect(replaced).toBe(0);
+    expect(names(workspace.groups)).toEqual(['mine', 'x', 'y']);
+    expect(workspace.groups[1]).toMatchObject({ id: 'id1', importedFrom: { file: 'ro.json', sha256: HASH_A } });
+  });
+
+  it('replaces earlier groups from the same file name in place, keeping hand-made groups', () => {
+    const source = { file: 'ro.json', sha256: HASH_A };
+    const base = { groups: [group('mine'), group('old1', source), group('between'), group('old2', source), group('last')] };
+    const { workspace, replaced } = mergeImported(base, incoming, { file: 'ro.json', sha256: HASH_B }, sequentialIds());
+    expect(replaced).toBe(2);
+    expect(names(workspace.groups)).toEqual(['mine', 'x', 'y', 'between', 'last']);
+  });
+
+  it('matches identical content under a different file name', () => {
+    const base = { groups: [group('old', { file: 'ro.json', sha256: HASH_A })] };
+    const { workspace, replaced } = mergeImported(base, incoming, { file: 'ro (1).json', sha256: HASH_A }, sequentialIds());
+    expect(replaced).toBe(1);
+    expect(names(workspace.groups)).toEqual(['x', 'y']);
+  });
+
+  it('leaves groups from other sources alone', () => {
+    const base = { groups: [group('other', { file: 'other.json', sha256: HASH_B })] };
+    const { workspace, replaced } = mergeImported(base, incoming, { file: 'ro.json', sha256: HASH_A }, sequentialIds());
+    expect(replaced).toBe(0);
+    expect(names(workspace.groups)).toEqual(['other', 'x', 'y']);
+  });
+
+  it('hashes text as lowercase hex SHA-256', async () => {
+    expect(await sha256Hex('abc')).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
   });
 });

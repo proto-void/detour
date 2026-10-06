@@ -1,5 +1,5 @@
 import { importResourceOverride, type ImportNotice, type RoImport } from './ro-import';
-import { parseEnvelope, SCHEMA_VERSION, type Envelope, type Workspace } from './schema';
+import { parseEnvelope, SCHEMA_VERSION, type Envelope, type Group, type ImportSource, type Workspace } from './schema';
 
 export type ImportResult =
   | { ok: true; source: 'detour' | RoImport['source']; workspace: Workspace; skipped: ImportNotice[]; warnings: ImportNotice[] }
@@ -13,11 +13,27 @@ export const exportWorkspace = (workspace: Workspace): Envelope => ({ v: SCHEMA_
 
 export const serializeExport = (workspace: Workspace): string => `${JSON.stringify(exportWorkspace(workspace), null, 2)}\n`;
 
-/** Appends imported groups after the existing ones, re-identifying them so repeat imports never collide. */
-export function appendImported(base: Workspace, incoming: Workspace, newId: () => string): Workspace {
-  return {
-    groups: [...base.groups, ...incoming.groups.map((g) => ({ ...g, id: newId(), rules: g.rules.map((r) => ({ ...r, id: newId() })) }))],
-  };
+/** Groups from an earlier import of the same file: same file name or identical content. */
+export const isFromSource = (group: Group, source: ImportSource): boolean =>
+  group.importedFrom !== undefined && (group.importedFrom.file === source.file || group.importedFrom.sha256 === source.sha256);
+
+/**
+ * Merges imported groups into `base`, re-identified and stamped with `source`. Groups from an earlier
+ * import of the same source are replaced in place (at the first one's position); otherwise the new
+ * groups are appended. Groups without `importedFrom` (created by hand) are never touched.
+ */
+export function mergeImported(base: Workspace, incoming: Workspace, source: ImportSource, newId: () => string): { workspace: Workspace; replaced: number } {
+  const fresh = incoming.groups.map((g) => ({ ...g, id: newId(), importedFrom: source, rules: g.rules.map((r) => ({ ...r, id: newId() })) }));
+  const first = base.groups.findIndex((g) => isFromSource(g, source));
+  if (first === -1) return { workspace: { groups: [...base.groups, ...fresh] }, replaced: 0 };
+  const kept = base.groups.filter((g) => !isFromSource(g, source));
+  kept.splice(first, 0, ...fresh);
+  return { workspace: { groups: kept }, replaced: base.groups.length - (kept.length - fresh.length) };
+}
+
+export async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
