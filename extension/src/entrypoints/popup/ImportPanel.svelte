@@ -22,7 +22,9 @@
   }
 
   async function onFile(event: Event & { currentTarget: HTMLInputElement }) {
-    const file = event.currentTarget.files?.[0];
+    // currentTarget is null once the handler awaits; keep the element to reset it.
+    const picker = event.currentTarget;
+    const file = picker.files?.[0];
     if (!file) return;
     busy = true;
     summary = undefined;
@@ -32,7 +34,8 @@
       summary = { ok: false, errors: [`Could not read ${file.name}: ${(e as Error).message}`] };
     } finally {
       busy = false;
-      event.currentTarget.value = '';
+      // Clearing lets the same file be picked again (a repeat import).
+      picker.value = '';
     }
   }
 
