@@ -61,6 +61,8 @@ const sriNodeProd = 'window.SRI_NODE = "PROD";';
 const sriNodeBad = 'window.SRI_NODE_BAD = "NO";';
 const sriNamedProd = 'window.SRI_NAMED = "PROD";';
 const sriNamedBad = 'window.SRI_NAMED_BAD = "NO";';
+const sriWriteProd = 'window.SRI_WRITE = "PROD";';
+const sriWriteBad = 'window.SRI_WRITE_BAD = "NO";';
 const page = html('<!doctype html><title>t</title><script src="/a.js"></script><script src="/b.js"></script><script src="/c.js"></script>');
 
 const prod = await serve(8001, {
@@ -243,6 +245,15 @@ document.head.appendChild(sibling);
 </script>`),
   '/sri-named.js': js(sriNamedProd),
   '/sri-named-bad.js': js(sriNamedBad),
+  // document.write during parsing inserts a script that runs. The hash is split across
+  // arguments so the hook must concatenate before it rewrites. writeln covers the sibling.
+  '/sri-write.html': html(`<!doctype html><title>sri-write</title><script>
+var bad = 'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+document.write('<script src="/sri-write.js" integrity="', '${sha384(sriWriteProd)}', '" crossorigin="anonymous"><' + '/script>');
+document.writeln('<script src="/sri-write-bad.js" integrity="' + bad + '" crossorigin="anonymous"><' + '/script>');
+</script>`),
+  '/sri-write.js': js(sriWriteProd),
+  '/sri-write-bad.js': js(sriWriteBad),
 });
 const local = await serve(8002, {
   '/a.js': js('window.A = "LOCAL";'),
@@ -732,6 +743,7 @@ try {
   check('body editor says parseHTMLUnsafe integrity is updated', (await editorText()).includes('parseHTMLUnsafe'), true);
   check('body editor says setAttributeNode integrity is updated', (await editorText()).includes('setAttributeNode'), true);
   check('body editor says setNamedItem integrity is updated', (await editorText()).includes('setNamedItem'), true);
+  check('body editor says document.write integrity is updated', (await editorText()).includes('document.write'), true);
 
   shieldPaths.push('/body.html');
   const workerTarget = await browser.waitForTarget((t) => t.type() === 'service_worker' && t.url().includes(id), { timeout: 10000 });
@@ -1233,6 +1245,60 @@ try {
   check('Attr.value nodeValue and textContent keep the override hash', sriNamedPage.afterValue, sha384('window.SRI_NAMED = "LOCAL";'));
   check('sibling whose setNamedItemNS integrity does not match stays blocked', sriNamedPage.SRI_NAMED_BAD, undefined);
   check('sibling hash set with setNamedItemNS stays', sriNamedPage.sibling, badIntegrity);
+  shieldPaths.length = 0;
+
+  const sriWriteRule = await addPageRule(sriGroup, '*:8001/sri-write.js', 'overrideBody');
+  await typeCode(sriWriteRule, 'window.SRI_WRITE = "LOCAL";');
+  await saveAndSettle();
+  await waitStatus(sriWriteRule, 'Applied');
+  shieldPaths.length = 0;
+  shieldPaths.push('/sri-write.html');
+  const sriWritePage = await sriWorker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () =>
+        new Promise((resolve) => {
+          const started = Date.now();
+          const tick = () => {
+            const matched = document.querySelector('script[src="/sri-write.js"]');
+            const sibling = document.querySelector('script[src="/sri-write-bad.js"]');
+            const value = {
+              SRI_WRITE: window.SRI_WRITE,
+              SRI_WRITE_BAD: window.SRI_WRITE_BAD,
+              integrity: matched ? matched.getAttribute('integrity') : '',
+              sibling: sibling ? sibling.getAttribute('integrity') : '',
+            };
+            if (value.SRI_WRITE !== undefined || Date.now() - started > 3000) resolve(value);
+            else setTimeout(tick, 50);
+          };
+          tick();
+        }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/sri-write.html');
+  check('document.write with a production integrity hash runs the override', sriWritePage.SRI_WRITE, 'LOCAL');
+  check('document.write matching hash is the override', sriWritePage.integrity, sha384('window.SRI_WRITE = "LOCAL";'));
+  check('sibling written with document.writeln stays blocked', sriWritePage.SRI_WRITE_BAD, undefined);
+  check('sibling hash written with document.writeln stays', sriWritePage.sibling, badIntegrity);
   shieldPaths.length = 0;
 
   // Local Bridge: consent is already on, so serveLocal is fulfilled in place (the URL stays on port 8001).
