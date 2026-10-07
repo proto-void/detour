@@ -57,6 +57,8 @@ const sriUnsafeShadowBad = 'span{--sri-unsafe-shadow-bad:no}';
 const sriParseProd = 'html{--sri-parse:prod}';
 const sriParseBad = 'html{--sri-parse-bad:no}';
 const sriParseJs = 'window.SRI_PARSE = "PROD";';
+const sriNodeProd = 'window.SRI_NODE = "PROD";';
+const sriNodeBad = 'window.SRI_NODE_BAD = "NO";';
 const page = html('<!doctype html><title>t</title><script src="/a.js"></script><script src="/b.js"></script><script src="/c.js"></script>');
 
 const prod = await serve(8001, {
@@ -179,6 +181,34 @@ window.DETOUR_XML = xmlLink ? xmlLink.getAttribute('integrity') : '';
   '/sri-parse.css': css(sriParseProd),
   '/sri-parse-bad.css': css(sriParseBad),
   '/sri-parse.js': js(sriParseJs),
+  // setAttributeNode adopts an Attr and does not go through setAttribute. Integrity is set before src.
+  '/sri-node.html': html(`<!doctype html><title>sri-node</title><script>
+var bad = 'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+var matched = document.createElement('script');
+var integrity = document.createAttribute('integrity');
+integrity.value = '${sha384(sriNodeProd)}';
+matched.setAttributeNode(integrity);
+var src = document.createAttribute('src');
+src.value = '/sri-node.js';
+matched.setAttributeNode(src);
+var cross = document.createAttribute('crossorigin');
+cross.value = 'anonymous';
+matched.setAttributeNode(cross);
+document.head.appendChild(matched);
+var sibling = document.createElement('script');
+var badIntegrity = document.createAttributeNS(null, 'integrity');
+badIntegrity.value = bad;
+sibling.setAttributeNodeNS(badIntegrity);
+var badSrc = document.createAttributeNS(null, 'src');
+badSrc.value = '/sri-node-bad.js';
+sibling.setAttributeNodeNS(badSrc);
+var badCross = document.createAttributeNS(null, 'crossorigin');
+badCross.value = 'anonymous';
+sibling.setAttributeNodeNS(badCross);
+document.head.appendChild(sibling);
+</script>`),
+  '/sri-node.js': js(sriNodeProd),
+  '/sri-node-bad.js': js(sriNodeBad),
 });
 const local = await serve(8002, {
   '/a.js': js('window.A = "LOCAL";'),
@@ -666,6 +696,7 @@ try {
   check('body editor says script-running markup integrity is updated', (await editorText()).includes('createContextualFragment'), true);
   check('body editor says inert markup integrity is updated', (await editorText()).includes('setAttributeNS'), true);
   check('body editor says parseHTMLUnsafe integrity is updated', (await editorText()).includes('parseHTMLUnsafe'), true);
+  check('body editor says setAttributeNode integrity is updated', (await editorText()).includes('setAttributeNode'), true);
 
   shieldPaths.push('/body.html');
   const workerTarget = await browser.waitForTarget((t) => t.type() === 'service_worker' && t.url().includes(id), { timeout: 10000 });
@@ -1059,6 +1090,59 @@ try {
   check('script parsed by parseHTMLUnsafe does not run after adopt', sriParsePage.script, undefined);
   check('DOMParser text/html carries the override hash', sriParsePage.parser, sha384('html{--sri-parse:local}'));
   check('DOMParser XHTML keeps the page hash', sriParsePage.xml, badIntegrity);
+
+  const sriNodeRule = await addPageRule(sriGroup, '*:8001/sri-node.js', 'overrideBody');
+  await typeCode(sriNodeRule, 'window.SRI_NODE = "LOCAL";');
+  await saveAndSettle();
+  await waitStatus(sriNodeRule, 'Applied');
+  shieldPaths.length = 0;
+  shieldPaths.push('/sri-node.html');
+  const sriNodePage = await sriWorker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () =>
+        new Promise((resolve) => {
+          const started = Date.now();
+          const tick = () => {
+            const matched = document.querySelector('script[src="/sri-node.js"]');
+            const sibling = document.querySelector('script[src="/sri-node-bad.js"]');
+            const value = {
+              SRI_NODE: window.SRI_NODE,
+              SRI_NODE_BAD: window.SRI_NODE_BAD,
+              integrity: matched ? matched.getAttribute('integrity') : '',
+              sibling: sibling ? sibling.getAttribute('integrity') : '',
+            };
+            if (value.SRI_NODE !== undefined || Date.now() - started > 3000) resolve(value);
+            else setTimeout(tick, 50);
+          };
+          tick();
+        }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/sri-node.html');
+  check('setAttributeNode with a production integrity hash runs the override', sriNodePage.SRI_NODE, 'LOCAL');
+  check('sibling whose setAttributeNodeNS integrity does not match stays blocked', sriNodePage.SRI_NODE_BAD, undefined);
+  check('setAttributeNode matching hash is the override', sriNodePage.integrity, sha384('window.SRI_NODE = "LOCAL";'));
+  check('sibling hash set with setAttributeNodeNS stays', sriNodePage.sibling, badIntegrity);
   shieldPaths.length = 0;
 
   // Local Bridge: consent is already on, so serveLocal is fulfilled in place (the URL stays on port 8001).
