@@ -11,7 +11,8 @@ const INSTALLED = Symbol.for('detour.sri');
  * inserts a tag with `innerHTML` / `outerHTML` / a shadow
  * root's `innerHTML` / `insertAdjacentHTML`, or inserts markup that can run
  * scripts (`createContextualFragment`, `setHTMLUnsafe`), or parses a string with
- * `Document.parseHTMLUnsafe` or `DOMParser` (`text/html`), hits the hook. A stylesheet
+ * `Document.parseHTMLUnsafe` or `DOMParser` (`text/html`), or passes markup to
+ * `document.write` or `document.writeln`, hits the hook. A stylesheet
  * in `setHTMLUnsafe` is rewritten even when that call does not run scripts. Nodes
  * moved out of a `parseHTMLUnsafe` document carry Detour's hash. Scripting there stays off.
  */

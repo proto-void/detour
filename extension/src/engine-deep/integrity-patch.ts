@@ -176,7 +176,8 @@ const INSTALLED = Symbol.for('detour.sri.installed');
  * and when `setAttributeNS`, `setAttributeNode`, `setAttributeNodeNS`,
  * `NamedNodeMap.setNamedItem`, or `setNamedItemNS` sets HTML `integrity`,
  * and when `Attr.value`, `nodeValue`, or `textContent` changes an integrity
- * Attr that is already on the element. Other assignments are written through.
+ * Attr that is already on the element, and when `document.write` or
+ * `document.writeln` is given markup. Other assignments are written through.
  * A node moved out of the parsed document carries that hash. Scripting on that document stays off.
  */
 export function installIntegrityPatch(root: PatchRoot): void {
@@ -481,6 +482,10 @@ export function installIntegrityPatch(root: PatchRoot): void {
   hookStaticMarkup(root.Document, 'parseHTMLUnsafe', rewriteMarkupValue);
   // text/html is the same parse. XML types keep the page's hashes.
   hookDomParserHtml(root.DOMParser?.prototype, rewriteMarkupValue);
+  // document.write inserts into the parser stream. During parsing, a script in that string runs.
+  // String arguments are one markup string. A non-string, including TrustedHTML, is not stringified.
+  hookDocumentWrite(root.Document, 'write', rewriteMarkupValue);
+  hookDocumentWrite(root.Document, 'writeln', rewriteMarkupValue);
 
   if (root.document.readyState && root.document.readyState !== 'loading') {
     snapshot();
@@ -729,6 +734,27 @@ function hookMarkupSetter(proto: object | undefined, name: 'innerHTML' | 'outerH
     });
   } catch {
     /* A non-configurable setter leaves the page's markup unchanged. */
+  }
+}
+
+/**
+ * `write` and `writeln` concatenate string arguments before the parser sees them.
+ * `writeln` still appends the line feed, because the original method does that.
+ * A non-string argument keeps the whole call unchanged, so TrustedHTML is not stringified.
+ */
+function hookDocumentWrite(ctor: object | undefined, name: 'write' | 'writeln', rewrite: (value: unknown) => unknown) {
+  const proto = ctor && (ctor as { prototype?: object }).prototype;
+  if (!proto) return;
+  const desc = Object.getOwnPropertyDescriptor(proto, name);
+  const native = desc?.value as ((this: object, ...text: unknown[]) => unknown) | undefined;
+  if (typeof native !== 'function') return;
+  try {
+    (proto as Record<string, unknown>)[name] = function (this: object, ...text: unknown[]) {
+      if (text.some((part) => typeof part !== 'string')) return native.call(this, ...text);
+      return native.call(this, rewrite(text.join('')));
+    };
+  } catch {
+    /* A non-configurable method leaves the page's markup unchanged. */
   }
 }
 

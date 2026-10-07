@@ -200,10 +200,20 @@ function createRealm(initial: string | null) {
   class Document {
     static html: unknown = undefined;
     static options: unknown = undefined;
+    parts: unknown[] = [];
+    newline = false;
     static parseHTMLUnsafe(html: unknown, options?: unknown) {
       Document.html = html;
       Document.options = options;
       return { html, options };
+    }
+    write(...text: unknown[]) {
+      this.parts = text;
+      this.newline = false;
+    }
+    writeln(...text: unknown[]) {
+      this.parts = text;
+      this.newline = true;
     }
   }
   class Attr extends Node {
@@ -885,5 +895,46 @@ describe('installIntegrityPatch', () => {
     const trusted = { toString: () => markup };
     const typed = new realm.DOMParser().parseFromString(trusted, 'text/html');
     expect(typed.html).toBe(trusted);
+  });
+
+  it('rewrites integrity in document.write and document.writeln after concatenating string arguments, and leaves a sibling hash', async () => {
+    const hash = await integrityMetadata(encoder.encode('window.SRI_WRITE = "LOCAL";'));
+    const realm = createRealm(encodePatchList([patch({ integrity: hash, match: { kind: 'glob', pattern: '*:8001/sri-write.js' } })]));
+    installIntegrityPatch(realm.root);
+    const doc = new realm.Document();
+    doc.write('<script src="/sri-write.js" integrity="', BAD, `"></script><script src="/sri-write-bad.js" integrity="${BAD}"></script>`);
+    expect(doc.parts).toHaveLength(1);
+    expect(String(doc.parts[0])).toContain(`src="/sri-write.js" integrity="${hash}"`);
+    expect(String(doc.parts[0])).toContain(`src="/sri-write-bad.js" integrity="${BAD}"`);
+    expect(doc.newline).toBe(false);
+
+    const line = new realm.Document();
+    line.writeln(`<script src="/sri-write.js" integrity="${BAD}"></script>`);
+    expect(line.newline).toBe(true);
+    expect(line.parts).toHaveLength(1);
+    expect(String(line.parts[0])).toContain(`integrity="${hash}"`);
+    expect(String(line.parts[0]).endsWith('\n')).toBe(false);
+  });
+
+  it('passes a non-string through document.write and keeps the page hash without a list', () => {
+    const realm = createRealm(null);
+    installIntegrityPatch(realm.root);
+    const trusted = { toString: () => `<script src="/sri-write.js" integrity="${BAD}"></script>` };
+    const mixed = new realm.Document();
+    mixed.write(trusted, `<script src="/sri-write.js" integrity="${BAD}"></script>`);
+    expect(mixed.parts[0]).toBe(trusted);
+    expect(String(mixed.parts[1])).toContain(`integrity="${BAD}"`);
+
+    const plain = new realm.Document();
+    plain.write(`<script src="/sri-write.js" integrity="${BAD}"></script>`);
+    expect(String(plain.parts[0])).toContain(`integrity="${BAD}"`);
+
+    const listed = createRealm(encodePatchList([patch({ match: { kind: 'glob', pattern: '*:8001/sri-write.js' } })]));
+    installIntegrityPatch(listed.root);
+    const huge = new listed.Document();
+    huge.writeln(`${'x'.repeat(MARKUP_BYTE_CAP)}<script src="/sri-write.js" integrity="${BAD}"></script>`);
+    expect(huge.newline).toBe(true);
+    expect(String(huge.parts[0])).toContain(`integrity="${BAD}"`);
+    expect(String(huge.parts[0]).startsWith('x'.repeat(32))).toBe(true);
   });
 });
