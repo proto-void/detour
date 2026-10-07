@@ -498,10 +498,43 @@ The hash list is already in `<meta name="detour-sri">`. This slice does not add 
 - Use the same tag scan as ADR-016. On a script or stylesheet tag whose URL matches a snapshotted entry, set `integrity` to that `sha384-`. Leave every other hash in the string as written. Do not inject the meta tag into the fragment
 - Pass a non-string value through unchanged. TrustedHTML is not turned into a string, so this hook does not bypass Trusted Types. The native method still applies the page's Trusted Types policy to a string
 - A string with no `integrity`, an empty list, a missing meta, or a string longer than 2 MiB is left unchanged
-- Do not hook `Document.parseHTMLUnsafe` or the safe `setHTML` methods
+- Do not hook `Document.parseHTMLUnsafe` or the safe `setHTML` methods. Amended 2026-10-07 by [ADR-020](#adr-020--parsehtmlunsafe-uses-the-same-integrity-hash): `parseHTMLUnsafe` rewrites the string. Safe `setHTML` stays unhooked
 
 ### Consequences
 
 - A stylesheet inserted through `setHTMLUnsafe` with scripts off carries Detour's hash and can be accepted. A sibling tag in the same string keeps the page's hash
 - A matching script in that string also carries Detour's hash. It still does not run unless `runScripts` is strictly `true`
+- The substituted value is a publishable SHA-384. It cannot break out of the attribute, and it cannot remove a hash the page set
+
+---
+
+## ADR-020 — parseHTMLUnsafe uses the same integrity hash
+
+**Status:** Accepted  
+**Date:** 2026-10-07 (Hamza approved `Document.parseHTMLUnsafe`)
+
+### Context
+
+ADR-019 rewrites `integrity` in markup the page inserts into a live tree. `Document.parseHTMLUnsafe` does not insert. It parses a string into a new document that has no browsing context, so scripting is disabled. The HTML parser still copies `integrity` from that string onto the elements. A page that later moves those nodes into a live document (`adoptNode`, or an insertion that adopts) keeps the page's hash, and a stylesheet is fetched and checked. A script parsed this way still does not run from the parse. [parseHTMLUnsafe](https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-document-parsehtmlunsafe)
+
+`DOMParser.parseFromString` with type `text/html` is the historical form of that same parse. The spec says the new document has no browsing context, so scripting is disabled, and names `Document.parseHTMLUnsafe` as the modern alternative. Leaving that type unhooked would keep the same adoption gap. The XML types use a different parser. [DOMParser](https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#domparser)
+
+The hash list is already in `<meta name="detour-sri">`. This slice does not add a second list or a second content script.
+
+### Decision
+
+- While the MAIN-world hook from ADR-015 is installed, rewrite a string passed to `Document.parseHTMLUnsafe` before the original method runs
+- Pass the options object through unchanged. This slice does not set a sanitizer and does not turn scripting on. The document that call creates still has scripting disabled
+- Use the same tag scan as ADR-016. On a script or stylesheet tag whose URL matches a snapshotted entry, set `integrity` to that `sha384-`. Leave every other hash in the string as written. Do not inject the meta tag into the parsed document
+- Pass a non-string value through unchanged. TrustedHTML is not turned into a string, so this hook does not bypass Trusted Types. The native method still applies the page's Trusted Types policy to a string
+- A string with no `integrity`, an empty list, a missing meta, or a string longer than 2 MiB is left unchanged
+- Rewrite a string passed to `DOMParser.parseFromString` only when the type is exactly `text/html`. Any other type, including `text/xml`, `application/xml`, `application/xhtml+xml`, and `image/svg+xml`, is passed through unchanged
+- Do not hook the safe `setHTML` methods or `Document.parseHTML`. Those calls sanitize
+- Nodes moved from the parsed document into a live document carry the `integrity` the parser copied from the rewritten string. The hook does not clear that attribute
+
+### Consequences
+
+- A stylesheet parsed by `Document.parseHTMLUnsafe`, or by `DOMParser.parseFromString` with `text/html`, carries Detour's hash after it is moved into a live document, and the browser can accept it. A sibling tag in the same string keeps the page's hash
+- A script in that document still does not run from the parse. Scripting stays disabled
+- An XML parse from `DOMParser` keeps the page's hashes
 - The substituted value is a publishable SHA-384. It cannot break out of the attribute, and it cannot remove a hash the page set

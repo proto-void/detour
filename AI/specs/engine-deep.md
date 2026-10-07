@@ -1,10 +1,10 @@
 # Spec: engine-deep
 
-**Status:** Approved — body override (Hamza, 2026-10-06); SRI hashes (Hamza, 2026-10-07); page-world integrity (Hamza, 2026-10-07); markup integrity (Hamza, 2026-10-07); script-running markup (Hamza, 2026-10-07); inert markup (Hamza, 2026-10-07); setHTMLUnsafe with scripts off (Hamza, 2026-10-07)  
+**Status:** Approved — body override (Hamza, 2026-10-06); SRI hashes (Hamza, 2026-10-07); page-world integrity (Hamza, 2026-10-07); markup integrity (Hamza, 2026-10-07); script-running markup (Hamza, 2026-10-07); inert markup (Hamza, 2026-10-07); setHTMLUnsafe with scripts off (Hamza, 2026-10-07); `Document.parseHTMLUnsafe` (Hamza, 2026-10-07)  
 **Last updated:** 2026-10-07  
 **Build order:** 5  
 **Depends on:** rule-model, engine-core  
-**Plan:** [008-engine-deep-body](../plans/008-engine-deep-body.md), [013-sri-handling](../plans/013-sri-handling.md), [014-sri-page-integrity](../plans/014-sri-page-integrity.md), [015-sri-markup-integrity](../plans/015-sri-markup-integrity.md), [016-sri-script-markup](../plans/016-sri-script-markup.md), [017-sri-inert-markup](../plans/017-sri-inert-markup.md), [018-sri-unsafe-html-scripts-off](../plans/018-sri-unsafe-html-scripts-off.md)
+**Plan:** [008-engine-deep-body](../plans/008-engine-deep-body.md), [013-sri-handling](../plans/013-sri-handling.md), [014-sri-page-integrity](../plans/014-sri-page-integrity.md), [015-sri-markup-integrity](../plans/015-sri-markup-integrity.md), [016-sri-script-markup](../plans/016-sri-script-markup.md), [017-sri-inert-markup](../plans/017-sri-inert-markup.md), [018-sri-unsafe-html-scripts-off](../plans/018-sri-unsafe-html-scripts-off.md), [019-sri-parse-html-unsafe](../plans/019-sri-parse-html-unsafe.md)
 
 Amended 2026-10-07 (Hamza, in-place bridge read): the same fulfill / filter path may replace a response with bytes the extension read from Local Bridge. Disk mapping, the token, and path confinement stay in [local-bridge](local-bridge.md) and [ADR-013](../DECISIONS.md). Consent is still `bodyEngineConsent`. This spec does not grow a folder browser.
 
@@ -19,6 +19,8 @@ Amended 2026-10-07 (Hamza, script-running markup): the same hook rewrites that s
 Amended 2026-10-07 (Hamza, inert markup): the same hook rewrites that string when it is assigned to `Element.outerHTML` or `ShadowRoot.innerHTML`. Those calls do not execute scripts. A stylesheet in the string is still fetched and checked. `Element.setAttributeNS` substitutes the same hash when the attribute is `integrity` (no namespace, the empty namespace, the HTML namespace, or a prefixed name with that local name) on a script or stylesheet link, including when page code copies parser-written attributes. Another namespace is left unchanged. [ADR-018](../DECISIONS.md).
 
 Amended 2026-10-07 (Hamza, setHTMLUnsafe with scripts off): the same hook rewrites a string passed to `Element.setHTMLUnsafe` or `ShadowRoot.setHTMLUnsafe` whenever a body rule is armed, including when `runScripts` is omitted, `false`, or any value other than `true`. A stylesheet in that call is fetched and checked. The options object is passed through, so scripts still run only when `runScripts` is strictly `true`. [ADR-019](../DECISIONS.md).
+
+Amended 2026-10-07 (Hamza, `Document.parseHTMLUnsafe`): the same hook rewrites a string passed to `Document.parseHTMLUnsafe` before the browser parses it. That call creates a document with no browsing context, so scripting stays disabled. A node later moved into a live document carries the rewritten `integrity`. `DOMParser.parseFromString` is the historical form of that same HTML parse, so the string is rewritten only when the type is `text/html`. Other DOMParser types are left unchanged. [ADR-020](../DECISIONS.md).
 
 ## Objective
 
@@ -38,6 +40,7 @@ Hamza approved **engine-deep** for body override on 2026-10-06. Local Bridge sta
 - As a developer, I can override a script whose `integrity` is carried in markup that actually runs, through `createContextualFragment` or `setHTMLUnsafe` with scripts enabled.
 - As a developer, I can override a script or stylesheet whose `integrity` is carried in `outerHTML` or a shadow root's `innerHTML`, or copied onto the element with `setAttributeNS`.
 - As a developer, I can override a stylesheet whose `integrity` is carried in markup passed to `setHTMLUnsafe` when scripts are off.
+- As a developer, I can override a stylesheet whose `integrity` is carried in markup passed to `Document.parseHTMLUnsafe`, after those nodes are moved into the live page. A script parsed that way still does not run from the parse.
 
 ## Acceptance criteria
 
@@ -63,6 +66,8 @@ Hamza approved **engine-deep** for body override on 2026-10-06. Local Bridge sta
 - [x] While those rules are armed, a string passed to `Element.setHTMLUnsafe` or `ShadowRoot.setHTMLUnsafe` is rewritten the same way before the browser parses it, including when `runScripts` is omitted, `false`, or any value other than `true`. The options object is passed through unchanged, so scripts still run only when `runScripts` is strictly `true`. A non-matching hash in that string stays. A value that is not a string is left unchanged. The hook still does not clear `integrity`
 - [x] While those rules are armed, a string assigned to `Element.outerHTML` or `ShadowRoot.innerHTML` is rewritten the same way before the browser parses it. A non-matching hash in that string stays. A value that is not a string, markup with no hash list, or a string longer than 2 MiB is left unchanged
 - [x] `Element.setAttributeNS` substitutes that hash when the attribute is `integrity` on a script or stylesheet link whose URL matches, including a null namespace, an empty namespace, the HTML namespace, and a prefixed name with that local name. A URL that does not match keeps the value the page assigned. An attribute in another namespace is left unchanged. Setting `src` or `href` that way re-resolves a hash the page already assigned. The hook still does not clear `integrity`
+- [ ] While those rules are armed, a string passed to `Document.parseHTMLUnsafe` is rewritten the same way before the browser parses it. The options object is passed through unchanged. Scripting stays disabled on the document that call creates. A node moved from that document into a live document carries the rewritten `integrity`. A non-matching hash in that string stays. A value that is not a string is left unchanged. The hook still does not clear `integrity`
+- [ ] `DOMParser.parseFromString` rewrites a string only when the type is exactly `text/html`, the same HTML parse with scripting disabled. Any other type is passed through unchanged
 
 ## Browser support table
 
@@ -85,7 +90,9 @@ Hamza approved **engine-deep** for body override on 2026-10-06. Local Bridge sta
 - `createContextualFragment` parses with scripting mode Fragment, so a script in that fragment runs when it is inserted. `setHTMLUnsafe` runs scripts only when `SetHTMLUnsafeOptions.runScripts` is true; the default is false. Both copy `integrity` from the markup string. The hook rewrites that string first, using the same hash list, including when `setHTMLUnsafe` does not run scripts. A stylesheet in an inert call is still fetched and checked. A non-string is passed through, so TrustedHTML is not stringified. The options object is forwarded unchanged. [createContextualFragment](https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-range-createcontextualfragment), [setHTMLUnsafe](https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-element-sethtmlunsafe)
 - `Element.outerHTML` and `ShadowRoot.innerHTML` rewrite `integrity` in a string before the HTML fragment parser runs, using the same hash list. That parser marks script elements already started, so those scripts do not execute from the insertion alone. A stylesheet in the string is fetched and checked. A non-string is passed through, so TrustedHTML is not stringified. [outerHTML](https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-element-outerhtml), [ShadowRoot innerHTML](https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-shadowroot-innerhtml)
 - `Element.setAttributeNS` does not go through `setAttribute`. Copying a parser-written attribute uses it (`namespaceURI` is null for an HTML `integrity`). The hook substitutes the hash when the local name is `integrity` and the namespace is null, empty, or `http://www.w3.org/1999/xhtml`, including a prefixed qualified name. Setting `src` or `href` the same way re-resolves a hash already assigned, because a copy can set the URL after the hash. An attribute in any other namespace is passed through. The hook does not clear `integrity`. [setAttributeNS](https://dom.spec.whatwg.org/#dom-element-setattributens)
-- `Document.parseHTMLUnsafe` creates a document with scripting disabled, so it is not hooked. The safe `setHTML` methods are not hooked either
+- `Document.parseHTMLUnsafe` parses with no browsing context, so scripting stays disabled. The hook rewrites `integrity` in a string before that parse. The options object, including a sanitizer, is forwarded unchanged. This slice does not turn scripting on. A node moved into a live document carries the attribute the parser copied from that string. A stylesheet is fetched and checked when that link is connected. A script parsed this way still does not run from the parse. A non-string is passed through, so TrustedHTML is not stringified. [parseHTMLUnsafe](https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-document-parsehtmlunsafe)
+- `DOMParser.parseFromString` with type `text/html` is the historical form of that same parse: the new document has no browsing context, so scripting is disabled, and an adopted node keeps `integrity`. The hook rewrites only that type. `text/xml`, `application/xml`, `application/xhtml+xml`, and `image/svg+xml` use the XML parser and are left unchanged. [DOMParser](https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#domparser)
+- The safe `setHTML` and `Document.parseHTML` methods sanitize and are not hooked
 - The URL does not change, so page CSP still applies to that URL. That is why this is not a `data:` redirect
 - A DNR redirect for the same URL can change the address before Fetch sees the response. The tester says so
 - Response `content-encoding` / `content-length` are dropped on the replaced response so the browser does not decode the new bytes as gzip
@@ -97,7 +104,8 @@ Hamza approved **engine-deep** for body override on 2026-10-06. Local Bridge sta
 - Binary bodies and `data:` redirects
 - Rewriting the document when response rewriting is off
 - Non-UTF-8 HTML and documents over 2 MiB
-- `Document.parseHTMLUnsafe` and the safe `setHTML` methods
+- The safe `setHTML` methods and `Document.parseHTML`
+- `DOMParser.parseFromString` for any type other than `text/html`
 - Attaching to out-of-process iframes (`Target.setAutoAttach`)
 - Firefox service-worker script filtering (`webRequestFilterResponse.serviceWorkerScript`)
 - Distribution, CI, and observability
