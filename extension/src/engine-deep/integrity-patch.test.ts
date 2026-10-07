@@ -87,6 +87,8 @@ describe('injectPatchMeta', () => {
 function createRealm(initial: string | null) {
   class Node {
     parent: Node | null = null;
+    _nodeValue: string | null = null;
+    _text = '';
     appendChild<T extends Node>(child: T): T {
       child.parent = this;
       return child;
@@ -95,17 +97,50 @@ function createRealm(initial: string | null) {
       child.parent = this;
       return child;
     }
+    get nodeValue() {
+      const read = (this as { readStored?: () => string }).readStored;
+      return read ? read.call(this) : this._nodeValue;
+    }
+    set nodeValue(value: string | null) {
+      const write = (this as { assignStored?: (value: unknown) => void }).assignStored;
+      if (write) write.call(this, value);
+      else this._nodeValue = value;
+    }
+    get textContent() {
+      const read = (this as { readStored?: () => string }).readStored;
+      return read ? read.call(this) : this._text;
+    }
+    set textContent(value: string | null) {
+      const write = (this as { assignStored?: (value: unknown) => void }).assignStored;
+      if (write) write.call(this, value);
+      else this._text = value == null ? '' : String(value);
+    }
   }
   class Element extends Node {
     attrs: Record<string, string> = {};
     failAdopt = false;
     html = '';
     adjacent = '';
+    attrNodes: Record<string, { value?: string }> = {};
+    map: NamedNodeMap | undefined;
     setAttribute(name: string, value: string) {
-      this.attrs[name.toLowerCase()] = String(value);
+      const local = String(name).toLowerCase();
+      this.attrs[local] = String(value);
+      this.syncAttr(local, String(value));
     }
     setAttributeNS(_namespace: string | null, name: string, value: string) {
-      this.attrs[String(name).toLowerCase()] = String(value);
+      const local = String(name).toLowerCase();
+      this.attrs[local] = String(value);
+      this.syncAttr(local, String(value));
+    }
+    syncAttr(local: string, value: string) {
+      const node = this.attrNodes[local];
+      if (!node || node.value === value) return;
+      node.value = value;
+    }
+    get attributes() {
+      this.map ??= new NamedNodeMap(this);
+      return this.map;
     }
     setAttributeNode(attr: { namespaceURI?: string | null; localName?: string; name?: string; value?: string } | null) {
       return this.adoptAttr(attr);
@@ -119,6 +154,8 @@ function createRealm(initial: string | null) {
       const raw = attr.localName ?? attr.name ?? '';
       const local = String(raw).toLowerCase().split(':').pop() ?? '';
       this.attrs[local] = String(attr.value ?? '');
+      (attr as { ownerElement?: Element }).ownerElement = this;
+      this.attrNodes[local] = attr;
       return null;
     }
     getAttribute(name: string) {
@@ -167,6 +204,47 @@ function createRealm(initial: string | null) {
       Document.html = html;
       Document.options = options;
       return { html, options };
+    }
+  }
+  class Attr extends Node {
+    namespaceURI: string | null;
+    localName: string;
+    name: string;
+    ownerElement: Element | null = null;
+    private stored: string;
+    constructor(namespace: string | null, localName: string, value = '') {
+      super();
+      this.namespaceURI = namespace;
+      this.localName = localName;
+      this.name = localName;
+      this.stored = value;
+    }
+    readStored() {
+      return this.stored;
+    }
+    assignStored(next: unknown) {
+      this.stored = next == null ? '' : String(next);
+      this.writeOwner();
+    }
+    get value() {
+      return this.stored;
+    }
+    set value(next: string) {
+      this.assignStored(next);
+    }
+    writeOwner() {
+      const local = this.localName.toLowerCase().split(':').pop() ?? '';
+      if (!this.ownerElement || !local) return;
+      this.ownerElement.attrs[local] = this.stored;
+    }
+  }
+  class NamedNodeMap {
+    constructor(private owner: Element) {}
+    setNamedItem(attr: { namespaceURI?: string | null; localName?: string; name?: string; value?: string } | null) {
+      return this.owner.adoptAttr(attr);
+    }
+    setNamedItemNS(attr: { namespaceURI?: string | null; localName?: string; name?: string; value?: string } | null) {
+      return this.owner.adoptAttr(attr);
     }
   }
   class DOMParser {
@@ -258,6 +336,8 @@ function createRealm(initial: string | null) {
     ShadowRoot,
     Document,
     DOMParser,
+    NamedNodeMap,
+    Attr,
   };
   return {
     root: root as unknown as PatchRoot,
@@ -269,6 +349,8 @@ function createRealm(initial: string | null) {
     ShadowRoot,
     Document,
     DOMParser,
+    NamedNodeMap,
+    Attr,
     fireObserver() {
       observer?.();
     },
@@ -645,6 +727,117 @@ describe('installIntegrityPatch', () => {
     busy.failAdopt = true;
     expect(() => busy.setAttributeNode(rejected)).toThrow('InUseAttributeError');
     expect(rejected.value).toBe(BAD);
+  });
+
+  it('substitutes integrity adopted with setNamedItem and rewrites Attr.value, nodeValue, and textContent once it is attached', async () => {
+    const hash = await integrityMetadata(encoder.encode('window.SRI_NAMED = "LOCAL";'));
+    const realm = createRealm(encodePatchList([patch({ integrity: hash, match: { kind: 'glob', pattern: '*:8001/sri-named.js' } })]));
+    installIntegrityPatch(realm.root);
+
+    const matched = new realm.HTMLScriptElement();
+    const integrity = new realm.Attr(null, 'integrity', BAD);
+    matched.attributes.setNamedItem(integrity);
+    matched.attributes.setNamedItem(new realm.Attr(null, 'src', '/sri-named.js'));
+    expect(matched.getAttribute('integrity')).toBe(hash);
+    expect(integrity.value).toBe(hash);
+
+    integrity.value = BAD;
+    expect(integrity.value).toBe(hash);
+    expect(matched.getAttribute('integrity')).toBe(hash);
+    integrity.nodeValue = BAD;
+    expect(matched.getAttribute('integrity')).toBe(hash);
+    integrity.textContent = BAD;
+    expect(integrity.textContent).toBe(hash);
+
+    const copied = new realm.HTMLScriptElement();
+    copied.attributes.setNamedItemNS(new realm.Attr(null, 'src', 'http://127.0.0.1:8001/sri-named.js'));
+    const copiedAttr = new realm.Attr(null, 'integrity', BAD);
+    copied.attributes.setNamedItemNS(copiedAttr);
+    expect(copiedAttr.value).toBe(hash);
+
+    const xhtml = new realm.HTMLScriptElement();
+    xhtml.attributes.setNamedItem(new realm.Attr('http://www.w3.org/1999/xhtml', 'src', '/sri-named.js'));
+    const xhtmlAttr = new realm.Attr('http://www.w3.org/1999/xhtml', 'integrity', BAD);
+    xhtml.attributes.setNamedItemNS(xhtmlAttr);
+    expect(xhtmlAttr.value).toBe(hash);
+
+    const empty = new realm.HTMLScriptElement();
+    empty.attributes.setNamedItem(new realm.Attr('', 'src', '/sri-named.js'));
+    const emptyAttr = new realm.Attr('', 'integrity', BAD);
+    empty.attributes.setNamedItemNS(emptyAttr);
+    expect(emptyAttr.value).toBe(hash);
+
+    const sibling = new realm.HTMLScriptElement();
+    sibling.attributes.setNamedItemNS(new realm.Attr(null, 'src', '/sri-named-bad.js'));
+    const siblingAttr = new realm.Attr(null, 'integrity', BAD);
+    sibling.attributes.setNamedItemNS(siblingAttr);
+    expect(siblingAttr.value).toBe(BAD);
+    siblingAttr.value = BAD;
+    siblingAttr.textContent = BAD;
+    expect(sibling.getAttribute('integrity')).toBe(BAD);
+
+    const foreignHost = new realm.HTMLScriptElement();
+    foreignHost.attributes.setNamedItem(new realm.Attr(null, 'src', '/sri-named.js'));
+    const foreign = new realm.Attr('http://www.w3.org/2000/svg', 'integrity', BAD);
+    foreignHost.attributes.setNamedItem(foreign);
+    expect(foreign.value).toBe(BAD);
+    foreign.value = 'svg-hash';
+    expect(foreign.value).toBe('svg-hash');
+
+    const label = new realm.HTMLScriptElement();
+    label.attributes.setNamedItem(new realm.Attr(null, 'id', 'kept'));
+    expect(label.getAttribute('id')).toBe('kept');
+
+    const loose = new realm.Attr(null, 'integrity', BAD);
+    loose.value = BAD;
+    loose.nodeValue = 'page-hash';
+    loose.textContent = 'still-page';
+    expect(loose.value).toBe('still-page');
+    expect(loose.ownerElement).toBeNull();
+
+    const moved = new realm.HTMLScriptElement();
+    const movedSrc = new realm.Attr(null, 'src', '/other.js');
+    moved.attributes.setNamedItem(movedSrc);
+    const movedIntegrity = new realm.Attr(null, 'integrity', BAD);
+    moved.attributes.setNamedItem(movedIntegrity);
+    expect(movedIntegrity.value).toBe(BAD);
+    movedSrc.value = '/sri-named.js';
+    expect(moved.getAttribute('integrity')).toBe(hash);
+
+    const css = await integrityMetadata(encoder.encode('css'));
+    const styles = createRealm(encodePatchList([patch({ integrity: css, resourceTypes: ['stylesheet'], match: { kind: 'glob', pattern: '*:8001/app.css' } })]));
+    installIntegrityPatch(styles.root);
+    const link = new styles.HTMLLinkElement();
+    link.attributes.setNamedItem(new styles.Attr(null, 'rel', 'stylesheet'));
+    link.attributes.setNamedItemNS(new styles.Attr(null, 'href', 'http://127.0.0.1:8001/app.css'));
+    const linkAttr = new styles.Attr(null, 'integrity', BAD);
+    link.attributes.setNamedItem(linkAttr);
+    expect(linkAttr.value).toBe(css);
+    linkAttr.nodeValue = BAD;
+    expect(link.getAttribute('integrity')).toBe(css);
+
+    const bare = createRealm(null);
+    installIntegrityPatch(bare.root);
+    const pageHash = new bare.HTMLScriptElement();
+    pageHash.attributes.setNamedItem(new bare.Attr(null, 'src', '/sri-named.js'));
+    const pageAttr = new bare.Attr(null, 'integrity', BAD);
+    pageHash.attributes.setNamedItem(pageAttr);
+    expect(pageAttr.value).toBe(BAD);
+    pageAttr.value = BAD;
+    pageAttr.textContent = BAD;
+    expect(pageHash.getAttribute('integrity')).toBe(BAD);
+
+    const rejected = new realm.Attr(null, 'integrity', BAD);
+    const busy = new realm.HTMLScriptElement();
+    busy.attributes.setNamedItem(new realm.Attr(null, 'src', 'http://127.0.0.1:8001/sri-named.js'));
+    busy.failAdopt = true;
+    expect(() => busy.attributes.setNamedItem(rejected)).toThrow('InUseAttributeError');
+    expect(rejected.value).toBe(BAD);
+    expect(rejected.ownerElement).toBeNull();
+
+    const host = new realm.Element();
+    host.textContent = `<script src="/sri-named.js" integrity="${BAD}"></script>`;
+    expect(host.textContent).toBe(`<script src="/sri-named.js" integrity="${BAD}"></script>`);
   });
 
   it('rewrites integrity in parseHTMLUnsafe and leaves a sibling hash', async () => {

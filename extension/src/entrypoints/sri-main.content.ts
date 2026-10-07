@@ -6,6 +6,8 @@ const INSTALLED = Symbol.for('detour.sri');
  * MAIN world, registered only while a body rule is armed.
  * Runs before page scripts so a bundler that sets `integrity`, copies it with
  * `setAttributeNS`, moves that Attr with `setAttributeNode` or `setAttributeNodeNS`,
+ * adopts it with `setNamedItem` or `setNamedItemNS`, or writes `Attr.value`,
+ * `nodeValue`, or `textContent` after that attribute is already on the element,
  * inserts a tag with `innerHTML` / `outerHTML` / a shadow
  * root's `innerHTML` / `insertAdjacentHTML`, or inserts markup that can run
  * scripts (`createContextualFragment`, `setHTMLUnsafe`), or parses a string with
@@ -35,6 +37,8 @@ export default defineContentScript({
       ShadowRoot,
       Document,
       DOMParser,
+      NamedNodeMap,
+      Attr,
     });
   },
 });

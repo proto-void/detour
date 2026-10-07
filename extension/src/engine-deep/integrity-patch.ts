@@ -159,6 +159,10 @@ export interface PatchRoot {
   /** Static `parseHTMLUnsafe`. Absent in a realm that does not implement it. */
   Document?: object;
   DOMParser?: { prototype: object };
+  /** Element attribute map. Absent in a realm that does not expose it. */
+  NamedNodeMap?: { prototype: object };
+  /** `value`, `nodeValue`, and `textContent` live here. Absent when the realm has no Attr. */
+  Attr?: { prototype: object };
 }
 
 const INSTALLED = Symbol.for('detour.sri.installed');
@@ -169,8 +173,10 @@ const INSTALLED = Symbol.for('detour.sri.installed');
  * passed to `innerHTML`, `outerHTML`, `ShadowRoot.innerHTML`, `insertAdjacentHTML`,
  * `createContextualFragment`, `setHTMLUnsafe` (scripts on or off), or
  * `Document.parseHTMLUnsafe`, and when `DOMParser.parseFromString` is `text/html`,
- * and when `setAttributeNS`, `setAttributeNode`, or `setAttributeNodeNS` sets HTML
- * `integrity`. Other assignments are written through.
+ * and when `setAttributeNS`, `setAttributeNode`, `setAttributeNodeNS`,
+ * `NamedNodeMap.setNamedItem`, or `setNamedItemNS` sets HTML `integrity`,
+ * and when `Attr.value`, `nodeValue`, or `textContent` changes an integrity
+ * Attr that is already on the element. Other assignments are written through.
  * A node moved out of the parsed document carries that hash. Scripting on that document stays off.
  */
 export function installIntegrityPatch(root: PatchRoot): void {
@@ -278,25 +284,35 @@ export function installIntegrityPatch(root: PatchRoot): void {
   }
 
   // setAttributeNode does not call setAttribute or setAttributeNS. Moving an Attr uses it.
-  const adoptMovedAttr = function (this: object, attr: unknown, native: (this: object, node: unknown) => unknown) {
-    if (applying || adopting) return native.call(this, attr);
+  // setNamedItem is the same adopt with the NamedNodeMap as the receiver.
+  const elementAttrs = (element: object) => ({
+    src: readAttr(element, 'src'),
+    href: readAttr(element, 'href'),
+    rel: readAttr(element, 'rel'),
+    as: readAttr(element, 'as'),
+  });
+  const adoptMovedAttr = function (this: object, attr: unknown, adopt: (node: unknown) => unknown) {
+    if (applying || adopting) return adopt(attr);
     adopting = true;
     try {
       const tag = tagOf(this);
       const described = tag ? describeMovedAttr(attr) : undefined;
       const local = described && isHtmlNamespace(described.namespace) ? htmlUrlAttribute(described.local) : undefined;
-      if (!tag || !described || !local) return native.call(this, attr);
+      if (!tag || !described || !local) return adopt(attr);
       if (local === 'integrity') {
-        const assigned = described.value;
+        const attrs = elementAttrs(this);
+        let assigned = described.value;
+        const prior = remembered.get(this);
+        if (prior !== undefined) {
+          const fromPrior = resolveAssignedIntegrity(patches(), prior, root.location.href, siteHost(root.location), tag, attrs);
+          // A second adopt reads the hash this hook already wrote. Keep the page's string.
+          if (described.value === fromPrior) assigned = prior;
+        }
         remembered.set(this, assigned);
-        const next = resolveAssignedIntegrity(patches(), assigned, root.location.href, siteHost(root.location), tag, {
-          src: readAttr(this, 'src'),
-          href: readAttr(this, 'href'),
-          rel: readAttr(this, 'rel'),
-          as: readAttr(this, 'as'),
-        });
+        const next = resolveAssignedIntegrity(patches(), assigned, root.location.href, siteHost(root.location), tag, attrs);
+        const previousValue = described.value;
         let changed = false;
-        if (next !== assigned && isPublishableHash(next)) {
+        if (next !== previousValue && isPublishableHash(next)) {
           try {
             described.setValue(next);
             changed = true;
@@ -305,11 +321,11 @@ export function installIntegrityPatch(root: PatchRoot): void {
           }
         }
         try {
-          return native.call(this, attr);
+          return adopt(attr);
         } catch (error) {
           if (changed) {
             try {
-              described.setValue(assigned);
+              described.setValue(previousValue);
             } catch {
               /* The original method rejected the node. Leave the value it already holds. */
             }
@@ -318,7 +334,7 @@ export function installIntegrityPatch(root: PatchRoot): void {
         }
       }
       apply(this, local === 'src' ? { src: described.value } : { href: described.value });
-      return native.call(this, attr);
+      return adopt(attr);
     } finally {
       adopting = false;
     }
@@ -328,8 +344,98 @@ export function installIntegrityPatch(root: PatchRoot): void {
     const native = desc?.value as ((this: object, attr: unknown) => unknown) | undefined;
     if (typeof native !== 'function') continue;
     (root.Element.prototype as Record<string, (this: object, attr: unknown) => unknown>)[name] = function (this: object, attr: unknown) {
-      return adoptMovedAttr.call(this, attr, native);
+      const element = this;
+      return adoptMovedAttr.call(element, attr, (node) => native.call(element, node));
     };
+  }
+
+  // The map does not expose its element. The page reaches it through Element.attributes.
+  const mapOwners = new WeakMap<object, object>();
+  const attributesDesc = Object.getOwnPropertyDescriptor(root.Element.prototype, 'attributes');
+  const nativeAttributes = attributesDesc?.get;
+  if (attributesDesc && typeof nativeAttributes === 'function') {
+    try {
+      Object.defineProperty(root.Element.prototype, 'attributes', {
+        configurable: true,
+        enumerable: attributesDesc.enumerable ?? true,
+        get() {
+          const map = nativeAttributes.call(this);
+          if (map && typeof map === 'object') mapOwners.set(map, this);
+          return map;
+        },
+      });
+    } catch {
+      /* Without the getter, setNamedItem cannot see the element and the page hash stays. */
+    }
+  }
+  const namedMap = root.NamedNodeMap?.prototype;
+  if (namedMap) {
+    for (const name of ['setNamedItem', 'setNamedItemNS'] as const) {
+      const desc = Object.getOwnPropertyDescriptor(namedMap, name);
+      const native = desc?.value as ((this: object, attr: unknown) => unknown) | undefined;
+      if (typeof native !== 'function') continue;
+      try {
+        (namedMap as Record<string, (this: object, attr: unknown) => unknown>)[name] = function (this: object, attr: unknown) {
+          const element = mapOwners.get(this);
+          if (!element) return native.call(this, attr);
+          const map = this;
+          return adoptMovedAttr.call(element, attr, (node) => native.call(map, node));
+        };
+      } catch {
+        /* A non-configurable method leaves that adopt path on the page's hash. */
+      }
+    }
+  }
+
+  // value, nodeValue, and textContent each write the Attr in place. They do not call one another.
+  // Chrome keeps nodeValue and textContent on Node.prototype. Attr overrides them when present.
+  let writingAttr = false;
+  const AttrCtor = root.Attr as (abstract new (...args: never[]) => object) | undefined;
+  const isAttr = (node: object) => {
+    if (AttrCtor && node instanceof AttrCtor) return true;
+    try {
+      return (node as { nodeType?: unknown }).nodeType === 2;
+    } catch {
+      return false;
+    }
+  };
+  const writeAttachedAttr = function (this: object, value: unknown, nativeSet: (this: object, next: unknown) => void) {
+    if (applying || adopting || writingAttr) {
+      nativeSet.call(this, value);
+      return;
+    }
+    writingAttr = true;
+    try {
+      const owner = ownerElementOf(this);
+      const tag = owner ? tagOf(owner) : undefined;
+      const described = describeMovedAttr(this);
+      const local = described && isHtmlNamespace(described.namespace) ? htmlUrlAttribute(described.local) : undefined;
+      if (!owner || !tag || !local) {
+        nativeSet.call(this, value);
+        return;
+      }
+      const assigned = value == null ? '' : String(value);
+      if (local === 'integrity') {
+        remembered.set(owner, assigned);
+        const next = resolveAssignedIntegrity(patches(), assigned, root.location.href, siteHost(root.location), tag, elementAttrs(owner));
+        if (next !== assigned && isPublishableHash(next)) {
+          nativeSet.call(this, next);
+          return;
+        }
+        nativeSet.call(this, value);
+        return;
+      }
+      apply(owner, local === 'src' ? { src: assigned } : { href: assigned });
+      nativeSet.call(this, value);
+    } finally {
+      writingAttr = false;
+    }
+  };
+  for (const name of ['value', 'nodeValue', 'textContent'] as const) {
+    hookAttrWrite(root.Attr?.prototype, name, writeAttachedAttr);
+  }
+  for (const name of ['nodeValue', 'textContent'] as const) {
+    hookInheritedAttrWrite(root.Node.prototype, name, isAttr, writeAttachedAttr);
   }
 
   // The integrity setter writes the chosen hash itself. Calling the native setter afterwards would put the page's hash back.
@@ -509,6 +615,73 @@ function isHtmlNamespace(namespace: unknown): boolean {
  * An Attr moved with setAttributeNode. A throw while reading it means the page's
  * value stays: the caller passes the node to the original method.
  */
+function ownerElementOf(attr: object): object | undefined {
+  try {
+    const owner = (attr as { ownerElement?: unknown }).ownerElement;
+    if (owner && typeof owner === 'object') return owner;
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+/**
+ * `value`, `nodeValue`, and `textContent` are separate setters. Each one can put
+ * the page's hash back after the Attr is already on the element.
+ */
+function hookInheritedAttrWrite(
+  proto: object | undefined,
+  name: 'nodeValue' | 'textContent',
+  isAttr: (node: object) => boolean,
+  write: (this: object, value: unknown, nativeSet: (this: object, next: unknown) => void) => void,
+) {
+  if (!proto) return;
+  const desc = Object.getOwnPropertyDescriptor(proto, name);
+  if (!desc?.set || !desc.get) return;
+  const nativeSet = desc.set;
+  const nativeGet = desc.get;
+  try {
+    Object.defineProperty(proto, name, {
+      configurable: true,
+      enumerable: desc.enumerable ?? true,
+      get() {
+        return nativeGet.call(this);
+      },
+      set(value: unknown) {
+        if (isAttr(this)) write.call(this, value, nativeSet);
+        else nativeSet.call(this, value);
+      },
+    });
+  } catch {
+    /* A non-configurable setter leaves that write on the page's hash. */
+  }
+}
+
+function hookAttrWrite(
+  proto: object | undefined,
+  name: 'value' | 'nodeValue' | 'textContent',
+  write: (this: object, value: unknown, nativeSet: (this: object, next: unknown) => void) => void,
+) {
+  if (!proto) return;
+  const desc = Object.getOwnPropertyDescriptor(proto, name);
+  if (!desc?.set || !desc.get) return;
+  const nativeSet = desc.set;
+  try {
+    Object.defineProperty(proto, name, {
+      configurable: true,
+      enumerable: desc.enumerable ?? true,
+      get() {
+        return desc.get!.call(this);
+      },
+      set(value: unknown) {
+        write.call(this, value, nativeSet);
+      },
+    });
+  } catch {
+    /* A non-configurable setter leaves that write on the page's hash. */
+  }
+}
+
 function describeMovedAttr(attr: unknown): { namespace: unknown; local: string; value: string; setValue: (next: string) => void } | undefined {
   if (!attr || typeof attr !== 'object') return undefined;
   const node = attr as { namespaceURI?: unknown; localName?: unknown; name?: unknown; value?: unknown };
