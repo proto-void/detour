@@ -169,7 +169,8 @@ const INSTALLED = Symbol.for('detour.sri.installed');
  * passed to `innerHTML`, `outerHTML`, `ShadowRoot.innerHTML`, `insertAdjacentHTML`,
  * `createContextualFragment`, `setHTMLUnsafe` (scripts on or off), or
  * `Document.parseHTMLUnsafe`, and when `DOMParser.parseFromString` is `text/html`,
- * and when `setAttributeNS` sets HTML `integrity`. Other assignments are written through.
+ * and when `setAttributeNS`, `setAttributeNode`, or `setAttributeNodeNS` sets HTML
+ * `integrity`. Other assignments are written through.
  * A node moved out of the parsed document carries that hash. Scripting on that document stays off.
  */
 export function installIntegrityPatch(root: PatchRoot): void {
@@ -181,6 +182,7 @@ export function installIntegrityPatch(root: PatchRoot): void {
   let list: IntegrityPatch[] = [];
   const remembered = new WeakMap<object, string>();
   let applying = false;
+  let adopting = false;
 
   const selector = `meta[name="${SRI_META_NAME}"]`;
   const snapshot = (): boolean => {
@@ -239,12 +241,12 @@ export function installIntegrityPatch(root: PatchRoot): void {
     (root.Element.prototype as { setAttribute: (name: string, value: string) => void }).setAttribute = function (this: object, name: string, value: string) {
       const tag = tagOf(this);
       const lower = String(name).toLowerCase();
-      if (!applying && tag && lower === 'integrity') {
+      if (!applying && !adopting && tag && lower === 'integrity') {
         remembered.set(this, String(value));
         apply(this);
         return;
       }
-      if (!applying && tag && (lower === 'src' || lower === 'href')) {
+      if (!applying && !adopting && tag && (lower === 'src' || lower === 'href')) {
         apply(this, lower === 'src' ? { src: String(value) } : { href: String(value) });
       }
       return nativeSetAttribute.call(this, name, value);
@@ -263,15 +265,70 @@ export function installIntegrityPatch(root: PatchRoot): void {
     ) {
       const tag = tagOf(this);
       const local = htmlUrlAttribute(name);
-      if (!applying && tag && isHtmlNamespace(namespace) && local === 'integrity') {
+      if (!applying && !adopting && tag && isHtmlNamespace(namespace) && local === 'integrity') {
         remembered.set(this, String(value));
         apply(this);
         return;
       }
-      if (!applying && tag && isHtmlNamespace(namespace) && (local === 'src' || local === 'href')) {
+      if (!applying && !adopting && tag && isHtmlNamespace(namespace) && (local === 'src' || local === 'href')) {
         apply(this, local === 'src' ? { src: String(value) } : { href: String(value) });
       }
       return nativeSetAttributeNS.call(this, namespace, name, value);
+    };
+  }
+
+  // setAttributeNode does not call setAttribute or setAttributeNS. Moving an Attr uses it.
+  const adoptMovedAttr = function (this: object, attr: unknown, native: (this: object, node: unknown) => unknown) {
+    if (applying || adopting) return native.call(this, attr);
+    adopting = true;
+    try {
+      const tag = tagOf(this);
+      const described = tag ? describeMovedAttr(attr) : undefined;
+      const local = described && isHtmlNamespace(described.namespace) ? htmlUrlAttribute(described.local) : undefined;
+      if (!tag || !described || !local) return native.call(this, attr);
+      if (local === 'integrity') {
+        const assigned = described.value;
+        remembered.set(this, assigned);
+        const next = resolveAssignedIntegrity(patches(), assigned, root.location.href, siteHost(root.location), tag, {
+          src: readAttr(this, 'src'),
+          href: readAttr(this, 'href'),
+          rel: readAttr(this, 'rel'),
+          as: readAttr(this, 'as'),
+        });
+        let changed = false;
+        if (next !== assigned && isPublishableHash(next)) {
+          try {
+            described.setValue(next);
+            changed = true;
+          } catch {
+            /* A sealed Attr keeps the page hash. The hook does not clear it. */
+          }
+        }
+        try {
+          return native.call(this, attr);
+        } catch (error) {
+          if (changed) {
+            try {
+              described.setValue(assigned);
+            } catch {
+              /* The original method rejected the node. Leave the value it already holds. */
+            }
+          }
+          throw error;
+        }
+      }
+      apply(this, local === 'src' ? { src: described.value } : { href: described.value });
+      return native.call(this, attr);
+    } finally {
+      adopting = false;
+    }
+  };
+  for (const name of ['setAttributeNode', 'setAttributeNodeNS'] as const) {
+    const desc = Object.getOwnPropertyDescriptor(root.Element.prototype, name);
+    const native = desc?.value as ((this: object, attr: unknown) => unknown) | undefined;
+    if (typeof native !== 'function') continue;
+    (root.Element.prototype as Record<string, (this: object, attr: unknown) => unknown>)[name] = function (this: object, attr: unknown) {
+      return adoptMovedAttr.call(this, attr, native);
     };
   }
 
@@ -446,6 +503,30 @@ const HTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
 /** Null, omitted, or empty is no namespace. The HTML namespace is the same attribute. */
 function isHtmlNamespace(namespace: unknown): boolean {
   return namespace == null || namespace === '' || namespace === HTML_NAMESPACE;
+}
+
+/**
+ * An Attr moved with setAttributeNode. A throw while reading it means the page's
+ * value stays: the caller passes the node to the original method.
+ */
+function describeMovedAttr(attr: unknown): { namespace: unknown; local: string; value: string; setValue: (next: string) => void } | undefined {
+  if (!attr || typeof attr !== 'object') return undefined;
+  const node = attr as { namespaceURI?: unknown; localName?: unknown; name?: unknown; value?: unknown };
+  try {
+    const local = typeof node.localName === 'string' ? node.localName : typeof node.name === 'string' ? node.name : undefined;
+    if (!local) return undefined;
+    const value = node.value == null ? '' : String(node.value);
+    return {
+      namespace: node.namespaceURI,
+      local,
+      value,
+      setValue(next: string) {
+        node.value = next;
+      },
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 /** `integrity`, `src`, or `href`, with an optional prefix. Other names stay with the browser. */

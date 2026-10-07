@@ -5,7 +5,8 @@ const INSTALLED = Symbol.for('detour.sri');
 /**
  * MAIN world, registered only while a body rule is armed.
  * Runs before page scripts so a bundler that sets `integrity`, copies it with
- * `setAttributeNS`, inserts a tag with `innerHTML` / `outerHTML` / a shadow
+ * `setAttributeNS`, moves that Attr with `setAttributeNode` or `setAttributeNodeNS`,
+ * inserts a tag with `innerHTML` / `outerHTML` / a shadow
  * root's `innerHTML` / `insertAdjacentHTML`, or inserts markup that can run
  * scripts (`createContextualFragment`, `setHTMLUnsafe`), or parses a string with
  * `Document.parseHTMLUnsafe` or `DOMParser` (`text/html`), hits the hook. A stylesheet

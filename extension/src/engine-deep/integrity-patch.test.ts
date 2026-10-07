@@ -98,6 +98,7 @@ function createRealm(initial: string | null) {
   }
   class Element extends Node {
     attrs: Record<string, string> = {};
+    failAdopt = false;
     html = '';
     adjacent = '';
     setAttribute(name: string, value: string) {
@@ -105,6 +106,20 @@ function createRealm(initial: string | null) {
     }
     setAttributeNS(_namespace: string | null, name: string, value: string) {
       this.attrs[String(name).toLowerCase()] = String(value);
+    }
+    setAttributeNode(attr: { localName?: string; name?: string; value?: string } | null) {
+      return this.adoptAttr(attr);
+    }
+    setAttributeNodeNS(attr: { localName?: string; name?: string; value?: string } | null) {
+      return this.adoptAttr(attr);
+    }
+    adoptAttr(attr: { localName?: string; name?: string; value?: string } | null) {
+      if (this.failAdopt) throw new Error('InUseAttributeError');
+      if (!attr) return null;
+      const raw = attr.localName ?? attr.name ?? '';
+      const local = String(raw).toLowerCase().split(':').pop() ?? '';
+      this.attrs[local] = String(attr.value ?? '');
+      return null;
     }
     getAttribute(name: string) {
       return this.attrs[name.toLowerCase()] ?? null;
@@ -556,6 +571,80 @@ describe('installIntegrityPatch', () => {
     pageHash.setAttributeNS(null, 'src', '/sri-ns.js');
     pageHash.setAttributeNS(null, 'integrity', BAD);
     expect(pageHash.getAttribute('integrity')).toBe(BAD);
+  });
+
+  it('substitutes integrity moved with setAttributeNode and setAttributeNodeNS, and leaves a foreign namespace and a sibling', async () => {
+    const hash = await integrityMetadata(encoder.encode('window.SRI_NODE = "LOCAL";'));
+    const realm = createRealm(encodePatchList([patch({ integrity: hash, match: { kind: 'glob', pattern: '*:8001/sri-node.js' } })]));
+    installIntegrityPatch(realm.root);
+    const moved = { namespaceURI: null as string | null, localName: 'integrity', value: BAD };
+    const matched = new realm.HTMLScriptElement();
+    matched.setAttributeNode(moved);
+    matched.setAttributeNode({ namespaceURI: null, localName: 'src', value: '/sri-node.js' });
+    expect(matched.getAttribute('integrity')).toBe(hash);
+
+    const copiedAttr = { namespaceURI: null as string | null, localName: 'integrity', value: BAD };
+    const copied = new realm.HTMLScriptElement();
+    copied.setAttributeNode({ namespaceURI: null, localName: 'src', value: 'http://127.0.0.1:8001/sri-node.js' });
+    copied.setAttributeNode(copiedAttr);
+    expect(copied.getAttribute('integrity')).toBe(hash);
+    expect(copiedAttr.value).toBe(hash);
+
+    const xhtmlAttr = { namespaceURI: 'http://www.w3.org/1999/xhtml', localName: 'integrity', name: 'html:integrity', value: BAD };
+    const xhtml = new realm.HTMLScriptElement();
+    xhtml.setAttributeNodeNS(xhtmlAttr);
+    xhtml.setAttributeNodeNS({ namespaceURI: null, localName: 'src', value: '/sri-node.js' });
+    expect(xhtml.getAttribute('integrity')).toBe(hash);
+
+    const emptyAttr = { namespaceURI: '', localName: 'integrity', value: BAD };
+    const empty = new realm.HTMLScriptElement();
+    empty.setAttributeNode({ namespaceURI: '', localName: 'src', value: '/sri-node.js' });
+    empty.setAttributeNodeNS(emptyAttr);
+    expect(empty.getAttribute('integrity')).toBe(hash);
+    expect(emptyAttr.value).toBe(hash);
+
+    const siblingAttr = { namespaceURI: null as string | null, localName: 'integrity', value: BAD };
+    const sibling = new realm.HTMLScriptElement();
+    sibling.setAttributeNodeNS({ namespaceURI: null, localName: 'src', value: '/sri-node-bad.js' });
+    sibling.setAttributeNodeNS(siblingAttr);
+    expect(sibling.getAttribute('integrity')).toBe(BAD);
+    expect(siblingAttr.value).toBe(BAD);
+
+    const foreignAttr = { namespaceURI: 'http://www.w3.org/2000/svg', localName: 'integrity', value: BAD };
+    const foreign = new realm.HTMLScriptElement();
+    foreign.setAttributeNode({ namespaceURI: null, localName: 'src', value: '/sri-node.js' });
+    foreign.setAttributeNode(foreignAttr);
+    expect(foreign.getAttribute('integrity')).toBe(BAD);
+    expect(foreignAttr.value).toBe(BAD);
+
+    const label = new realm.HTMLScriptElement();
+    label.setAttributeNode({ namespaceURI: null, localName: 'id', value: 'kept' });
+    expect(label.getAttribute('id')).toBe('kept');
+
+    const css = await integrityMetadata(encoder.encode('css'));
+    const styles = createRealm(encodePatchList([patch({ integrity: css, resourceTypes: ['stylesheet'], match: { kind: 'glob', pattern: '*:8001/app.css' } })]));
+    installIntegrityPatch(styles.root);
+    const link = new styles.HTMLLinkElement();
+    link.setAttributeNode({ namespaceURI: '', localName: 'rel', value: 'stylesheet' });
+    link.setAttributeNodeNS({ namespaceURI: null, localName: 'integrity', value: BAD });
+    link.setAttributeNodeNS({ namespaceURI: null, localName: 'href', value: 'http://127.0.0.1:8001/app.css' });
+    expect(link.getAttribute('integrity')).toBe(css);
+
+    const bare = createRealm(null);
+    installIntegrityPatch(bare.root);
+    const pageAttr = { namespaceURI: null as string | null, localName: 'integrity', value: BAD };
+    const pageHash = new bare.HTMLScriptElement();
+    pageHash.setAttributeNode({ namespaceURI: null, localName: 'src', value: '/sri-node.js' });
+    pageHash.setAttributeNode(pageAttr);
+    expect(pageHash.getAttribute('integrity')).toBe(BAD);
+    expect(pageAttr.value).toBe(BAD);
+
+    const rejected = { namespaceURI: null as string | null, localName: 'integrity', value: BAD };
+    const busy = new realm.HTMLScriptElement();
+    busy.setAttribute('src', 'http://127.0.0.1:8001/sri-node.js');
+    busy.failAdopt = true;
+    expect(() => busy.setAttributeNode(rejected)).toThrow('InUseAttributeError');
+    expect(rejected.value).toBe(BAD);
   });
 
   it('rewrites integrity in parseHTMLUnsafe and leaves a sibling hash', async () => {
