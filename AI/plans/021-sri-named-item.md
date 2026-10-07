@@ -1,6 +1,6 @@
 # 021 — setNamedItem and Attr.value integrity
 
-**Status:** In progress  
+**Status:** Done  
 **Date:** 2026-10-07  
 **Spec:** [engine-deep](../specs/engine-deep.md) — `setNamedItem` and `Attr.value` Approved (Hamza, 2026-10-07)
 
@@ -24,12 +24,20 @@ The document rewrite (ADR-014) and the earlier MAIN-world hooks (ADR-015 through
 ## Tasks
 
 - [x] T1 Spec Approved, this plan, ADR-022
-- [ ] T2 Hook: `setNamedItem` and `setNamedItemNS` substitute HTML `integrity` on a matching script or stylesheet. A non-matching URL and a foreign namespace stay. `src` / `href` re-resolves
-- [ ] T3 Hook: `Attr.value`, `nodeValue`, and `textContent` rewrite a write when that Attr is already HTML `integrity` on a matching script or stylesheet. An unattached Attr and a non-matching URL stay
-- [ ] T4 Rules-page copy: adopting an Attr that way, or writing `Attr.value` after it is on the element, is covered
-- [ ] T5 Unit tests, typecheck, Chrome + Firefox builds
-- [ ] T6 Chrome e2e: `setNamedItem` with a production integrity hash runs the override, and a later `Attr.value` write still does. A non-matching sibling stays blocked
-- [ ] T7 KB write-back
+- [x] T2 Hook: `setNamedItem` and `setNamedItemNS` substitute HTML `integrity` on a matching script or stylesheet. A non-matching URL and a foreign namespace stay. `src` / `href` re-resolves
+- [x] T3 Hook: `Attr.value`, `nodeValue`, and `textContent` rewrite a write when that Attr is already HTML `integrity` on a matching script or stylesheet. An unattached Attr and a non-matching URL stay
+- [x] T4 Rules-page copy: adopting an Attr that way, or writing `Attr.value` after it is on the element, is covered
+- [x] T5 Unit tests, typecheck, Chrome + Firefox builds
+- [x] T6 Chrome e2e: `setNamedItem` with a production integrity hash runs the override, and a later `Attr.value` write still does. A non-matching sibling stays blocked
+- [x] T7 KB write-back
+
+## Results (2026-10-07)
+
+- 393 extension tests; typecheck clean; chrome-mv3 and firefox-mv3 builds clean (`content-scripts/sri-main.js` in both)
+- Chrome for Testing 155: `pnpm e2e:chrome` 117/117. `*:8001/sri-named.js` ran `window.SRI_NAMED = "LOCAL"` after `setNamedItem` with the production hash, set before `src`. Writing that hash back through `Attr.value`, `nodeValue`, and `textContent` left the override SHA-384 in place. A sibling set with `setNamedItemNS` stayed blocked and kept the page's hash
+- Chrome 155 keeps `nodeValue` and `textContent` on `Node.prototype`. The hook uses those setters only when the receiver is an Attr. An element's `textContent` is unchanged
+- Firefox document rewrite is unit-tested. BiDi still cannot open extension pages
+- Not pushed
 
 ## Out of scope
 

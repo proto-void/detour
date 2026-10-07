@@ -37,12 +37,12 @@
 - [x] **setHTMLUnsafe with scripts off** Approved (Hamza, 2026-10-07) and built (plan 018, ADR-019): the same hook rewrites `integrity` in a string passed to `Element.setHTMLUnsafe` or `ShadowRoot.setHTMLUnsafe` whenever a body rule is armed, including when `runScripts` is omitted, false, or any value other than true. The options object is passed through, so scripts still run only when `runScripts` is strictly true. Other hashes stay. A non-string is passed through. 388 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 98/98 on Chrome for Testing 155 (both stylesheets applied, non-matching siblings stayed blocked and kept the page's hash; the existing `runScripts: true` script still ran). Firefox document path is unit-tested. Not pushed
 - [x] **parseHTMLUnsafe** Approved (Hamza, 2026-10-07) and built (plan 019, ADR-020): the same hook rewrites `integrity` in a string passed to `Document.parseHTMLUnsafe`, and to `DOMParser.parseFromString` only when the type is `text/html`. Scripting stays off on the document those calls create. A node moved into a live document carries Detour's hash. Other hashes stay. A non-string is passed through. XML parser types are left unchanged. 391 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 106/106 on Chrome for Testing 155 (adopted stylesheet applied and carried the override hash, non-matching sibling stayed blocked and kept the page's hash, the script did not run; `DOMParser` `text/html` carried the override hash and XHTML kept the page's hash). Firefox document path is unit-tested. Not pushed
 - [x] **setAttributeNode** Approved (Hamza, 2026-10-07) and built (plan 020, ADR-021): the same hook substitutes Detour's SHA-384 when `setAttributeNode` or `setAttributeNodeNS` sets an HTML `integrity` Attr on a matching script or stylesheet link. A non-matching URL and a foreign namespace keep the page's value. Setting `src` or `href` that way re-resolves a hash already assigned. The hook does not clear hashes. 392 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 111/111 on Chrome for Testing 155 (`setAttributeNode` runs the override and the live attribute is the override hash; a `setAttributeNodeNS` sibling stays blocked and keeps the page's hash). Firefox document path is unit-tested. Not pushed
+- [x] **setNamedItem and Attr.value** Approved (Hamza, 2026-10-07) and built (plan 021, ADR-022): the same hook substitutes Detour's SHA-384 when `NamedNodeMap.setNamedItem` or `setNamedItemNS` adopts an HTML `integrity` Attr onto a matching script or stylesheet. Once that Attr is already on the element, a write to `value`, `nodeValue`, or `textContent` is rewritten the same way. An Attr that is not attached yet keeps the page's string. A non-matching URL and a foreign namespace stay. The hook does not clear hashes. Chrome keeps `nodeValue` and `textContent` on `Node.prototype`; those setters run only for an Attr. 393 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 117/117 on Chrome for Testing 155 (`setNamedItem` runs the override, a later `Attr.value` write keeps the override hash, a `setNamedItemNS` sibling stays blocked). Firefox document path is unit-tested. Not pushed
 
 ## Next
 
-1. Plan 021 — `setNamedItem` / `Attr.value` integrity (Approved, Hamza 2026-10-07). Implementing
-2. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
-3. npm publish of `@detour/cli` is still out of scope
+1. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
+2. npm publish of `@detour/cli` is still out of scope
 
 ## Open questions (not blocking)
 
@@ -53,6 +53,7 @@
 - Packed Chromium rows store the tab URL, not the subresource. Is that enough, or should packed builds stay limited to unpacked-style request URLs some other way?
 - Firefox does not record DNR matches (no feedback API; `webRequest` was not added). Is that gap acceptable?
 - Inline JS injections are not log rows. Worth a later note, or leave them to the apply report?
+- `document.write`, `document.writeln`, and `iframe srcdoc` can still carry the page's `integrity`. Attribute and Attr-node writes are hooked. Worth one markup slice, or stop here?
 
 ## Blocked
 

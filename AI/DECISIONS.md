@@ -594,7 +594,7 @@ The hash list is already in `<meta name="detour-sri">`. This slice does not add 
 - A map that was not read through that getter is passed to the original method unchanged. Do not guess an owner from a property on the map
 - Leave the Attr unchanged when the URL does not match, the namespace is any other value, or the local name is not `integrity`. Do not clear `integrity`
 - When the Attr's local name is `src` or `href` under those same namespace rules, re-resolve a hash already assigned, then call the original method
-- Wrap `Attr.value`, `nodeValue`, and `textContent` on `Attr.prototype`
+- Wrap `Attr.value` on `Attr.prototype`. Chrome 155 does not put `nodeValue` or `textContent` on `Attr.prototype`; those setters live on `Node.prototype`. Hook the Node setters only when the receiver is an Attr (`instanceof Attr`, or node type 2). An element's `textContent` is passed through
 - When `ownerElement` is a script or stylesheet link and the Attr is HTML `integrity` whose URL matches, write the publishable SHA-384 instead of the page's string. Remember the page's string so a later `src` or `href` change can re-resolve
 - When `ownerElement` is null, pass the write through. The adopt hooks see that stored value later
 - A non-matching URL, a foreign namespace, and any other local name are passed through. Assigning an attached `src` or `href` Attr re-resolves a hash already assigned
