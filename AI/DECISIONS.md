@@ -562,10 +562,48 @@ The hash list is already in `<meta name="detour-sri">`. This slice does not add 
 - When the Attr's local name is `src` or `href` under those same namespace rules, re-resolve a hash already assigned, including when the integrity Attr was set first. Then call the original method
 - Pass a value that is not an Attr through to the original method
 - Write a new value onto the Attr only when it is a publishable SHA-384. The page's string is never replaced with an empty string
-- Do not hook `NamedNodeMap.setNamedItem`, `NamedNodeMap.setNamedItemNS`, or a later assignment to `Attr.value`. Those are separate entry points
+- Amended 2026-10-07 by [ADR-022](#adr-022--setnameditem-and-attrvalue-use-the-same-integrity-hash): `NamedNodeMap.setNamedItem`, `setNamedItemNS`, and a later write to `Attr.value`, `nodeValue`, or `textContent` are hooked
 
 ### Consequences
 
 - A script or stylesheet whose `integrity` Attr is moved with `setAttributeNode` or `setAttributeNodeNS` carries Detour's hash, and the browser can accept the override. A sibling whose URL does not match keeps the page's hash
+- An Attr in another namespace keeps the value the page set
+- The substituted value is a publishable SHA-384. It cannot remove a hash the page set on a resource that does not match
+
+---
+
+## ADR-022 — setNamedItem and Attr.value use the same integrity hash
+
+**Status:** Accepted  
+**Date:** 2026-10-07 (Hamza approved `NamedNodeMap.setNamedItem` / `setNamedItemNS` and `Attr.value`)
+
+### Context
+
+ADR-021 hooks `Element.setAttributeNode` and `setAttributeNodeNS`. Two more DOM entry points write the same attribute without calling those methods.
+
+`NamedNodeMap.setNamedItem` and `setNamedItemNS` both return the result of setting an attribute given the Attr and the map's element. They do not call `setAttributeNode`. A page reaches that map through `Element.attributes`. [setNamedItem](https://dom.spec.whatwg.org/#dom-namednodemap-setnameditem)
+
+`Attr.value`, `nodeValue`, and `textContent` each set an existing attribute value. They do not call one another or `setAttribute`. If the Attr's element is null, the string is only stored on the node. If the Attr is already on the element, the attribute changes in place, so a later assignment puts the page's hash back after an adopt hook had substituted Detour's. [Attr.value](https://dom.spec.whatwg.org/#dom-attr-value), [set an existing attribute value](https://dom.spec.whatwg.org/#set-an-existing-attribute-value)
+
+The hash list is already in `<meta name="detour-sri">`. This slice does not add a second list or a second content script.
+
+### Decision
+
+- While the MAIN-world hook from ADR-015 is installed, wrap `NamedNodeMap.setNamedItem` and `NamedNodeMap.setNamedItemNS`
+- Remember the element when page code reads `Element.attributes`. Use that element for the same substitution ADR-021 applies to `setAttributeNode`: HTML `integrity` (namespace null, empty, or `http://www.w3.org/1999/xhtml`) on a matching script or stylesheet becomes the entry's `sha384-` before the original method adopts the Attr
+- A map that was not read through that getter is passed to the original method unchanged. Do not guess an owner from a property on the map
+- Leave the Attr unchanged when the URL does not match, the namespace is any other value, or the local name is not `integrity`. Do not clear `integrity`
+- When the Attr's local name is `src` or `href` under those same namespace rules, re-resolve a hash already assigned, then call the original method
+- Wrap `Attr.value`, `nodeValue`, and `textContent` on `Attr.prototype`
+- When `ownerElement` is a script or stylesheet link and the Attr is HTML `integrity` whose URL matches, write the publishable SHA-384 instead of the page's string. Remember the page's string so a later `src` or `href` change can re-resolve
+- When `ownerElement` is null, pass the write through. The adopt hooks see that stored value later
+- A non-matching URL, a foreign namespace, and any other local name are passed through. Assigning an attached `src` or `href` Attr re-resolves a hash already assigned
+- Write a new value only when it is a publishable SHA-384. The page's string is never replaced with an empty string
+- Do not hook `document.write`, `document.writeln`, or `iframe` `srcdoc`
+
+### Consequences
+
+- A script or stylesheet whose `integrity` Attr is adopted with `setNamedItem` or `setNamedItemNS` carries Detour's hash. A later write to that Attr's `value`, `nodeValue`, or `textContent` keeps Detour's hash when the URL still matches. A sibling whose URL does not match keeps the page's hash
+- An Attr that is not on an element yet keeps the page's string until an adopt hook runs
 - An Attr in another namespace keeps the value the page set
 - The substituted value is a publishable SHA-384. It cannot remove a hash the page set on a resource that does not match
