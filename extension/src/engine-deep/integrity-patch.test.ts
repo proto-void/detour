@@ -107,13 +107,13 @@ function createRealm(initial: string | null) {
     setAttributeNS(_namespace: string | null, name: string, value: string) {
       this.attrs[String(name).toLowerCase()] = String(value);
     }
-    setAttributeNode(attr: { localName?: string; name?: string; value?: string } | null) {
+    setAttributeNode(attr: { namespaceURI?: string | null; localName?: string; name?: string; value?: string } | null) {
       return this.adoptAttr(attr);
     }
-    setAttributeNodeNS(attr: { localName?: string; name?: string; value?: string } | null) {
+    setAttributeNodeNS(attr: { namespaceURI?: string | null; localName?: string; name?: string; value?: string } | null) {
       return this.adoptAttr(attr);
     }
-    adoptAttr(attr: { localName?: string; name?: string; value?: string } | null) {
+    adoptAttr(attr: { namespaceURI?: string | null; localName?: string; name?: string; value?: string } | null) {
       if (this.failAdopt) throw new Error('InUseAttributeError');
       if (!attr) return null;
       const raw = attr.localName ?? attr.name ?? '';
