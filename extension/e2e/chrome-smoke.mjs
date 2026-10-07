@@ -59,6 +59,8 @@ const sriParseBad = 'html{--sri-parse-bad:no}';
 const sriParseJs = 'window.SRI_PARSE = "PROD";';
 const sriNodeProd = 'window.SRI_NODE = "PROD";';
 const sriNodeBad = 'window.SRI_NODE_BAD = "NO";';
+const sriNamedProd = 'window.SRI_NAMED = "PROD";';
+const sriNamedBad = 'window.SRI_NAMED_BAD = "NO";';
 const page = html('<!doctype html><title>t</title><script src="/a.js"></script><script src="/b.js"></script><script src="/c.js"></script>');
 
 const prod = await serve(8001, {
@@ -209,6 +211,38 @@ document.head.appendChild(sibling);
 </script>`),
   '/sri-node.js': js(sriNodeProd),
   '/sri-node-bad.js': js(sriNodeBad),
+  // setNamedItem adopts an Attr and does not go through setAttributeNode.
+  // Attr.value after that node is attached does not go through setNamedItem either.
+  '/sri-named.html': html(`<!doctype html><title>sri-named</title><script>
+var bad = 'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+var prod = '${sha384(sriNamedProd)}';
+var matched = document.createElement('script');
+var integrity = document.createAttribute('integrity');
+integrity.value = prod;
+matched.attributes.setNamedItem(integrity);
+var src = document.createAttribute('src');
+src.value = '/sri-named.js';
+matched.attributes.setNamedItem(src);
+window.DETOUR_AFTER_NAMED = integrity.value;
+integrity.value = prod;
+integrity.nodeValue = prod;
+integrity.textContent = prod;
+window.DETOUR_AFTER_VALUE = integrity.value;
+matched.setAttribute('crossorigin', 'anonymous');
+document.head.appendChild(matched);
+var sibling = document.createElement('script');
+var badSrc = document.createAttributeNS(null, 'src');
+badSrc.value = '/sri-named-bad.js';
+sibling.attributes.setNamedItemNS(badSrc);
+var badIntegrity = document.createAttributeNS(null, 'integrity');
+badIntegrity.value = bad;
+sibling.attributes.setNamedItemNS(badIntegrity);
+badIntegrity.value = bad;
+sibling.setAttribute('crossorigin', 'anonymous');
+document.head.appendChild(sibling);
+</script>`),
+  '/sri-named.js': js(sriNamedProd),
+  '/sri-named-bad.js': js(sriNamedBad),
 });
 const local = await serve(8002, {
   '/a.js': js('window.A = "LOCAL";'),
@@ -697,6 +731,7 @@ try {
   check('body editor says inert markup integrity is updated', (await editorText()).includes('setAttributeNS'), true);
   check('body editor says parseHTMLUnsafe integrity is updated', (await editorText()).includes('parseHTMLUnsafe'), true);
   check('body editor says setAttributeNode integrity is updated', (await editorText()).includes('setAttributeNode'), true);
+  check('body editor says setNamedItem integrity is updated', (await editorText()).includes('setNamedItem'), true);
 
   shieldPaths.push('/body.html');
   const workerTarget = await browser.waitForTarget((t) => t.type() === 'service_worker' && t.url().includes(id), { timeout: 10000 });
@@ -1143,6 +1178,61 @@ try {
   check('sibling whose setAttributeNodeNS integrity does not match stays blocked', sriNodePage.SRI_NODE_BAD, undefined);
   check('setAttributeNode matching hash is the override', sriNodePage.integrity, sha384('window.SRI_NODE = "LOCAL";'));
   check('sibling hash set with setAttributeNodeNS stays', sriNodePage.sibling, badIntegrity);
+  shieldPaths.length = 0;
+
+  const sriNamedRule = await addPageRule(sriGroup, '*:8001/sri-named.js', 'overrideBody');
+  await typeCode(sriNamedRule, 'window.SRI_NAMED = "LOCAL";');
+  await saveAndSettle();
+  await waitStatus(sriNamedRule, 'Applied');
+  shieldPaths.length = 0;
+  shieldPaths.push('/sri-named.html');
+  const sriNamedPage = await sriWorker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () =>
+        new Promise((resolve) => {
+          const started = Date.now();
+          const tick = () => {
+            const sibling = document.querySelector('script[src="/sri-named-bad.js"]');
+            const value = {
+              SRI_NAMED: window.SRI_NAMED,
+              SRI_NAMED_BAD: window.SRI_NAMED_BAD,
+              afterNamed: window.DETOUR_AFTER_NAMED ?? '',
+              afterValue: window.DETOUR_AFTER_VALUE ?? '',
+              sibling: sibling ? sibling.getAttribute('integrity') : '',
+            };
+            if (value.SRI_NAMED !== undefined || Date.now() - started > 3000) resolve(value);
+            else setTimeout(tick, 50);
+          };
+          tick();
+        }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/sri-named.html');
+  check('setNamedItem with a production integrity hash runs the override', sriNamedPage.SRI_NAMED, 'LOCAL');
+  check('setNamedItem matching hash is the override before Attr.value', sriNamedPage.afterNamed, sha384('window.SRI_NAMED = "LOCAL";'));
+  check('Attr.value nodeValue and textContent keep the override hash', sriNamedPage.afterValue, sha384('window.SRI_NAMED = "LOCAL";'));
+  check('sibling whose setNamedItemNS integrity does not match stays blocked', sriNamedPage.SRI_NAMED_BAD, undefined);
+  check('sibling hash set with setNamedItemNS stays', sriNamedPage.sibling, badIntegrity);
   shieldPaths.length = 0;
 
   // Local Bridge: consent is already on, so serveLocal is fulfilled in place (the URL stays on port 8001).
