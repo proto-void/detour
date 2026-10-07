@@ -1,6 +1,6 @@
 # 019 — parseHTMLUnsafe integrity
 
-**Status:** In progress  
+**Status:** Done  
 **Date:** 2026-10-07  
 **Spec:** [engine-deep](../specs/engine-deep.md) — `Document.parseHTMLUnsafe` Approved (Hamza, 2026-10-07)
 
@@ -25,12 +25,19 @@ The document rewrite (ADR-014) and the earlier MAIN-world hooks (ADR-015 through
 
 ## Tasks
 
-- [ ] T1 Spec Approved, this plan, ADR-020
-- [ ] T2 Hook: `Document.parseHTMLUnsafe` rewrites a string whenever a body rule is armed. Options are forwarded. A non-string is passed through. A sibling hash stays. `DOMParser.parseFromString` rewrites only `text/html`
-- [ ] T3 Rules-page copy: adoptees carry Detour's hash
-- [ ] T4 Unit tests, typecheck, Chrome + Firefox builds
-- [ ] T5 Chrome e2e: `parseHTMLUnsafe` with a production integrity hash, then adopt the nodes into the live document, so the stylesheet override applies. A non-matching sibling stays blocked
-- [ ] T6 KB write-back
+- [x] T1 Spec Approved, this plan, ADR-020
+- [x] T2 Hook: `Document.parseHTMLUnsafe` rewrites a string whenever a body rule is armed. Options are forwarded. A non-string is passed through. A sibling hash stays. `DOMParser.parseFromString` rewrites only `text/html`
+- [x] T3 Rules-page copy: adoptees carry Detour's hash
+- [x] T4 Unit tests, typecheck, Chrome + Firefox builds
+- [x] T5 Chrome e2e: `parseHTMLUnsafe` with a production integrity hash, then adopt the nodes into the live document, so the stylesheet override applies. A non-matching sibling stays blocked
+- [x] T6 KB write-back
+
+## Results (2026-10-07)
+
+- 391 extension tests; typecheck clean; chrome-mv3 and firefox-mv3 builds clean (`content-scripts/sri-main.js` in both)
+- Chrome for Testing 155: `pnpm e2e:chrome` 106/106. `*:8001/sri-parse.css` applied `--sri-parse: local` after `Document.parseHTMLUnsafe` with the production hash and `adoptNode` into the live document. The adopted node carried the override SHA-384. A sibling stylesheet stayed blocked and kept the page's hash. A script in that document did not run. `DOMParser.parseFromString` with `text/html` carried the same override hash. `application/xhtml+xml` kept the page's hash
+- Firefox document rewrite is unit-tested. BiDi still cannot open extension pages
+- Not pushed
 
 ## Out of scope
 
