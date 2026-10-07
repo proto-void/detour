@@ -39,8 +39,9 @@
 
 ## Next
 
-1. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
-2. npm publish of `@detour/cli` is still out of scope
+1. Plan [020](plans/020-sri-attribute-node.md): hook `Element.setAttributeNode` and `Element.setAttributeNodeNS` so an HTML `integrity` Attr on a matching script or stylesheet is substituted with Detour's SHA-384. Approved Hamza, 2026-10-07
+2. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
+3. npm publish of `@detour/cli` is still out of scope
 
 ## Open questions (not blocking)
 
@@ -51,7 +52,6 @@
 - Packed Chromium rows store the tab URL, not the subresource. Is that enough, or should packed builds stay limited to unpacked-style request URLs some other way?
 - Firefox does not record DNR matches (no feedback API; `webRequest` was not added). Is that gap acceptable?
 - Inline JS injections are not log rows. Worth a later note, or leave them to the apply report?
-- `setAttributeNode` and `setAttributeNodeNS` are not hooked. A page that moves an `Attr` node that way can keep the page's hash. Worth a later pass?
 
 ## Blocked
 
