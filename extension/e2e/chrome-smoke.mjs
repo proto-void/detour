@@ -54,6 +54,9 @@ const sriUnsafeCssProd = 'html{--sri-unsafe-css:prod}';
 const sriUnsafeCssBad = 'html{--sri-unsafe-css-bad:no}';
 const sriUnsafeShadowProd = 'span{--sri-unsafe-shadow:prod}';
 const sriUnsafeShadowBad = 'span{--sri-unsafe-shadow-bad:no}';
+const sriParseProd = 'html{--sri-parse:prod}';
+const sriParseBad = 'html{--sri-parse-bad:no}';
+const sriParseJs = 'window.SRI_PARSE = "PROD";';
 const page = html('<!doctype html><title>t</title><script src="/a.js"></script><script src="/b.js"></script><script src="/c.js"></script>');
 
 const prod = await serve(8001, {
@@ -156,6 +159,26 @@ root.setHTMLUnsafe('<link rel="stylesheet" href="/sri-unsafe-shadow.css" integri
   '/sri-unsafe-css-bad.css': css(sriUnsafeCssBad),
   '/sri-unsafe-shadow.css': css(sriUnsafeShadowProd),
   '/sri-unsafe-shadow-bad.css': css(sriUnsafeShadowBad),
+  // parseHTMLUnsafe disables scripting. The tags are split so the document rewrite
+  // does not see them; the page hook must rewrite the string. Adopted nodes keep that hash.
+  '/sri-parse.html': html(`<!doctype html><title>sri-parse</title><div id="host"></div><script>
+var bad = 'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+var markup = '<' + 'link rel="stylesheet" href="/sri-parse.css" integrity="${sha384(sriParseProd)}" crossorigin="anonymous">'
+  + '<' + 'link rel="stylesheet" href="/sri-parse-bad.css" integrity="' + bad + '" crossorigin="anonymous">'
+  + '<' + 'script src="/sri-parse.js" integrity="${sha384(sriParseJs)}" crossorigin="anonymous"><' + '/script>';
+var parsed = Document.parseHTMLUnsafe(markup);
+var host = document.getElementById('host');
+parsed.querySelectorAll('link, script').forEach(function (node) { host.appendChild(document.adoptNode(node)); });
+var viaParser = new DOMParser().parseFromString(markup, 'text/html');
+window.DETOUR_PARSER = viaParser.querySelector('link[href="/sri-parse.css"]').getAttribute('integrity');
+var xhtml = '<' + 'html xmlns="http://www.w3.org/1999/xhtml"><' + 'head><' + 'link rel="stylesheet" href="/sri-parse.css" integrity="' + bad + '"/></' + 'head></' + 'html>';
+var viaXml = new DOMParser().parseFromString(xhtml, 'application/xhtml+xml');
+var xmlLink = viaXml.getElementsByTagNameNS('http://www.w3.org/1999/xhtml', 'link')[0];
+window.DETOUR_XML = xmlLink ? xmlLink.getAttribute('integrity') : '';
+</script>`),
+  '/sri-parse.css': css(sriParseProd),
+  '/sri-parse-bad.css': css(sriParseBad),
+  '/sri-parse.js': js(sriParseJs),
 });
 const local = await serve(8002, {
   '/a.js': js('window.A = "LOCAL";'),
@@ -642,6 +665,7 @@ try {
   check('body editor says markup integrity is updated', (await editorText()).includes('insertAdjacentHTML'), true);
   check('body editor says script-running markup integrity is updated', (await editorText()).includes('createContextualFragment'), true);
   check('body editor says inert markup integrity is updated', (await editorText()).includes('setAttributeNS'), true);
+  check('body editor says parseHTMLUnsafe integrity is updated', (await editorText()).includes('parseHTMLUnsafe'), true);
 
   shieldPaths.push('/body.html');
   const workerTarget = await browser.waitForTarget((t) => t.type() === 'service_worker' && t.url().includes(id), { timeout: 10000 });
@@ -977,6 +1001,64 @@ try {
   check('setHTMLUnsafe with runScripts false accepts a shadow stylesheet', sriUnsafeCssPage.shadow, 'local');
   check('sibling stylesheet in that shadow setHTMLUnsafe stays blocked', sriUnsafeCssPage.shadowBad, '');
   check('sibling hash in that shadow setHTMLUnsafe stays', sriUnsafeCssPage.shadowSibling, badIntegrity);
+
+  const sriParseRule = await addPageRule(sriGroup, '*:8001/sri-parse.css', 'overrideBody');
+  await typeCode(sriParseRule, 'html{--sri-parse:local}');
+  await saveAndSettle();
+  await waitStatus(sriParseRule, 'Applied');
+  shieldPaths.length = 0;
+  shieldPaths.push('/sri-parse.html');
+  const sriParsePage = await sriWorker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () =>
+        new Promise((resolve) => {
+          const started = Date.now();
+          const tick = () => {
+            const host = document.getElementById('host');
+            const value = {
+              css: getComputedStyle(document.documentElement).getPropertyValue('--sri-parse').trim(),
+              cssBad: getComputedStyle(document.documentElement).getPropertyValue('--sri-parse-bad').trim(),
+              integrity: host?.querySelector('link[href="/sri-parse.css"]')?.getAttribute('integrity') ?? '',
+              sibling: host?.querySelector('link[href="/sri-parse-bad.css"]')?.getAttribute('integrity') ?? '',
+              script: window.SRI_PARSE,
+              parser: window.DETOUR_PARSER ?? '',
+              xml: window.DETOUR_XML ?? '',
+            };
+            if (value.css === 'local' || Date.now() - started > 3000) resolve(value);
+            else setTimeout(tick, 50);
+          };
+          tick();
+        }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/sri-parse.html');
+  check('parseHTMLUnsafe stylesheet adopted into the page is accepted', sriParsePage.css, 'local');
+  check('sibling stylesheet adopted from parseHTMLUnsafe stays blocked', sriParsePage.cssBad, '');
+  check('sibling hash adopted from parseHTMLUnsafe stays', sriParsePage.sibling, badIntegrity);
+  check('adopted matching hash is the override', sriParsePage.integrity, sha384('html{--sri-parse:local}'));
+  check('script parsed by parseHTMLUnsafe does not run after adopt', sriParsePage.script, undefined);
+  check('DOMParser text/html carries the override hash', sriParsePage.parser, sha384('html{--sri-parse:local}'));
+  check('DOMParser XHTML keeps the page hash', sriParsePage.xml, badIntegrity);
   shieldPaths.length = 0;
 
   // Local Bridge: consent is already on, so serveLocal is fulfilled in place (the URL stays on port 8001).
