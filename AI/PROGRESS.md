@@ -41,8 +41,9 @@
 
 ## Next
 
-1. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
-2. npm publish of `@detour/cli` is still out of scope
+1. Plan 022 — `document.write` / `document.writeln` integrity (Approved, Hamza 2026-10-07). Implementing
+2. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
+3. npm publish of `@detour/cli` is still out of scope
 
 ## Open questions (not blocking)
 
@@ -53,7 +54,7 @@
 - Packed Chromium rows store the tab URL, not the subresource. Is that enough, or should packed builds stay limited to unpacked-style request URLs some other way?
 - Firefox does not record DNR matches (no feedback API; `webRequest` was not added). Is that gap acceptable?
 - Inline JS injections are not log rows. Worth a later note, or leave them to the apply report?
-- `document.write`, `document.writeln`, and `iframe srcdoc` can still carry the page's `integrity`. Attribute and Attr-node writes are hooked. Worth one markup slice, or stop here?
+- `iframe` `srcdoc` can still carry the page's `integrity`. Worth one more markup slice, or stop here?
 
 ## Blocked
 

@@ -599,7 +599,7 @@ The hash list is already in `<meta name="detour-sri">`. This slice does not add 
 - When `ownerElement` is null, pass the write through. The adopt hooks see that stored value later
 - A non-matching URL, a foreign namespace, and any other local name are passed through. Assigning an attached `src` or `href` Attr re-resolves a hash already assigned
 - Write a new value only when it is a publishable SHA-384. The page's string is never replaced with an empty string
-- Do not hook `document.write`, `document.writeln`, or `iframe` `srcdoc`
+- Do not hook `document.write`, `document.writeln`, or `iframe` `srcdoc`. Amended 2026-10-07 by [ADR-023](#adr-023--documentwrite-uses-the-same-integrity-hash): `document.write` and `document.writeln` are hooked. `iframe` `srcdoc` stays unhooked
 
 ### Consequences
 
@@ -607,3 +607,34 @@ The hash list is already in `<meta name="detour-sri">`. This slice does not add 
 - An Attr that is not on an element yet keeps the page's string until an adopt hook runs
 - An Attr in another namespace keeps the value the page set
 - The substituted value is a publishable SHA-384. It cannot remove a hash the page set on a resource that does not match
+
+---
+
+## ADR-023 — document.write uses the same integrity hash
+
+**Status:** Accepted
+**Date:** 2026-10-07 (Hamza approved `document.write` / `document.writeln`)
+
+### Context
+
+ADR-016 through ADR-022 rewrite `integrity` when page JavaScript inserts markup or writes an attribute. `document.write` and `document.writeln` are another path. The HTML parser inserts the concatenated string into the input stream. During parsing, a script in that string runs, and the parser copies `integrity` from the string onto the element. Those methods do not go through `innerHTML` or `createContextualFragment`. [document write steps](https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document-write-steps)
+
+The spec builds one string: each argument that is TrustedHTML contributes its data, and every other argument is converted to a string. `writeln` then appends U+000A. A tag split across string arguments is not a complete tag in any one argument, so rewriting each argument alone would leave the page's hash.
+
+The hash list is already in `<meta name="detour-sri">`. This slice does not add a second list or a second content script.
+
+### Decision
+
+- While the MAIN-world hook from ADR-015 is installed, wrap `Document.prototype.write` and `Document.prototype.writeln`
+- When every argument is a string, concatenate them with no separator, rewrite that string with the same tag scan as ADR-016, and call the original method with the one rewritten string. `writeln` still appends its line feed
+- On a script or stylesheet tag whose URL matches a snapshotted entry, set `integrity` to that `sha384-`. Leave every other hash in the string as written. Do not inject the meta tag into the written markup
+- When any argument is not a string, pass the original arguments through unchanged. Do not stringify TrustedHTML
+- A string with no `integrity`, an empty list, a missing meta, or a string longer than 2 MiB is left unchanged. The hook does not clear `integrity`
+- Do not hook `iframe` `srcdoc`. Do not change the implicit `document.open` that `document.write` performs after the document has finished loading
+
+### Consequences
+
+- A script inserted with `document.write` or `document.writeln` during parsing carries Detour's hash when its URL matches, and the browser can run the override. A sibling in that same string whose URL does not match keeps the page's hash and stays blocked
+- A call that mixes a string with TrustedHTML or any other non-string keeps every argument as the page passed it
+- The substituted value is a publishable SHA-384. It cannot remove a hash the page set on a resource that does not match
+- After the document has finished loading, `document.write` can still replace the document. This slice only rewrites the string that reaches the parser

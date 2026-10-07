@@ -26,6 +26,7 @@ Implementation plans live **only** here. Numbered `NNN-short-name.md`.
 | [019-sri-parse-html-unsafe.md](019-sri-parse-html-unsafe.md) | Done |
 | [020-sri-attribute-node.md](020-sri-attribute-node.md) | Done |
 | [021-sri-named-item.md](021-sri-named-item.md) | Done |
+| [022-sri-document-write.md](022-sri-document-write.md) | In progress |
 
 New plans only for **Approved** specs (`spec-workflow` gate).
 
