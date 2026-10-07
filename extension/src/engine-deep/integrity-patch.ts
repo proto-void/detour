@@ -156,6 +156,9 @@ export interface PatchRoot {
   Node: { prototype: object };
   Range?: { prototype: object };
   ShadowRoot?: { prototype: object };
+  /** Static `parseHTMLUnsafe`. Absent in a realm that does not implement it. */
+  Document?: object;
+  DOMParser?: { prototype: object };
 }
 
 const INSTALLED = Symbol.for('detour.sri.installed');
@@ -164,8 +167,10 @@ const INSTALLED = Symbol.for('detour.sri.installed');
  * MAIN-world hook. Substitutes a published hash when the page assigns `integrity`
  * to a matching script or stylesheet, and when that hash is carried in a string
  * passed to `innerHTML`, `outerHTML`, `ShadowRoot.innerHTML`, `insertAdjacentHTML`,
- * `createContextualFragment`, or `setHTMLUnsafe` (scripts on or off), and when
- * `setAttributeNS` sets HTML `integrity`. Other assignments are written through.
+ * `createContextualFragment`, `setHTMLUnsafe` (scripts on or off), or
+ * `Document.parseHTMLUnsafe`, and when `DOMParser.parseFromString` is `text/html`,
+ * and when `setAttributeNS` sets HTML `integrity`. Other assignments are written through.
+ * A node moved out of the parsed document carries that hash. Scripting on that document stays off.
  */
 export function installIntegrityPatch(root: PatchRoot): void {
   const marked = root as unknown as Record<symbol, boolean>;
@@ -308,6 +313,11 @@ export function installIntegrityPatch(root: PatchRoot): void {
   // setHTMLUnsafe fetches stylesheets even when scripts stay off. Options are forwarded unchanged.
   hookUnsafeHtml(root.Element.prototype, rewriteMarkupValue);
   hookUnsafeHtml(root.ShadowRoot?.prototype, rewriteMarkupValue);
+  // parseHTMLUnsafe creates a document with no browsing context, so scripting stays disabled.
+  // Options, including a sanitizer, are forwarded. Adoptees carry the rewritten attribute.
+  hookStaticMarkup(root.Document, 'parseHTMLUnsafe', rewriteMarkupValue);
+  // text/html is the same parse. XML types keep the page's hashes.
+  hookDomParserHtml(root.DOMParser?.prototype, rewriteMarkupValue);
 
   if (root.document.readyState && root.document.readyState !== 'loading') {
     snapshot();
@@ -476,6 +486,35 @@ function hookMarkupArgument(proto: object | undefined, name: 'createContextualFr
   try {
     (proto as Record<string, unknown>)[name] = function (this: object, html: unknown) {
       return native.call(this, rewrite(html));
+    };
+  } catch {
+    /* A non-configurable method leaves the page's markup unchanged. */
+  }
+}
+
+function hookStaticMarkup(ctor: object | undefined, name: 'parseHTMLUnsafe', rewrite: (value: unknown) => unknown) {
+  if (!ctor) return;
+  const desc = Object.getOwnPropertyDescriptor(ctor, name);
+  const native = desc?.value as ((this: unknown, html: unknown, ...rest: unknown[]) => unknown) | undefined;
+  if (typeof native !== 'function') return;
+  try {
+    (ctor as Record<string, unknown>)[name] = function (this: unknown, html: unknown, ...rest: unknown[]) {
+      return native.call(this, rewrite(html), ...rest);
+    };
+  } catch {
+    /* A non-configurable method leaves the page's markup unchanged. */
+  }
+}
+
+/** Only `text/html` shares the parseHTMLUnsafe adoption gap. Other types use the XML parser. */
+function hookDomParserHtml(proto: object | undefined, rewrite: (value: unknown) => unknown) {
+  if (!proto) return;
+  const desc = Object.getOwnPropertyDescriptor(proto, 'parseFromString');
+  const native = desc?.value as ((this: object, source: unknown, type: unknown) => unknown) | undefined;
+  if (typeof native !== 'function') return;
+  try {
+    (proto as { parseFromString: (source: unknown, type: unknown) => unknown }).parseFromString = function (this: object, source: unknown, type: unknown) {
+      return native.call(this, type === 'text/html' ? rewrite(source) : source, type);
     };
   } catch {
     /* A non-configurable method leaves the page's markup unchanged. */

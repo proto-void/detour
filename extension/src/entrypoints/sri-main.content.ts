@@ -7,8 +7,10 @@ const INSTALLED = Symbol.for('detour.sri');
  * Runs before page scripts so a bundler that sets `integrity`, copies it with
  * `setAttributeNS`, inserts a tag with `innerHTML` / `outerHTML` / a shadow
  * root's `innerHTML` / `insertAdjacentHTML`, or inserts markup that can run
- * scripts (`createContextualFragment`, `setHTMLUnsafe`), hits the hook. A stylesheet
- * in `setHTMLUnsafe` is rewritten even when that call does not run scripts.
+ * scripts (`createContextualFragment`, `setHTMLUnsafe`), or parses a string with
+ * `Document.parseHTMLUnsafe` or `DOMParser` (`text/html`), hits the hook. A stylesheet
+ * in `setHTMLUnsafe` is rewritten even when that call does not run scripts. Nodes
+ * moved out of a `parseHTMLUnsafe` document carry Detour's hash. Scripting there stays off.
  */
 export default defineContentScript({
   matches: ['<all_urls>'],
@@ -30,6 +32,8 @@ export default defineContentScript({
       Node,
       Range,
       ShadowRoot,
+      Document,
+      DOMParser,
     });
   },
 });

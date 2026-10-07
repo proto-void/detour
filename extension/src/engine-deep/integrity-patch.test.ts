@@ -145,6 +145,24 @@ function createRealm(initial: string | null) {
       return {};
     }
   }
+  class Document {
+    static html: unknown = undefined;
+    static options: unknown = undefined;
+    static parseHTMLUnsafe(html: unknown, options?: unknown) {
+      Document.html = html;
+      Document.options = options;
+      return { html, options };
+    }
+  }
+  class DOMParser {
+    html: unknown = undefined;
+    type: unknown = undefined;
+    parseFromString(source: unknown, type: unknown) {
+      this.html = source;
+      this.type = type;
+      return { html: source, type };
+    }
+  }
   class ShadowRoot {
     html: unknown = undefined;
     markup = '';
@@ -223,6 +241,8 @@ function createRealm(initial: string | null) {
     Node,
     Range,
     ShadowRoot,
+    Document,
+    DOMParser,
   };
   return {
     root: root as unknown as PatchRoot,
@@ -232,6 +252,8 @@ function createRealm(initial: string | null) {
     Node,
     Range,
     ShadowRoot,
+    Document,
+    DOMParser,
     fireObserver() {
       observer?.();
     },
@@ -534,5 +556,52 @@ describe('installIntegrityPatch', () => {
     pageHash.setAttributeNS(null, 'src', '/sri-ns.js');
     pageHash.setAttributeNS(null, 'integrity', BAD);
     expect(pageHash.getAttribute('integrity')).toBe(BAD);
+  });
+
+  it('rewrites integrity in parseHTMLUnsafe and leaves a sibling hash', async () => {
+    const hash = await integrityMetadata(encoder.encode('html{--sri-parse:local}'));
+    const realm = createRealm(encodePatchList([patch({ integrity: hash, resourceTypes: ['stylesheet'], match: { kind: 'glob', pattern: '*:8001/sri-parse.css' } })]));
+    installIntegrityPatch(realm.root);
+    const markup = `<link rel="stylesheet" href="/sri-parse.css" integrity="${BAD}"><link rel="stylesheet" href="/sri-parse-bad.css" integrity="${BAD}">`;
+    const options = { sanitizer: {} };
+    const parsed = realm.Document.parseHTMLUnsafe(markup, options);
+    expect(parsed.html).toContain(`href="/sri-parse.css" integrity="${hash}"`);
+    expect(parsed.html).toContain(`href="/sri-parse-bad.css" integrity="${BAD}"`);
+    expect(parsed.options).toBe(options);
+  });
+
+  it('passes a non-string to parseHTMLUnsafe and keeps the page hash without a list', () => {
+    const realm = createRealm(null);
+    installIntegrityPatch(realm.root);
+    const trusted = { toString: () => `<link rel="stylesheet" href="/sri-parse.css" integrity="${BAD}">` };
+    const parsed = realm.Document.parseHTMLUnsafe(trusted);
+    expect(parsed.html).toBe(trusted);
+    const plain = realm.Document.parseHTMLUnsafe(`<link rel="stylesheet" href="/sri-parse.css" integrity="${BAD}">`);
+    expect(String(plain.html)).toContain(`integrity="${BAD}"`);
+
+    const listed = createRealm(encodePatchList([patch({ resourceTypes: ['stylesheet'], match: { kind: 'glob', pattern: '*:8001/sri-parse.css' } })]));
+    installIntegrityPatch(listed.root);
+    const huge = listed.Document.parseHTMLUnsafe(`${'x'.repeat(MARKUP_BYTE_CAP)}<link rel="stylesheet" href="/sri-parse.css" integrity="${BAD}">`);
+    expect(String(huge.html)).toContain(`integrity="${BAD}"`);
+    expect(String(huge.html).startsWith('x'.repeat(32))).toBe(true);
+  });
+
+  it('rewrites DOMParser text/html and leaves an XML type unchanged', async () => {
+    const hash = await integrityMetadata(encoder.encode('html{--sri-parse:local}'));
+    const realm = createRealm(encodePatchList([patch({ integrity: hash, resourceTypes: ['stylesheet'], match: { kind: 'glob', pattern: '*:8001/sri-parse.css' } })]));
+    installIntegrityPatch(realm.root);
+    const markup = `<link rel="stylesheet" href="/sri-parse.css" integrity="${BAD}"><link rel="stylesheet" href="/sri-parse-bad.css" integrity="${BAD}">`;
+    const html = new realm.DOMParser().parseFromString(markup, 'text/html');
+    expect(html.html).toContain(`href="/sri-parse.css" integrity="${hash}"`);
+    expect(html.html).toContain(`href="/sri-parse-bad.css" integrity="${BAD}"`);
+
+    const xml = new realm.DOMParser().parseFromString(markup, 'application/xhtml+xml');
+    expect(xml.html).toBe(markup);
+    const svg = new realm.DOMParser().parseFromString(markup, 'image/svg+xml');
+    expect(svg.html).toBe(markup);
+
+    const trusted = { toString: () => markup };
+    const typed = new realm.DOMParser().parseFromString(trusted, 'text/html');
+    expect(typed.html).toBe(trusted);
   });
 });
