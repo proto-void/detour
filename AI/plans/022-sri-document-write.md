@@ -1,6 +1,6 @@
 # 022 — document.write integrity
 
-**Status:** In progress  
+**Status:** Done  
 **Date:** 2026-10-07  
 **Spec:** [engine-deep](../specs/engine-deep.md) — `document.write` / `document.writeln` Approved (Hamza, 2026-10-07)
 
@@ -23,11 +23,19 @@ The document rewrite (ADR-014) and the earlier MAIN-world hooks (ADR-015 through
 ## Tasks
 
 - [x] T1 Spec Approved, this plan, ADR-023
-- [ ] T2 Hook: `Document.prototype.write` and `writeln` rewrite matching `integrity` after string arguments are concatenated. A non-matching hash stays. A non-string call is passed through
-- [ ] T3 Rules-page copy: markup passed to `document.write` or `document.writeln` is covered
-- [ ] T4 Unit tests, typecheck, Chrome + Firefox builds
-- [ ] T5 Chrome e2e: `document.write` with a production integrity hash runs the override. A non-matching sibling stays blocked
-- [ ] T6 KB write-back
+- [x] T2 Hook: `Document.prototype.write` and `writeln` rewrite matching `integrity` after string arguments are concatenated. A non-matching hash stays. A non-string call is passed through
+- [x] T3 Rules-page copy: markup passed to `document.write` or `document.writeln` is covered
+- [x] T4 Unit tests, typecheck, Chrome + Firefox builds
+- [x] T5 Chrome e2e: `document.write` with a production integrity hash runs the override. A non-matching sibling stays blocked
+- [x] T6 KB write-back
+
+## Results (2026-10-07)
+
+- 395 extension tests; typecheck clean; chrome-mv3 and firefox-mv3 builds clean (`content-scripts/sri-main.js` in both)
+- Chrome for Testing 155: `pnpm e2e:chrome` 122/122. `*:8001/sri-write.js` ran `window.SRI_WRITE = "LOCAL"` after `document.write` with the production hash split across string arguments. The live `integrity` was the override SHA-384. A sibling inserted with `document.writeln` stayed blocked and kept the page's hash
+- A call that includes a non-string is passed through, so TrustedHTML is not stringified. `writeln` still appends its own line feed
+- Firefox document rewrite is unit-tested. BiDi still cannot open extension pages
+- Not pushed
 
 ## Out of scope
 
