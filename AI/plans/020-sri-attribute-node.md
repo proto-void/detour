@@ -1,6 +1,6 @@
 # 020 — setAttributeNode integrity
 
-**Status:** In progress  
+**Status:** Done  
 **Date:** 2026-10-07  
 **Spec:** [engine-deep](../specs/engine-deep.md) — `setAttributeNode` Approved (Hamza, 2026-10-07)
 
@@ -24,11 +24,18 @@ The document rewrite (ADR-014) and the earlier MAIN-world hooks (ADR-015 through
 ## Tasks
 
 - [x] T1 Spec Approved, this plan, ADR-021
-- [ ] T2 Hook: `setAttributeNode` and `setAttributeNodeNS` substitute HTML `integrity` on a matching script or stylesheet. A non-matching URL and a foreign namespace stay. `src` / `href` re-resolves
-- [ ] T3 Rules-page copy: moving an Attr that way is covered
-- [ ] T4 Unit tests, typecheck, Chrome + Firefox builds
-- [ ] T5 Chrome e2e: `setAttributeNode` with a production integrity hash runs the override. A non-matching sibling stays blocked
-- [ ] T6 KB write-back
+- [x] T2 Hook: `setAttributeNode` and `setAttributeNodeNS` substitute HTML `integrity` on a matching script or stylesheet. A non-matching URL and a foreign namespace stay. `src` / `href` re-resolves
+- [x] T3 Rules-page copy: moving an Attr that way is covered
+- [x] T4 Unit tests, typecheck, Chrome + Firefox builds
+- [x] T5 Chrome e2e: `setAttributeNode` with a production integrity hash runs the override. A non-matching sibling stays blocked
+- [x] T6 KB write-back
+
+## Results (2026-10-07)
+
+- 392 extension tests; typecheck clean; chrome-mv3 and firefox-mv3 builds clean (`content-scripts/sri-main.js` in both)
+- Chrome for Testing 155: `pnpm e2e:chrome` 111/111. `*:8001/sri-node.js` ran `window.SRI_NODE = "LOCAL"` after `setAttributeNode` with the production hash, set before `src`. The live `integrity` was the override SHA-384. A sibling set with `setAttributeNodeNS` stayed blocked and kept the page's hash
+- Firefox document rewrite is unit-tested. BiDi still cannot open extension pages
+- Not pushed
 
 ## Out of scope
 
