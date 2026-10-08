@@ -163,6 +163,8 @@ export interface PatchRoot {
   NamedNodeMap?: { prototype: object };
   /** `value`, `nodeValue`, and `textContent` live here. Absent when the realm has no Attr. */
   Attr?: { prototype: object };
+  /** `srcdoc` lives here. Absent when the realm has no iframe. */
+  HTMLIFrameElement?: { prototype: object };
 }
 
 const INSTALLED = Symbol.for('detour.sri.installed');
@@ -177,7 +179,8 @@ const INSTALLED = Symbol.for('detour.sri.installed');
  * `NamedNodeMap.setNamedItem`, or `setNamedItemNS` sets HTML `integrity`,
  * and when `Attr.value`, `nodeValue`, or `textContent` changes an integrity
  * Attr that is already on the element, and when `document.write` or
- * `document.writeln` is given markup. Other assignments are written through.
+ * `document.writeln` is given markup, and when an iframe's `srcdoc` is set.
+ * Other assignments are written through.
  * A node moved out of the parsed document carries that hash. Scripting on that document stays off.
  */
 export function installIntegrityPatch(root: PatchRoot): void {
@@ -211,6 +214,8 @@ export function installIntegrityPatch(root: PatchRoot): void {
     if (node instanceof root.HTMLLinkElement) return 'link';
     return undefined;
   };
+  const IframeCtor = root.HTMLIFrameElement as (abstract new (...args: never[]) => object) | undefined;
+  const isIframe = (node: object) => Boolean(IframeCtor && node instanceof IframeCtor);
   const readAttr = (node: object, name: string, override?: string): string => {
     if (override !== undefined) return override;
     const value = (node as AttrNode).getAttribute?.(name);
@@ -248,6 +253,10 @@ export function installIntegrityPatch(root: PatchRoot): void {
     (root.Element.prototype as { setAttribute: (name: string, value: string) => void }).setAttribute = function (this: object, name: string, value: string) {
       const tag = tagOf(this);
       const lower = String(name).toLowerCase();
+      if (!applying && !adopting && isIframe(this) && lower === 'srcdoc') {
+        const next = rewriteMarkupValue(value);
+        return nativeSetAttribute.call(this, name, typeof next === 'string' ? next : value);
+      }
       if (!applying && !adopting && tag && lower === 'integrity') {
         remembered.set(this, String(value));
         apply(this);
@@ -272,6 +281,10 @@ export function installIntegrityPatch(root: PatchRoot): void {
     ) {
       const tag = tagOf(this);
       const local = htmlUrlAttribute(name);
+      if (!applying && !adopting && isIframe(this) && isHtmlNamespace(namespace) && isSrcdocName(name)) {
+        const next = rewriteMarkupValue(value);
+        return nativeSetAttributeNS.call(this, namespace, name, typeof next === 'string' ? next : value);
+      }
       if (!applying && !adopting && tag && isHtmlNamespace(namespace) && local === 'integrity') {
         remembered.set(this, String(value));
         apply(this);
@@ -486,6 +499,9 @@ export function installIntegrityPatch(root: PatchRoot): void {
   // String arguments are one markup string. A non-string, including TrustedHTML, is not stringified.
   hookDocumentWrite(root.Document, 'write', rewriteMarkupValue);
   hookDocumentWrite(root.Document, 'writeln', rewriteMarkupValue);
+  // srcdoc is parsed as the frame's document. The frame's parser copies integrity
+  // before a content script there can change it, so the string is rewritten here.
+  hookSrcdoc(root.HTMLIFrameElement?.prototype, rewriteMarkupValue);
 
   if (root.document.readyState && root.document.readyState !== 'loading') {
     snapshot();
@@ -707,6 +723,11 @@ function describeMovedAttr(attr: unknown): { namespace: unknown; local: string; 
   }
 }
 
+/** HTML `srcdoc`, with an optional prefix. A foreign namespace is decided by the caller. */
+function isSrcdocName(qualifiedName: unknown): boolean {
+  return typeof qualifiedName === 'string' && /^(?:[A-Za-z_][\w.-]*:)?srcdoc$/i.test(qualifiedName);
+}
+
 /** `integrity`, `src`, or `href`, with an optional prefix. Other names stay with the browser. */
 function htmlUrlAttribute(qualifiedName: unknown): 'integrity' | 'src' | 'href' | undefined {
   if (typeof qualifiedName !== 'string') return undefined;
@@ -714,6 +735,31 @@ function htmlUrlAttribute(qualifiedName: unknown): 'integrity' | 'src' | 'href' 
   const local = match?.[1]?.toLowerCase();
   if (local === 'integrity' || local === 'src' || local === 'href') return local;
   return undefined;
+}
+
+/**
+ * `srcdoc` is parsed as the frame's document. A string is rewritten first.
+ * A non-string, including TrustedHTML, is passed to the original setter.
+ */
+function hookSrcdoc(proto: object | undefined, rewrite: (value: unknown) => unknown) {
+  if (!proto) return;
+  const desc = Object.getOwnPropertyDescriptor(proto, 'srcdoc');
+  if (!desc?.set || !desc.get) return;
+  const nativeSet = desc.set;
+  try {
+    Object.defineProperty(proto, 'srcdoc', {
+      configurable: true,
+      enumerable: desc.enumerable ?? true,
+      get() {
+        return desc.get!.call(this);
+      },
+      set(value: unknown) {
+        nativeSet.call(this, typeof value === 'string' ? rewrite(value) : value);
+      },
+    });
+  } catch {
+    /* setAttribute still covers the content attribute. */
+  }
 }
 
 function hookMarkupSetter(proto: object | undefined, name: 'innerHTML' | 'outerHTML', rewrite: (value: unknown) => unknown) {

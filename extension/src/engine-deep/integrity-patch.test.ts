@@ -281,6 +281,16 @@ function createRealm(initial: string | null) {
       this.options = options;
     }
   }
+  class HTMLIFrameElement extends Element {
+    assigned: unknown = undefined;
+    get srcdoc() {
+      return this.getAttribute('srcdoc') ?? '';
+    }
+    set srcdoc(value: unknown) {
+      this.assigned = value;
+      if (typeof value === 'string') this.setAttribute('srcdoc', value);
+    }
+  }
   class HTMLScriptElement extends Element {
     get integrity() {
       return this.getAttribute('integrity') ?? '';
@@ -348,6 +358,7 @@ function createRealm(initial: string | null) {
     DOMParser,
     NamedNodeMap,
     Attr,
+    HTMLIFrameElement,
   };
   return {
     root: root as unknown as PatchRoot,
@@ -361,6 +372,7 @@ function createRealm(initial: string | null) {
     DOMParser,
     NamedNodeMap,
     Attr,
+    HTMLIFrameElement,
     fireObserver() {
       observer?.();
     },
@@ -936,5 +948,57 @@ describe('installIntegrityPatch', () => {
     expect(huge.newline).toBe(true);
     expect(String(huge.parts[0])).toContain(`integrity="${BAD}"`);
     expect(String(huge.parts[0]).startsWith('x'.repeat(32))).toBe(true);
+  });
+
+  it('rewrites integrity in iframe srcdoc and leaves a sibling hash', async () => {
+    const hash = await integrityMetadata(encoder.encode('window.SRI_SRCDOC = "LOCAL";'));
+    const realm = createRealm(encodePatchList([patch({ integrity: hash, match: { kind: 'glob', pattern: '*:8001/sri-srcdoc.js' } })]));
+    installIntegrityPatch(realm.root);
+    const markup = `<script src="/sri-srcdoc.js" integrity="${BAD}"></script><script src="/sri-srcdoc-bad.js" integrity="${BAD}"></script>`;
+    const frame = new realm.HTMLIFrameElement();
+    frame.srcdoc = markup;
+    expect(frame.getAttribute('srcdoc')).toContain(`src="/sri-srcdoc.js" integrity="${hash}"`);
+    expect(frame.getAttribute('srcdoc')).toContain(`src="/sri-srcdoc-bad.js" integrity="${BAD}"`);
+
+    const viaAttr = new realm.HTMLIFrameElement();
+    viaAttr.setAttribute('srcdoc', markup);
+    expect(viaAttr.getAttribute('srcdoc')).toContain(`integrity="${hash}"`);
+    expect(viaAttr.getAttribute('srcdoc')).toContain(`src="/sri-srcdoc-bad.js" integrity="${BAD}"`);
+
+    const viaNs = new realm.HTMLIFrameElement();
+    viaNs.setAttributeNS(null, 'srcdoc', markup);
+    expect(viaNs.getAttribute('srcdoc')).toContain(`integrity="${hash}"`);
+    const prefixed = new realm.HTMLIFrameElement();
+    prefixed.setAttributeNS('http://www.w3.org/1999/xhtml', 'x:srcdoc', markup);
+    expect(prefixed.getAttribute('x:srcdoc')).toContain(`integrity="${hash}"`);
+
+    const foreign = new realm.HTMLIFrameElement();
+    foreign.setAttributeNS('http://www.w3.org/2000/svg', 'srcdoc', markup);
+    expect(foreign.getAttribute('srcdoc')).toBe(markup);
+
+    const div = new realm.Element();
+    div.setAttribute('srcdoc', markup);
+    expect(div.getAttribute('srcdoc')).toBe(markup);
+  });
+
+  it('passes a non-string through iframe srcdoc and keeps the page hash without a list', () => {
+    const realm = createRealm(null);
+    installIntegrityPatch(realm.root);
+    const trusted = { toString: () => `<script src="/sri-srcdoc.js" integrity="${BAD}"></script>` };
+    const frame = new realm.HTMLIFrameElement();
+    frame.srcdoc = trusted;
+    expect(frame.assigned).toBe(trusted);
+    expect(frame.getAttribute('srcdoc')).toBeNull();
+
+    const plain = new realm.HTMLIFrameElement();
+    plain.setAttribute('srcdoc', `<script src="/sri-srcdoc.js" integrity="${BAD}"></script>`);
+    expect(plain.getAttribute('srcdoc')).toContain(`integrity="${BAD}"`);
+
+    const listed = createRealm(encodePatchList([patch({ match: { kind: 'glob', pattern: '*:8001/sri-srcdoc.js' } })]));
+    installIntegrityPatch(listed.root);
+    const huge = new listed.HTMLIFrameElement();
+    huge.srcdoc = `${'x'.repeat(MARKUP_BYTE_CAP)}<script src="/sri-srcdoc.js" integrity="${BAD}"></script>`;
+    expect(String(huge.getAttribute('srcdoc'))).toContain(`integrity="${BAD}"`);
+    expect(String(huge.getAttribute('srcdoc')).startsWith('x'.repeat(32))).toBe(true);
   });
 });
