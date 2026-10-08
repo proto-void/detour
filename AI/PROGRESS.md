@@ -1,6 +1,6 @@
 # Progress
 
-**Last verified:** 2026-10-07
+**Last verified:** 2026-10-08
 
 ## Done
 
@@ -39,12 +39,12 @@
 - [x] **setAttributeNode** Approved (Hamza, 2026-10-07) and built (plan 020, ADR-021): the same hook substitutes Detour's SHA-384 when `setAttributeNode` or `setAttributeNodeNS` sets an HTML `integrity` Attr on a matching script or stylesheet link. A non-matching URL and a foreign namespace keep the page's value. Setting `src` or `href` that way re-resolves a hash already assigned. The hook does not clear hashes. 392 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 111/111 on Chrome for Testing 155 (`setAttributeNode` runs the override and the live attribute is the override hash; a `setAttributeNodeNS` sibling stays blocked and keeps the page's hash). Firefox document path is unit-tested. Not pushed
 - [x] **setNamedItem and Attr.value** Approved (Hamza, 2026-10-07) and built (plan 021, ADR-022): the same hook substitutes Detour's SHA-384 when `NamedNodeMap.setNamedItem` or `setNamedItemNS` adopts an HTML `integrity` Attr onto a matching script or stylesheet. Once that Attr is already on the element, a write to `value`, `nodeValue`, or `textContent` is rewritten the same way. An Attr that is not attached yet keeps the page's string. A non-matching URL and a foreign namespace stay. The hook does not clear hashes. Chrome keeps `nodeValue` and `textContent` on `Node.prototype`; those setters run only for an Attr. 393 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 117/117 on Chrome for Testing 155 (`setNamedItem` runs the override, a later `Attr.value` write keeps the override hash, a `setNamedItemNS` sibling stays blocked). Firefox document path is unit-tested. Not pushed
 - [x] **document.write / document.writeln** Approved (Hamza, 2026-10-07) and built (plan 022, ADR-023): the same hook rewrites `integrity` in markup passed to `Document.prototype.write` or `writeln`. String arguments are concatenated first, so a tag split across them is still rewritten. `writeln` still appends its newline. A call that includes a non-string is passed through. Other hashes stay. The hook does not clear hashes. 395 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 122/122 on Chrome for Testing 155 (`document.write` with a production hash split across arguments runs the override, a `document.writeln` sibling stays blocked and keeps the page's hash). Firefox document path is unit-tested. Not pushed
+- [x] **iframe srcdoc** Approved (Hamza, 2026-10-07) and built (plan 023, ADR-024): the same hook rewrites `integrity` in a string assigned to `HTMLIFrameElement.srcdoc`, or passed to `setAttribute` / `setAttributeNS` as HTML `srcdoc` on an iframe, before the frame parses it. Other hashes stay. A non-string is passed through. `srcdoc` on any other element, and `srcdoc` in another namespace, stays. The hook does not change `sandbox`. 397 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 127/127 on Chrome for Testing 155 (`srcdoc` with a production hash runs the override inside the frame, a sibling in that string stays blocked and keeps the page's hash). Firefox document path is unit-tested. Not pushed
 
 ## Next
 
-1. Plan 023 — `iframe` `srcdoc` integrity (Approved, Hamza 2026-10-07). Implementing
-2. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
-3. npm publish of `@detour/cli` is still out of scope
+1. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
+2. npm publish of `@detour/cli` is still out of scope
 
 ## Open questions (not blocking)
 

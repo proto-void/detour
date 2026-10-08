@@ -1,7 +1,7 @@
 # 023 — iframe srcdoc integrity
 
-**Status:** In progress  
-**Date:** 2026-10-07  
+**Status:** Done  
+**Date:** 2026-10-08  
 **Spec:** [engine-deep](../specs/engine-deep.md) — `iframe` `srcdoc` Approved (Hamza, 2026-10-07)
 
 ## Goal
@@ -24,11 +24,20 @@ The document rewrite (ADR-014) and the earlier MAIN-world hooks (ADR-015 through
 ## Tasks
 
 - [x] T1 Spec Approved, this plan, ADR-024
-- [ ] T2 Hook: `HTMLIFrameElement.srcdoc`, `setAttribute('srcdoc')`, and `setAttributeNS` for HTML `srcdoc` rewrite matching `integrity`. A non-matching hash stays. A non-string is passed through
-- [ ] T3 Rules-page copy: an iframe `srcdoc` string is covered
-- [ ] T4 Unit tests, typecheck, Chrome + Firefox builds
-- [ ] T5 Chrome e2e: an iframe `srcdoc` with a production integrity hash runs the override inside the frame. A non-matching sibling stays blocked
-- [ ] T6 KB write-back
+- [x] T2 Hook: `HTMLIFrameElement.srcdoc`, `setAttribute('srcdoc')`, and `setAttributeNS` for HTML `srcdoc` rewrite matching `integrity`. A non-matching hash stays. A non-string is passed through
+- [x] T3 Rules-page copy: an iframe `srcdoc` string is covered
+- [x] T4 Unit tests, typecheck, Chrome + Firefox builds
+- [x] T5 Chrome e2e: an iframe `srcdoc` with a production integrity hash runs the override inside the frame. A non-matching sibling stays blocked
+- [x] T6 KB write-back
+
+## Results (2026-10-08)
+
+- 397 extension tests; typecheck clean; chrome-mv3 and firefox-mv3 builds clean (`content-scripts/sri-main.js` in both)
+- Chrome for Testing 155: `pnpm e2e:chrome` 127/127. `*:8001/sri-srcdoc.js` ran `window.SRI_SRCDOC = "LOCAL"` inside the frame after the page set `iframe.srcdoc` with the production hash. The live `integrity` was the override SHA-384. A sibling in that string stayed blocked and kept the page's hash
+- A non-string assigned to `srcdoc` is passed through, so TrustedHTML is not stringified. `srcdoc` on an element that is not an iframe, and `srcdoc` in another namespace, stays as written
+- A `sandbox` without `allow-scripts` still blocks scripts in the frame. This slice does not change sandbox flags
+- Firefox document rewrite is unit-tested. BiDi still cannot open extension pages
+- Not pushed
 
 ## Out of scope
 

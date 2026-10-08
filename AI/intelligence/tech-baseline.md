@@ -1,6 +1,6 @@
 # Tech baseline
 
-**Last verified:** 2026-10-07
+**Last verified:** 2026-10-08
 
 ## Locked (ADR-001)
 
@@ -36,7 +36,7 @@
 - Node **24** (`.node-version`). CI installs pnpm 12.9.1 with `pnpm/action-setup` so it matches `packageManager` without Corepack’s signature check
 - Output: `extension/.output/{chrome-mv3,firefox-mv3}/` (gitignored, as are `.wxt/` and `node_modules/`)
 - Zips (also gitignored): `detour-<version>-chrome.zip`, `detour-<version>-firefox.zip`, `detour-<version>-sources.zip`. `zip.name` is `detour` so the scoped package name is not collapsed to `detourextension`
-- E2E: `pnpm build && CHROME=/path/to/chrome pnpm e2e:chrome` from `extension/`. puppeteer-core `launch({ pipe: true, enableExtensions: true })` + `installExtension`. When `CI` is set, args add `--no-sandbox`, `--disable-dev-shm-usage`, `--disable-gpu`. Chrome for Testing 155 stable, 2026-10-07: 122/122, including one script served by `@detour/cli` on port 8099, a stylesheet inserted by `setHTMLUnsafe` with scripts off, a stylesheet parsed by `Document.parseHTMLUnsafe` then adopted into the live document, a script whose `integrity` Attr was moved with `setAttributeNode`, a script whose `integrity` Attr was adopted with `setNamedItem` and then written again through `Attr.value`, and a script inserted by `document.write` whose production hash was split across arguments
+- E2E: `pnpm build && CHROME=/path/to/chrome pnpm e2e:chrome` from `extension/`. puppeteer-core `launch({ pipe: true, enableExtensions: true })` + `installExtension`. When `CI` is set, args add `--no-sandbox`, `--disable-dev-shm-usage`, `--disable-gpu`. Chrome for Testing 155 stable, 2026-10-08: 127/127, including one script served by `@detour/cli` on port 8099, a stylesheet inserted by `setHTMLUnsafe` with scripts off, a stylesheet parsed by `Document.parseHTMLUnsafe` then adopted into the live document, a script whose `integrity` Attr was moved with `setAttributeNode`, a script whose `integrity` Attr was adopted with `setNamedItem` and then written again through `Attr.value`, a script inserted by `document.write` whose production hash was split across arguments, and a script in an iframe `srcdoc` whose production hash was rewritten before the frame parsed it
 - **CLI:** `@detour/cli`. Node 24 runs `cli/src/cli.ts` with type stripping (`node --experimental-strip-types`, or `pnpm --filter @detour/cli exec detour bridge <folder>`). Tests are `node --test`. Default port 47321. No npm publish
 - CI: `.github/workflows/ci.yml` on pull requests, `main`, and `v*` tags. The tag job attaches the three zips to a GitHub Release with `github.token`. No store API secrets. No remote in the workspace yet, so the workflow has not run on GitHub
 
