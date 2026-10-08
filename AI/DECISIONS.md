@@ -599,7 +599,7 @@ The hash list is already in `<meta name="detour-sri">`. This slice does not add 
 - When `ownerElement` is null, pass the write through. The adopt hooks see that stored value later
 - A non-matching URL, a foreign namespace, and any other local name are passed through. Assigning an attached `src` or `href` Attr re-resolves a hash already assigned
 - Write a new value only when it is a publishable SHA-384. The page's string is never replaced with an empty string
-- Do not hook `document.write`, `document.writeln`, or `iframe` `srcdoc`. Amended 2026-10-07 by [ADR-023](#adr-023--documentwrite-uses-the-same-integrity-hash): `document.write` and `document.writeln` are hooked. `iframe` `srcdoc` stays unhooked
+- Do not hook `document.write`, `document.writeln`, or `iframe` `srcdoc`. Amended 2026-10-07 by [ADR-023](#adr-023--documentwrite-uses-the-same-integrity-hash): `document.write` and `document.writeln` are hooked. Amended the same day by [ADR-024](#adr-024--iframesrcdoc-uses-the-same-integrity-hash): `iframe` `srcdoc` is hooked
 
 ### Consequences
 
@@ -630,7 +630,7 @@ The hash list is already in `<meta name="detour-sri">`. This slice does not add 
 - On a script or stylesheet tag whose URL matches a snapshotted entry, set `integrity` to that `sha384-`. Leave every other hash in the string as written. Do not inject the meta tag into the written markup
 - When any argument is not a string, pass the original arguments through unchanged. Do not stringify TrustedHTML
 - A string with no `integrity`, an empty list, a missing meta, or a string longer than 2 MiB is left unchanged. The hook does not clear `integrity`
-- Do not hook `iframe` `srcdoc`. Do not change the implicit `document.open` that `document.write` performs after the document has finished loading
+- Do not hook `iframe` `srcdoc`. Amended 2026-10-07 by [ADR-024](#adr-024--iframesrcdoc-uses-the-same-integrity-hash): `iframe` `srcdoc` is hooked. Do not change the implicit `document.open` that `document.write` performs after the document has finished loading
 
 ### Consequences
 
@@ -638,3 +638,34 @@ The hash list is already in `<meta name="detour-sri">`. This slice does not add 
 - A call that mixes a string with TrustedHTML or any other non-string keeps every argument as the page passed it
 - The substituted value is a publishable SHA-384. It cannot remove a hash the page set on a resource that does not match
 - After the document has finished loading, `document.write` can still replace the document. This slice only rewrites the string that reaches the parser
+
+---
+
+## ADR-024 — iframe srcdoc uses the same integrity hash
+
+**Status:** Accepted  
+**Date:** 2026-10-07 (Hamza approved `iframe` `srcdoc`)
+
+### Context
+
+ADR-016 through ADR-023 rewrite `integrity` when page JavaScript inserts markup or writes an attribute on the same document. An iframe `srcdoc` string is parsed as a separate document. Those hooks never see it. The frame's HTML parser copies `integrity` onto the request when it prepares a script, before a content script in that frame can change the attribute. [srcdoc](https://html.spec.whatwg.org/multipage/iframe-embed-object.html#attr-iframe-srcdoc)
+
+`HTMLIFrameElement.srcdoc` reflects the content attribute. `setAttribute` and `setAttributeNS` can set that attribute without going through the other markup hooks. A relative URL in the srcdoc document resolves against the document that set `srcdoc`.
+
+The hash list is already in the parent's `<meta name="detour-sri">`. This slice does not add a second list, a second content script, or a meta tag inside the srcdoc string.
+
+### Decision
+
+- While the MAIN-world hook from ADR-015 is installed, wrap `HTMLIFrameElement.srcdoc`
+- When the assigned value is a string, rewrite it with the same tag scan as ADR-016, then call the original setter. On a script or stylesheet tag whose URL matches a snapshotted entry, set `integrity` to that `sha384-`. Leave every other hash in the string as written
+- Wrap `Element.setAttribute` and `Element.setAttributeNS` when the receiver is an iframe and the attribute is HTML `srcdoc` (namespace null, empty, or `http://www.w3.org/1999/xhtml`, including a prefixed name). Rewrite a string the same way. `srcdoc` on any other element, and `srcdoc` in any other namespace, is passed through
+- When the value is not a string, pass it through unchanged. Do not stringify TrustedHTML
+- A string with no `integrity`, an empty list, a missing meta, or a string longer than 2 MiB is left unchanged. The hook does not clear `integrity`
+- Do not change `sandbox`. Do not inject the hash-list meta into the srcdoc string
+
+### Consequences
+
+- A script in an iframe `srcdoc` string carries Detour's hash when its URL matches, and the browser can run the override inside that frame. A sibling in that same string whose URL does not match keeps the page's hash and stays blocked
+- A `sandbox` without `allow-scripts` still blocks scripts in the frame. Without `allow-same-origin` the frame's origin is opaque. The rewrite still happens in the parent, before the child parses the string
+- A value that is not a string keeps the value the page passed
+- The substituted value is a publishable SHA-384. It cannot remove a hash the page set on a resource that does not match
