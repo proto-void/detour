@@ -63,6 +63,8 @@ const sriNamedProd = 'window.SRI_NAMED = "PROD";';
 const sriNamedBad = 'window.SRI_NAMED_BAD = "NO";';
 const sriWriteProd = 'window.SRI_WRITE = "PROD";';
 const sriWriteBad = 'window.SRI_WRITE_BAD = "NO";';
+const sriSrcdocProd = 'window.SRI_SRCDOC = "PROD";';
+const sriSrcdocBad = 'window.SRI_SRCDOC_BAD = "NO";';
 const page = html('<!doctype html><title>t</title><script src="/a.js"></script><script src="/b.js"></script><script src="/c.js"></script>');
 
 const prod = await serve(8001, {
@@ -254,6 +256,15 @@ document.writeln('<script src="/sri-write-bad.js" integrity="' + bad + '" crosso
 </script>`),
   '/sri-write.js': js(sriWriteProd),
   '/sri-write-bad.js': js(sriWriteBad),
+  // srcdoc is parsed inside the frame, so the parent markup hooks never see that string.
+  '/sri-srcdoc.html': html(`<!doctype html><title>sri-srcdoc</title><body><script>
+var bad = 'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+var frame = document.createElement('iframe');
+frame.srcdoc = '<script src="/sri-srcdoc.js" integrity="${sha384(sriSrcdocProd)}" crossorigin="anonymous"><' + '/script><script src="/sri-srcdoc-bad.js" integrity="' + bad + '" crossorigin="anonymous"><' + '/script>';
+document.body.appendChild(frame);
+</script>`),
+  '/sri-srcdoc.js': js(sriSrcdocProd),
+  '/sri-srcdoc-bad.js': js(sriSrcdocBad),
 });
 const local = await serve(8002, {
   '/a.js': js('window.A = "LOCAL";'),
@@ -744,6 +755,7 @@ try {
   check('body editor says setAttributeNode integrity is updated', (await editorText()).includes('setAttributeNode'), true);
   check('body editor says setNamedItem integrity is updated', (await editorText()).includes('setNamedItem'), true);
   check('body editor says document.write integrity is updated', (await editorText()).includes('document.write'), true);
+  check('body editor says iframe srcdoc integrity is updated', (await editorText()).includes('srcdoc'), true);
 
   shieldPaths.push('/body.html');
   const workerTarget = await browser.waitForTarget((t) => t.type() === 'service_worker' && t.url().includes(id), { timeout: 10000 });
@@ -1299,6 +1311,63 @@ try {
   check('document.write matching hash is the override', sriWritePage.integrity, sha384('window.SRI_WRITE = "LOCAL";'));
   check('sibling written with document.writeln stays blocked', sriWritePage.SRI_WRITE_BAD, undefined);
   check('sibling hash written with document.writeln stays', sriWritePage.sibling, badIntegrity);
+  shieldPaths.length = 0;
+
+  const sriSrcdocRule = await addPageRule(sriGroup, '*:8001/sri-srcdoc.js', 'overrideBody');
+  await typeCode(sriSrcdocRule, 'window.SRI_SRCDOC = "LOCAL";');
+  await saveAndSettle();
+  await waitStatus(sriSrcdocRule, 'Applied');
+  shieldPaths.length = 0;
+  shieldPaths.push('/sri-srcdoc.html');
+  const sriSrcdocPage = await sriWorker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () =>
+        new Promise((resolve) => {
+          const started = Date.now();
+          const tick = () => {
+            const frame = document.querySelector('iframe');
+            const child = frame && frame.contentDocument;
+            const win = frame && frame.contentWindow;
+            const matched = child && child.querySelector('script[src="/sri-srcdoc.js"]');
+            const sibling = child && child.querySelector('script[src="/sri-srcdoc-bad.js"]');
+            const value = {
+              SRI_SRCDOC: win ? win.SRI_SRCDOC : undefined,
+              SRI_SRCDOC_BAD: win ? win.SRI_SRCDOC_BAD : undefined,
+              integrity: matched ? matched.getAttribute('integrity') : '',
+              sibling: sibling ? sibling.getAttribute('integrity') : '',
+            };
+            if (value.SRI_SRCDOC !== undefined || Date.now() - started > 3000) resolve(value);
+            else setTimeout(tick, 50);
+          };
+          tick();
+        }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/sri-srcdoc.html');
+  check('iframe srcdoc with a production integrity hash runs the override', sriSrcdocPage.SRI_SRCDOC, 'LOCAL');
+  check('iframe srcdoc matching hash is the override', sriSrcdocPage.integrity, sha384('window.SRI_SRCDOC = "LOCAL";'));
+  check('sibling in iframe srcdoc stays blocked', sriSrcdocPage.SRI_SRCDOC_BAD, undefined);
+  check('sibling hash in iframe srcdoc stays', sriSrcdocPage.sibling, badIntegrity);
   shieldPaths.length = 0;
 
   // Local Bridge: consent is already on, so serveLocal is fulfilled in place (the URL stays on port 8001).
