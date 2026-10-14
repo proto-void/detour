@@ -13,16 +13,19 @@ This file is the Phase 2 checklist. **You must capture screenshots and click Sub
 |------|--------|
 | **Zip path** | `/Users/hamzakhan/Resource Override/extension/.output/detour/detour-0.1.0-chrome.zip` |
 | **Version** | `0.1.0` |
-| **Size** | ~460 KB (`471289` bytes) |
+| **Size** | ~460 KB (`470940` bytes) |
 | **Store icon 128×128** | Inside zip at `icons/128.png` (also `extension/.output/detour/chrome-mv3/icons/128.png`) |
 | **Privacy policy** | https://detour.protovoid.com/privacy/ — **HTTP 200** |
 | **Homepage** | https://detour.protovoid.com/ |
 | **Source** | https://github.com/proto-void/detour |
 
+**CWS rejects packages that include manifest `key`.** `pnpm zip` sets `DETOUR_OMIT_CHROMIUM_MANIFEST_KEY=1` so the store zip has no `key`; local `pnpm build` / `pnpm dev` still keep it for a stable unpacked id (ADR-029).
+
 Rebuild only if extension source changed after the zip:
 
 ```bash
 cd "/Users/hamzakhan/Resource Override/extension" && corepack pnpm zip
+# Confirm: unzip -p .output/detour/detour-0.1.0-chrome.zip manifest.json | grep -E '"key"' || echo "OK: no key"
 ```
 
 ---

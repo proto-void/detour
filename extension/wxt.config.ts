@@ -90,7 +90,12 @@ export default defineConfig({
     short_name: brand.shortName,
     description: brand.description,
     // Stable unpacked Chromium id (public key only — ADR-029). Omit on Firefox.
-    ...(browser !== 'firefox' && brand.chromiumManifestKey
+    // CWS rejects packages that include manifest `key` — strip for store zips
+    // (`pnpm zip` sets DETOUR_OMIT_CHROMIUM_MANIFEST_KEY=1). Keep for serve/build
+    // so local unpacked + OS packs retain a stable extension id.
+    ...(browser !== 'firefox' &&
+    brand.chromiumManifestKey &&
+    process.env.DETOUR_OMIT_CHROMIUM_MANIFEST_KEY !== '1'
       ? { key: brand.chromiumManifestKey }
       : {}),
     // auto-icons fills `icons`; also set action.default_icon so the toolbar
