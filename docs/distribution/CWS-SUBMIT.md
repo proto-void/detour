@@ -158,7 +158,7 @@ Product PNGs now live under `docs/distribution/store-assets/` (demo-safe `exampl
 
 | Order | File | Size | Caption |
 |------:|------|------|---------|
-| 1 | `popup.png` | **800×1280** ⚠️ | `Popup with Applied strip` |
+| 1 | `popup.png` | 2560×1800 | `Popup with Applied strip` |
 | 2 | `redirect.png` | 2560×1800 | `Redirect rules` |
 | 3 | `mock.png` | 2560×1800 | `Mock fetch / XHR` |
 | 4 | `log.png` | 2560×1800 | `On-device match log` |
@@ -166,7 +166,7 @@ Product PNGs now live under `docs/distribution/store-assets/` (demo-safe `exampl
 | — | `inject.png` | 2560×1800 | `Inject JS / CSS` (optional extra) |
 | — | `body.png` | 2560×1800 | `Replace response body` (optional extra) |
 
-**Before submit:** Confirm CWS still accepts your first screenshot size. `popup.png` is **below** the usual ≥1280×800 floor. If the dashboard rejects it, re-capture the popup at ≥1280×800 (or pad/composite on a dark Protovoid canvas) and keep it first.
+`popup.png` is the portrait capture padded onto a 2560×1800 Protovoid dark canvas (`popup-portrait-800x1280.png` is the original). Re-capture a true landscape popup later if you want a sharper first shot.
 
 ### If you need to re-capture manually
 
