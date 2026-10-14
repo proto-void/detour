@@ -7,15 +7,24 @@ Manual upload only. Build the zip first (`cd extension && corepack pnpm zip`), t
 | Asset | Spec | Source / notes |
 |-------|------|----------------|
 | **Store icon** | 128×128 PNG | From zip / build: `extension/.output/detour/.../icons/128.png` (auto-icons from `brands/detour/icon.svg`) |
-| **Small promo tile** | 440×280 | Optional but recommended; dark Protovoid canvas `#07060d` / `#0f0c1b`, Detour mark + wordmark, tagline “Point production at your code.” |
-| **Marquee promo tile** | 1400×560 | Optional; same brand system; keep text large and sparse |
+| **Small promo tile** | 440×280 | Optional; `promo-small-440x280.png` in this folder (skip for first CWS submit). Dark Protovoid `#07060d` / `#0f0c1b` + Detour wordmark |
+| **Marquee promo tile** | 1400×560 | Optional; `promo-marquee-1400x560.png` in this folder (skip for first CWS submit) |
 | **Screenshots** | ≥1280×800 (or store’s current min) | Capture from a real build — see below |
+
+## Files in this folder
+
+| File | Role |
+|------|------|
+| `popup.png`, `redirect.png`, `mock.png`, `log.png`, `headers.png`, `inject.png`, `body.png` | Product screenshots for CWS (and site) |
+| `promo-small-440x280.png`, `promo-marquee-1400x560.png` | Optional promo tiles — skip for first CWS submit |
+
+Paste-ready dashboard packet: [CWS-SUBMIT.md](../CWS-SUBMIT.md).
 
 ## Screenshot capture notes
 
 Load the unpacked Detour build (or release zip), then capture. Order matters for CTR: put the highest-intent shot first.
 
-1. **Popup + Applied strip** (first screenshot) — toolbar popup with Detour enabled, Applied/Refused strip visible, dark theme. Caption idea: `Popup with Applied strip`.
+1. **Popup + Applied strip** (first screenshot) — toolbar popup with Detour enabled, Applied/Refused strip visible, dark theme. Caption idea: `Popup with Applied strip`. Prefer ≥1280×800 for CWS (current `popup.png` is 800×1280 — re-capture if the dashboard rejects it).
 2. **Redirect rules** — options Rules tab with at least one group and one redirect rule open or listed. Caption idea: `Redirect rules`.
 3. **Mock fetch** (optional) — mock / API tester surface if it clearly shows stubbing. Caption idea: `Mock fetch / XHR`.
 4. **Recipes** (optional) — one recipe tile visible to show guided setup. Caption idea: `Recipes for localhost redirects`.

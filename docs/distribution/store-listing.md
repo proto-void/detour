@@ -47,6 +47,8 @@ Detour is a developer tools extension for rewriting requests and page resources 
 
 ## Chrome Web Store
 
+**Submit packet (paste-ready):** [CWS-SUBMIT.md](CWS-SUBMIT.md) — zip path, listing fields, permission justifications, screenshot checklist, and dashboard steps.
+
 1. `cd extension && corepack pnpm zip`
 2. Upload `extension/.output/detour-<version>-chrome.zip` in the [developer dashboard](https://chrome.google.com/webstore/devconsole).
 3. Paste the **title**, **short description**, and **detailed description** above.
