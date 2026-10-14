@@ -2,7 +2,7 @@
 
 Detour is free and MIT. CI and packaging use GitHub Actions on the free tier. There is no Detour server and no store API token in this repo.
 
-The installed extension name stays **Detour**. Store listings should use **Detour — Resource Override** so it is not confused with the unrelated Firefox proxy add-on. See [store-listing.md](store-listing.md), [permissions.md](permissions.md), and [privacy.md](privacy.md).
+The installed extension name is **Detour**. Store listings use **Detour** (short description clarifies resource overriding so it is not confused with the unrelated Firefox proxy add-on). See [store-listing.md](store-listing.md), [permissions.md](permissions.md), and [privacy.md](privacy.md).
 
 ## Run the same checks as CI
 
@@ -34,13 +34,54 @@ GitHub Actions sets `CI`, which makes the smoke test pass `--no-sandbox`, `--dis
 
 ## Packages
 
-`zip` and `zip:firefox` rebuild, then write into `extension/.output/` (gitignored):
+`zip` and `zip:firefox` rebuild, then write into `extension/.output/detour/` (gitignored):
 
 | File | Use |
 |------|-----|
-| `detour-<version>-chrome.zip` | Chrome Web Store and Edge Add-ons |
+| `detour-<version>-chrome.zip` | Chrome Web Store and Edge Add-ons (extension only; includes `README-load-unpacked.md`) |
 | `detour-<version>-firefox.zip` | Firefox AMO |
 | `detour-<version>-sources.zip` | AMO source upload (produced with the Firefox zip) |
+
+### OS packs (extension + Databases helper)
+
+Self-sufficient sideload packs (ADR-029). **Not** for store upload. CI builds Detour packs; local Rogers via `pack:os:rogers`.
+
+| File | Use |
+|------|-----|
+| `detour-<version>-windows-x64.zip` | Windows + SEA helper |
+| `detour-<version>-macos-arm64.zip` | Apple Silicon + SEA helper |
+| `detour-<version>-macos-x64.zip` | Intel Mac + SEA helper |
+| `detour-<version>-linux-x64.tar.gz` | Linux x64 + SEA helper |
+
+Local (current machine):
+
+```sh
+corepack pnpm --filter @detour/extension build
+corepack pnpm --filter @detour/cli sea:build
+corepack pnpm pack:os
+# → cli/.packs/detour-<ver>-<os>-<arch>.zip (or .tar.gz on Linux)
+```
+
+In-pack READMEs are generated from `cli/pack/templates/` (single source with the root README links).
+
+Internal Rogers flavor (local gitignored `brands/rogers/`; not for store upload):
+
+```sh
+corepack pnpm --filter @detour/extension zip:rogers
+# → extension/.output/rogers/rogers-<version>-chrome.zip
+```
+
+**QA sideload (Rogers Chrome zip):** send `rogers-<version>-chrome.zip` (extension only; includes `README-load-unpacked.md` and `load-unpacked-steps.jpg`). Recipient: unzip first (do not Load unpacked the `.zip`), then in Chrome:
+
+1. Open `chrome://extensions`
+2. Turn on **Developer mode** (top right)
+3. Click **Load unpacked**
+4. Select the **unzipped folder** that contains `manifest.json`
+
+See the annotated screenshot in the zip (`load-unpacked-steps.jpg`) or in `extension/public/`. For Databases, use a Rogers OS pack instead (Load unpacked → `extension/` inside the pack, then Install Helper).
+
+**Agent / local delivery DoD:** produce **both** Detour `zip` and Rogers `zip:rogers` unless Hamza asks for one flavor only (ADR-026).
+
 
 `<version>` is `extension/package.json` (`0.1.0` today). The root [LICENSE](../../LICENSE) is MIT. The sources zip excludes `node_modules`, tests, `.output`, `.wxt`, and secret-like files (`.env`, `*.pem`, `*.p12`).
 
@@ -55,10 +96,12 @@ GitHub Actions sets `CI`, which makes the smoke test pass `--no-sandbox`, `--dis
 5. Chrome for Testing stable, then `pnpm e2e:chrome`
 6. `pnpm zip` and `pnpm zip:firefox`
 7. Uploads the zips as the `detour-packages` artifact
+8. SEA matrix (`windows-x64`, `macos-arm64`, `macos-x64` via Intel runner, `linux-x64`): build, smoke `--version` / stdio ping / `install --dry-run`
+9. `os-packs` job assembles the four Detour OS packs
 
 Firefox UI smoke is not in CI. Firefox’s automation cannot open extension pages.
 
-A tag named `v*` (for example `v0.1.0`) also opens a GitHub Release and attaches those zips. Notes are generated from commits. Edit them using [release-notes.md](release-notes.md). The release uses the automatic `GITHUB_TOKEN` only.
+A tag named `v*` (for example `v0.1.0`) also opens a GitHub Release and attaches store zips **and** OS packs. Notes are generated from commits. Edit them using [release-notes.md](release-notes.md). The release uses the automatic `GITHUB_TOKEN` only.
 
 ```sh
 git tag v0.1.0
@@ -72,9 +115,11 @@ Do that only after `main` is on the remote and CI is green. This workspace does 
 There is no git remote until you add one. Example, after you create an empty GitHub repo:
 
 ```sh
-git remote add origin git@github.com:<owner>/<repo>.git
+git remote add origin git@github.com:proto-void/detour.git
 git push -u origin main
 ```
+
+Product site (privacy + marketing): [https://detour.protovoid.com](https://detour.protovoid.com). Chrome Web Store assets checklist: [store-assets/README.md](store-assets/README.md).
 
 Branch protection (require the CI check before merge) is a GitHub setting, not a file in this repo.
 

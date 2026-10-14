@@ -1,9 +1,10 @@
 # Progress
 
-**Last verified:** 2026-10-08
+**Last verified:** 2026-10-09
 
 ## Done
 
+- [x] **Root README overhaul** (user guide): collapsible `<details>` per tab/feature; contributor material collapsed at bottom; `cli/README.md` bridge wording aligned; README-sections convention in `AI/intelligence/conventions.md`; plan 025 docs DoD step; Databases Connect section updated for A–D
 - [x] Workspace git init + root agent entrypoints (`AGENTS.md`, `README.md`, ignores)
 - [x] Cursor thin rules + `.cursor/skills` → vendor skills
 - [x] addyosmani agent-skills pack installed (Flutter/Dart pruned)
@@ -40,11 +41,55 @@
 - [x] **setNamedItem and Attr.value** Approved (Hamza, 2026-10-07) and built (plan 021, ADR-022): the same hook substitutes Detour's SHA-384 when `NamedNodeMap.setNamedItem` or `setNamedItemNS` adopts an HTML `integrity` Attr onto a matching script or stylesheet. Once that Attr is already on the element, a write to `value`, `nodeValue`, or `textContent` is rewritten the same way. An Attr that is not attached yet keeps the page's string. A non-matching URL and a foreign namespace stay. The hook does not clear hashes. Chrome keeps `nodeValue` and `textContent` on `Node.prototype`; those setters run only for an Attr. 393 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 117/117 on Chrome for Testing 155 (`setNamedItem` runs the override, a later `Attr.value` write keeps the override hash, a `setNamedItemNS` sibling stays blocked). Firefox document path is unit-tested. Not pushed
 - [x] **document.write / document.writeln** Approved (Hamza, 2026-10-07) and built (plan 022, ADR-023): the same hook rewrites `integrity` in markup passed to `Document.prototype.write` or `writeln`. String arguments are concatenated first, so a tag split across them is still rewritten. `writeln` still appends its newline. A call that includes a non-string is passed through. Other hashes stay. The hook does not clear hashes. 395 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 122/122 on Chrome for Testing 155 (`document.write` with a production hash split across arguments runs the override, a `document.writeln` sibling stays blocked and keeps the page's hash). Firefox document path is unit-tested. Not pushed
 - [x] **iframe srcdoc** Approved (Hamza, 2026-10-07) and built (plan 023, ADR-024): the same hook rewrites `integrity` in a string assigned to `HTMLIFrameElement.srcdoc`, or passed to `setAttribute` / `setAttributeNS` as HTML `srcdoc` on an iframe, before the frame parses it. Other hashes stay. A non-string is passed through. `srcdoc` on any other element, and `srcdoc` in another namespace, stays. The hook does not change `sandbox`. 397 extension tests, typecheck clean, Chrome + Firefox builds clean, `pnpm e2e:chrome` 127/127 on Chrome for Testing 155 (`srcdoc` with a production hash runs the override inside the frame, a sibling in that string stays blocked and keeps the page's hash). Firefox document path is unit-tested. Not pushed
+- [x] **overrideBody redirect delivery** Approved (Hamza, 2026-10-08) and built (plan 024, ADR-025): `delivery` is `redirect` (default, DNR `data:` URL like RO 2.0) or `inPlace` (debugger / filter). RO `fileOverride` imports as redirect. Consent banner only for in-place. Editor Delivery select + consent-aware in-place CTA. 404 extension tests; typecheck clean; `pnpm e2e:chrome` 132/132 on Chrome for Testing 155 (redirect JSON without consent; in-place SRI series unchanged). Zip: `extension/.output/detour-0.1.0-chrome.zip`. Not pushed
+- [x] **Compact rule rows + redirect verifiability** (plan compact-rule-rows): Detour-native compact rows (ActionChip, RuleRow, Drawer), body/code in side drawer, denser GroupCard. Redirect delivery: 307 explainer, Preview data: URL, match log/tester truncate + "Body replaced (redirect)". 410 extension tests; typecheck clean; `pnpm e2e:chrome` 135/135 on Chrome for Testing 155. Zip: `extension/.output/detour-0.1.0-chrome.zip`. Not pushed
+- [x] **Autosave on options editor** (ADR-007 amended): default-on autosave after 1 s idle when valid; pause on invalid / changedElsewhere; flush on hide/unload; toast Saved/Applied + one-level Undo; Save now + Ctrl/Cmd+S; `autosaveDecision` + `AUTOSAVE_KEY`. 417 extension tests; typecheck clean; `pnpm e2e:chrome` 139/139 on Chrome for Testing 155. Zip: `extension/.output/detour-0.1.0-chrome.zip`. Not pushed
+
+- [x] **Options UI polish** (UX Pilot redesign): tokens (`--surface-2`, accent tint, status pills), header/status strip/tabs, filter toolbar, read-only rule rows + docked drawer, empty state, popup quick actions. 423 unit tests; `pnpm e2e:chrome` 139/139
+- [x] **Rogers brand flavor** (ADR-026): build-time `DETOUR_BRAND`; `brands/detour` + `_template` committed; `brands/rogers` gitignored; dual-zip DoD in `AGENTS.md`
+- [x] **Rogers display name = Detour** (ADR-026 amend): partner flavors keep manifest/UI name **Detour**; Rogers identity is tokens/icons/optional partner logo; zip slug `rogers`. Scrubbed store listing title and user-facing “Resource Override” product branding (legacy RO import IDs unchanged). Popup header/footer padding fix (Chrome scrollWidth overflow). Options idle save-state label **Autosave**
+- [x] **Options drawer clears sticky header**: docked rule drawer uses `--options-sticky-offset` from the sticky bar height; overlay drawers `z-index: 55`. Options header horizontal padding bumped. Rogers manifest name remains **Detour**.
+- [x] **Rule drawer action discoverability + tab pills**: middle tab always **Action** (was dynamically “Redirect”/…); ActionChip once in drawer head; section tabs live in drawer chrome; `align-content: start` stops full-height active pills on short Action/Test panels.
+- [x] **Drawer action discovery + tab pills**: action type via drawer-head `ActionChip` only (no second radiogroup on Action panel); redirect destination and action fields only on Action tab; Drawer `.body` uses `align-content: start` so Match/Action/Test pills stay compact.
+- [x] **Deduped action chips**: removed duplicate Action-panel chip row + “Action type” / “chip above” copy; single selector remains in drawer chrome.
+
+- [x] **Databases gates + Slice A** (2026-10-09): Spec **Approved** (Hamza); ADR-027; plan [026](plans/026-db-client.md). Cassandra host + Databases tab + README + dual zip
+- [x] **Databases Slices B–D** (2026-10-09): Relational + SSH; Mongo/Redis/ClickHouse/ES/OpenSearch/DynamoDB; ER/designer/compare/git sync/host-managed Local Bridge; `docker-compose.db.yml` + `DETOUR_DB_E2E`; SEA spike + CI `sea-db-host`; README; dual zip. Live container e2e needs Docker daemon
+- [x] **API Tester Slice A** (2026-10-09) — Spec Approved; ADR-028 (dual-scope Apply Detour). Multi-tabs, folder CRUD, CodeMirror, `{{var}}` highlight, sandbox+chai, passphrase encrypt UI
+- [x] **API Tester Slice B** (Approved Hamza “Continue B”, 2026-10-09) — plan [025](plans/025-api-client.md). Runner, load, schedules, codegen, diff, synergy, OpenAPI/HAR, docs
+- [x] **API Tester Slice C** (Approved Hamza “Continue C”, 2026-10-09) — plan [025](plans/025-api-client.md) **Done**. OAuth/PKCE/SigV4/Digest, cookie jar, GraphQL/WS/SSE, visualizer, folder sync, Send to API Tester. 515 unit; dual zip
+
+- [x] **OS packs (plan 028 / ADR-029)** (2026-10-09): distribution + db-client amendments Approved (Hamza “Go, approved”); SEA self-install; stable manifest `key`; `pack:os`; CI 4-target matrix + `os-packs`; setup card; dual zip + local `detour-0.1.0-macos-arm64.zip`
+- [x] **Closed partner helper — public-spec + public-hooks** (plan 029 / ADR-030, 2026-10-09): Hamza “Go and approved”; specs Approved; `DETOUR_BRAND_DIR`, `nativeHostName`, `hello`/capabilities, `DETOUR_DB_HOST_CMD`; 530 unit tests; dual zip
+- [x] **Closed partner helper — go-spike** (plan 029, 2026-10-09): private `~/rogers-detour` Go host (`rogers-db-host`) — NM framing, hello/ping, Chrome install/doctor, keychain, sqlite+postgres; `DETOUR_DB_HOST_CMD` contract hello green; built with `garble -literals -tiny`
+- [x] **Closed partner helper — ext-build + pack:all** (plan 029, 2026-10-09): private `brand/rogers` copied; `build:extension` + obfuscate + structural smoke; four `dist/rogers-0.1.0-*.zip` + `pack:verify` PASS (macos-x64 `--version` skip without Rosetta). Public status-only touch to plan 029 / this file
+- [x] **Closed partner helper — engine parity** (plan 029 Phase 2, 2026-10-09): private `helper-go` ports remaining engines + connection options (TLS/SSH/proxy); mapper table tests mirror public fixtures; `hello` advertises full `engine:*` set. Gaps: Astra bundle, Keyspaces SigV4 live, Oracle thick, entra-interactive
+
+- [x] **Databases helper UX** (2026-10-09): connectNative `needs_reload` panel + `isConnectNativeAvailable`; macOS pickFile activates System Events and distinguishes cancel (-128) vs failure; Browse shows cancel/error feedback; dual zip
+- [x] **TLS Key passphrase** (2026-10-09): verify-full Client key shows Key passphrase → OS keychain `:sslKeyPass` (host hydrates `tls.keyPassphrase`); no passphrase on CA/client cert; dual zip
+- [x] **Stale Rogers pack + Browse** (2026-10-09): root cause — `pack:all` re-zipped a staged extension from before `needs_reload`; Go helper lacked `pickFile`. Fixed: pack-all always rebuilds extension; Go `internal/pickfile` (Windows `-STA`+TopMost, macOS System Events, Linux zenity/kdialog); public Node pick-file STA/TopMost; refreshed `dist/detour-0.1.0-windows-x64.zip` + dual chrome zips
+- [x] **Browse still broken after staging load** (2026-10-09): installed `com.detour.db` binary lacked `pickFile` (Install Helper not re-run after pack rebuild). Fixed: capability/UI reinstall messaging; macOS NSOpenPanel + System Events fallback (Go + Node); README “re-run Install Helper”; rebuilt staging packs
+- [x] **pickFile Go↔Node contract + pack refresh** (2026-10-09): aligned `title`/`filters`, cancel→null, OS dialogs (NSOpenPanel / STA+TopMost / zenity|kdialog); rebuilt all four `dist/detour-0.1.0-*.zip` + staging with `internal/pickfile`; Browse still calls `pickFile`
+- [x] **Popup DB tile + tighter connection accordions** (2026-10-09): popup quick tile Recipes → **DB** (`#db`); `Icon` `db` cylinder; Databases modal `.section.adv` spacing tightened; dual zip
+- [x] **Go Cassandra TLS handshake** (2026-10-09): private helper `SSLFromConfig` for Cassandra + `tlsutil` passphrase PEM decrypt (postgres/mysql parity); SNI + incomplete-pair errors; unit tests green; refresh windows/macos-arm64 packs — Hamza re-run **Install Detour Helper**
+- [x] **SSL TablePlus UX** (plan 030, 2026-10-09): always-visible CA/cert/key under SSL; `inspectPemKey` RPC (Node + Go); passphrase modal only for encrypted client keys → `:sslKeyPass`; dual zip
+- [x] **TLS key-only / cert-only** (plan 030 amend, 2026-10-09): drop IncompletePair host gate (Go + Node); pass present material to driver; mode `disable` still ignores paths
+- [x] **Faster pickFile Browse** (plan 031, 2026-10-09): Windows Go `GetOpenFileNameW` in-process + public SEA sibling `detour-pickfile` (PowerShell fallback); macOS `osacompile` NSOpenPanel at Install Helper; Linux cached zenity/kdialog probe; RPC unchanged; helper/pack-only (no dual-zip)
+- [x] **Windows second Browse stuck** (2026-10-09): shared `browsing` never cleared when in-process `GetOpenFileNameW` hung behind Chrome. Fixed: host prefers sibling `detour-pickfile.exe` (Install builds it); STA/mutex in-process fallback; extension 90s timeout + Cancel…; dual zip + Windows extract + Mac install:helper:local
+- [x] **mac arm Browse broken after 031** (2026-10-09): Hamza’s Install Helper binary was **stale** (18:51; still had `delay 0.2`, no `pickfile-nsopen.scpt`) vs staging that already had 031 sources. Also fixed NSOpenPanel: activate NSApp before `runModal`, integer OK compare, Finder fallback; refreshed `pack:all` + `pack:verify` — **must re-run Install Detour Helper** from new macos-arm64 staging/zip
+- [x] **mac Browse non-key / clicks dismiss** (2026-10-09): Accessory osascript NSOpenPanel stayed non-key under Chrome. Durable fix: Install clang-builds Cocoa `detour-pickfile` (`nsopen.m`, Regular + `makeKeyAndOrderFront`); AppleScript fallback also Regular; Node mirror prefers sibling binary; pack:all + pack:verify — **re-run Install Detour Helper**
+- [x] **Java truststore/keystore TLS** (plan 032, 2026-10-09): optional JKS/PKCS12 paths + `:trustStorePass`/`:keyStorePass`; hydrate overrides PEM CA/cert/key; no invent `datacenter1`; dual zip + Windows extract + Mac `install:helper:local`
 
 ## Next
 
-1. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
-2. npm publish of `@detour/cli` is still out of scope
+1. **Plan 032 smoke (Windows Cassandra)** — Reload pack extension → Install Helper from **new** windows zip → connection: SSL Required/Verify CA, Java truststore+keystore paths + store passwords, Local datacenter from app config, Test. Also smoke PEM-only path still works
+2. **Plan 029 / 030 / 031 smoke** — Browse / SSL Disable+key path / encrypted-key modal; clean Chrome + Win/Ubuntu VMs; Edge manifests; Firefox route; pin public submodule when Detour has a remote+tag; install Rosetta to exercise macos-x64 `--version`; optional live plugin gaps (Astra/SigV4)
+2. **Smoke-load OS pack + store zips** — clean Chrome profile: load pack `extension/`, run Install Helper, Databases → Start → SQLite; also reload Detour/Rogers store zips for API Tester C
+3. **Databases optional** — start Docker and run `DETOUR_DB_E2E=1`; `pnpm approve-builds` for ssh2/oracledb if needed; live TLS compose e2e when Docker is up
+4. CI will not run until a git remote exists and `main` is pushed. Store upload stays manual until publisher secrets are added on purpose
+5. npm publish of `@detour/cli` is still out of scope
+6. Drop official Rogers `partner-logo.svg` into local `extension/brands/rogers/` when brand marketing provides it (do not recreate trademarks)
+7. After CWS/Edge publish, append store extension ids to brand `chromiumExtensionIds` / `cli/src/db/extension-ids.ts`
 
 ## Open questions (not blocking)
 
@@ -59,4 +104,4 @@
 
 ## Blocked
 
-- Nothing for code. Further modules wait for their specs to be Approved
+- Live `DETOUR_DB_E2E` against containers needs Docker Desktop/daemon running (not available in the last agent pass). Unit framing tests still cover chunking/native message codec.

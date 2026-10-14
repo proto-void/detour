@@ -1,3 +1,5 @@
 packages:
   - extension
   - cli
+allowBuilds:
+  esbuild: true

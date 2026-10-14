@@ -11,8 +11,10 @@
     "dev:firefox": "wxt -b firefox",
     "build": "wxt build",
     "build:firefox": "wxt build -b firefox",
+    "build:rogers": "DETOUR_BRAND=rogers wxt build",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
+    "zip:rogers": "DETOUR_BRAND=rogers wxt zip",
     "typecheck": "wxt prepare && tsc --noEmit && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "test": "vitest run",
     "e2e:chrome": "node e2e/chrome-smoke.mjs",
@@ -23,6 +25,7 @@
   },
   "devDependencies": {
     "@puppeteer/browsers": "3.2.3",
+    "@wxt-dev/auto-icons": "^1.1.2",
     "@wxt-dev/module-svelte": "^2.0.5",
     "puppeteer-core": "^25.12.0",
     "svelte": "^5.57.1",

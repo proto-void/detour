@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { brandName } from '../../ui/brand';
   import type { ReportView } from '../../workspace-ui/report-view';
 
   let { view }: { view: ReportView } = $props();
@@ -11,7 +12,7 @@
     {#if view.state === 'pending'}
       <p class="muted">Applying rules…</p>
     {:else if view.state === 'disabled'}
-      <p>Detour is off. No requests are being changed.</p>
+      <p>{brandName} is off. No requests are being changed.</p>
     {:else if view.state === 'error'}
       <div role="alert" class="error">
         <p><strong>Rules could not be loaded.</strong> The rules already installed are left as they were.</p>
@@ -24,7 +25,7 @@
     {:else if view.state === 'empty'}
       <div class="empty">
         <p><strong>Point production at your code.</strong></p>
-        <p class="muted">No active rules yet. Import a Resource Override export, or add a recipe.</p>
+        <p class="muted">No active rules yet. Import an export, or add a recipe.</p>
       </div>
     {:else}
       <p class="counts">

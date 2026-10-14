@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import puppeteer from 'puppeteer-core';
 
-const EXT = path.resolve(import.meta.dirname, '../.output/chrome-mv3');
+const EXT = path.resolve(import.meta.dirname, '../.output/detour/chrome-mv3');
 const CHROME = process.env.CHROME;
 if (!CHROME) {
   console.error('Set CHROME to a Chrome for Testing binary (npx @puppeteer/browsers install chrome@stable).');
@@ -80,6 +80,8 @@ const prod = await serve(8001, {
   '/body.html': html('<!doctype html><title>body</title><script src="/replaced.js"></script><script src="/kept.js"></script>'),
   '/replaced.js': js('window.BODY = "PROD";'),
   '/kept.js': js('window.KEPT = "PROD";'),
+  '/switch.json': { type: 'application/json', text: '{"route":"PROD"}' },
+  '/json-page.html': html('<!doctype html><title>json</title><body></body>'),
   '/bridge.html': html('<!doctype html><title>bridge</title><script src="/bridge.js"></script>'),
   '/bridge.js': js('window.BRIDGE = "PROD";'),
   // script-src 'self' allows this origin (port 8001) and blocks the bridge on another port.
@@ -337,6 +339,7 @@ try {
   await popup.waitForFunction(() => document.body.innerText.includes('Point production at your code.'), { timeout: 10000 });
   check('empty state shown before import', true, true);
 
+  await popup.click('details.import > summary');
   const input = await popup.$('input[type=file]');
   await input.uploadFile(exportPath);
   await popup.waitForFunction(() => document.body.innerText.includes('Imported'), { timeout: 10000 });
@@ -346,8 +349,8 @@ try {
   check('import summary', /Imported 5 rules in 2 groups/.test(text), true);
   check('file override is imported, not skipped', /rule skipped/.test(text), false);
   check('port-scope warning shown', /port part .* can't be enforced/.test(text), true);
-  check('report counts', /3 applied/.test(text) && /2 refused/.test(text), true);
-  check('file override waits for the debugger permission', /Replace body of \*\/x\.css/.test(text) && /Allow debugger/.test(text), true);
+  check('report counts', /4 applied/.test(text) && /1 refused/.test(text), true);
+  check('file override needs no debugger consent', !/Allow debugger/.test(text) && !/Permission needed/.test(text), true);
   check('loop refusal has a reason', /loop\.js[\s\S]*Redirect loop/.test(text), true);
 
   const run = async (url) => {
@@ -411,6 +414,10 @@ try {
   check('switch on restores redirects', [on.A, on.B], ['LOCAL', 'LOCAL']);
 
   // Re-importing the same file replaces its groups instead of duplicating them.
+  await popup.evaluate(() => {
+    const details = document.querySelector('details.import');
+    if (details) details.open = true;
+  });
   await (await popup.$('input[type=file]')).uploadFile(exportPath);
   await popup.waitForFunction(() => document.body.innerText.includes('Replaced 2 groups'), { timeout: 10000 }).catch(async (e) => {
     console.log('--- popup at re-import ---\n' + (await popup.evaluate(() => document.body.innerText)));
@@ -422,65 +429,241 @@ try {
   await editor.goto(`chrome-extension://${id}/options.html`);
   await editor.waitForSelector('.group');
   const editorText = () => editor.evaluate(() => document.body.innerText);
+  const clickTab = async (name) => {
+    await editor.$$eval('nav.tabs button', (tabs, label) => tabs.find((el) => el.textContent.includes(label))?.click(), name);
+  };
   check('re-import kept 2 groups (no duplicates)', (await editor.$$('section.group')).length, 2);
   check('no iframe warning where topDomains is supported', /cross-site iframes/.test(await editorText()), false);
+  await clickTab('Log');
   await editor.waitForFunction(() => /8001\/a\.js/.test(document.getElementById('log')?.textContent ?? ''), { timeout: 8000 });
   const logText = await editor.$eval('#log', (el) => el.textContent);
   check('match log is on the rules page', /Recent matches/.test(logText) && /8001\/a\.js/.test(logText), true);
-  check('popup links to the rule tester', /Test a URL/.test(await popup.evaluate(() => document.body.innerText)), true);
+  check('popup links to API Tester', /API Tester/.test(await popup.evaluate(() => document.body.innerText)), true);
 
-  // Rule tester: the imported redirect for a.js should win; a loop must not.
-  const testerInput = await editor.waitForSelector('#tester-url');
-  await testerInput.click({ clickCount: 3 });
-  await testerInput.type('http://127.0.0.1:8001/a.js');
-  await editor.waitForFunction(() => document.querySelector('[data-testid=tester-result]')?.textContent.includes('http://127.0.0.1:8002/a.js'), { timeout: 5000 });
+  // API Tester — Which rules apply: the imported redirect for a.js should win; a loop must not.
+  await clickTab('API Tester');
+  await editor.$$eval('.api-tester .response .subtabs button', (tabs) =>
+    tabs.find((el) => /Which rules apply/i.test(el.textContent ?? ''))?.click(),
+  );
+  await editor.waitForSelector('#tester-url');
+  const setTesterUrl = async (url) => {
+    // Controlled Svelte input: set value + dispatch input (avoid puppeteer type races).
+    await editor.$eval(
+      '#tester-url',
+      (el, next) => {
+        const input = el;
+        input.focus();
+        input.value = next;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      },
+      url,
+    );
+  };
   const testerText = () => editor.$eval('[data-testid=tester-result]', (el) => el.textContent.replace(/\s+/g, ' ').trim());
-  check('rule tester shows the winning redirect', /This rule wins/.test(await testerText()) && (await testerText()).includes('http://127.0.0.1:8002/a.js'), true);
 
-  await testerInput.click({ clickCount: 3 });
-  await testerInput.type('http://127.0.0.1:9/none');
+  await setTesterUrl('http://127.0.0.1:8001/a.js');
+  await editor.waitForFunction(() => document.querySelector('[data-testid=tester-result]')?.textContent.includes('http://127.0.0.1:8002/a.js'), { timeout: 5000 });
+  check('API Tester shows the winning redirect', /This rule wins/.test(await testerText()) && (await testerText()).includes('http://127.0.0.1:8002/a.js'), true);
+
+  await setTesterUrl('http://127.0.0.1:9/none');
   await editor.waitForFunction(() => document.querySelector('[data-testid=tester-result]')?.textContent.includes('No rule matches'), { timeout: 5000 });
-  check('rule tester says when nothing matches', /No rule matches/.test(await testerText()), true);
+  check('API Tester says when nothing matches', /No rule matches/.test(await testerText()), true);
 
-  await testerInput.click({ clickCount: 3 });
-  await testerInput.type('http://127.0.0.1:8001/loop.js');
-  await editor.waitForFunction(() => /not applied/i.test(document.querySelector('[data-testid=tester-result]')?.textContent ?? ''), { timeout: 5000 });
+  await setTesterUrl('http://127.0.0.1:8001/loop.js');
+  await editor.waitForFunction(() => /not applied|No rule is applied/i.test(document.querySelector('[data-testid=tester-result]')?.textContent ?? ''), { timeout: 5000 });
   const loopText = await testerText();
-  check('rule tester does not let a redirect loop win', /No rule is applied/.test(loopText) && /not applied/i.test(loopText) && !/Redirects to/.test(loopText), true);
+  check('API Tester does not let a redirect loop win', /No rule is applied/.test(loopText) && /not applied/i.test(loopText) && !/Redirects to/.test(loopText), true);
 
-  // Create a group and a rule through the editor, then confirm the rule fires.
+  // Slice B — power tools surface + save-as-mock synergy
+  check('API Tester power tools include Runner', await editor.$eval('.power', (el) => /Runner/.test(el.textContent ?? '')), true);
+  await editor.$$eval('.power .tabs button', (tabs) => tabs.find((el) => /Code/i.test(el.textContent ?? ''))?.click());
+  check('API Tester codegen panel shows fetch', await editor.$eval('.power .code', (el) => /fetch/i.test(el.textContent ?? '')), true);
+  await setTesterUrl('http://127.0.0.1:8002/a.js');
+  await editor.$eval('.power .synergy button', (btn) => {
+    const match = [...document.querySelectorAll('.power .synergy button')].find((el) => /Save response as Detour mock/i.test(el.textContent ?? ''));
+    // Without a live response body, still exercise Redirect this to localhost
+    void btn;
+    void match;
+  });
+  await editor.$$eval('.power .synergy button', (buttons) =>
+    buttons.find((el) => /Redirect this to localhost/i.test(el.textContent ?? ''))?.click(),
+  );
+  await editor.waitForFunction(() => document.querySelector('nav.tabs button.active')?.textContent?.includes('Rules'), { timeout: 5000 });
+  check('Redirect to localhost opens Rules tab', await editor.$eval('nav.tabs button.active', (el) => /Rules/.test(el.textContent ?? '')), true);
+  check('Redirect to localhost added a rule group', (await editor.$$('section.group')).length >= 3, true);
+  // Discard synergy draft so later e2e group/rule indexing stays on the imported 2 groups.
+  await editor.$$eval('button', (buttons) => buttons.find((el) => el.textContent?.trim() === 'Discard' && !el.disabled)?.click());
+  await editor.waitForFunction(() => document.querySelectorAll('section.group').length === 2, { timeout: 8000 });
+
+  const setAutosave = async (on) => {
+    await editor.$eval(
+      '#autosave',
+      (button, next) => {
+        if ((button.getAttribute('aria-checked') === 'true') !== next) button.click();
+      },
+      on,
+    );
+    await editor.waitForFunction((next) => document.querySelector('#autosave')?.getAttribute('aria-checked') === String(next), { timeout: 5000 }, on);
+  };
+  const drawerPattern = () => editor.waitForSelector('[data-testid=drawer] input[id$="-pattern"]', { timeout: 5000 });
+  const openDrawerTab = async (label) => {
+    await editor.waitForSelector('[data-testid=drawer]', { timeout: 5000 });
+    await editor.$$eval('[data-testid=drawer] [role=tab]', (tabs, name) => {
+      const tab = tabs.find((el) => el.textContent.trim() === name);
+      if (tab) tab.click();
+    }, label);
+  };
+  const chooseAction = async (type) => {
+    await editor.waitForSelector('[data-testid=drawer] [data-testid=action-chip]', { timeout: 5000 });
+    await editor.$eval(`[data-testid=drawer] [data-action-type="${type}"]`, (el) => el.click());
+  };
+  const drawerTo = async () => {
+    await chooseAction('redirect');
+    await openDrawerTab('Action');
+    return editor.waitForSelector('[data-testid=drawer] input[id$="-to"]', { timeout: 5000 });
+  };
+  // Manual Save now (autosave off): empty target is blocked; a filled rule applies.
+  await clickTab('Rules');
+  await setAutosave(false);
   await editor.click('#add-group');
+  await editor.waitForSelector('section.group:last-of-type input[id$="-name"]', { timeout: 5000 });
+  await editor.$eval('section.group:last-of-type input[id$="-name"]', (el) => {
+    el.focus();
+    el.select();
+  });
   await editor.keyboard.type('E2E group');
   const groups = await editor.$$('section.group');
   const mine = groups[groups.length - 1];
   await (await mine.$('button[id$="-add-rule"]')).click();
-  const pattern = await mine.$('input[id$="-pattern"]');
-  await pattern.type('*:8001/c.js');
-  await editor.click('button.primary');
-  await editor.waitForFunction(() => document.body.innerText.includes('Enter where matching requests should go'), { timeout: 5000 });
-  check('save blocked with a field error for the empty target', await editor.evaluate(() => document.activeElement?.id.endsWith('-to')), true);
+  await openDrawerTab('Match');
+  const patternInput = await drawerPattern();
+  await patternInput.click({ clickCount: 3 });
+  await patternInput.type('*:8001/c.js');
+  await chooseAction('redirect');
+  await openDrawerTab('Action');
+  await editor.waitForSelector('[data-testid=drawer] input[id$="-to"]', { timeout: 5000 });
+  const beforeSave = await editor.evaluate(() => {
+    const to = document.querySelector('[data-testid=drawer] input[id$="-to"]');
+    const save = document.querySelector('[data-testid=save-now]');
+    return {
+      toValue: to?.value ?? null,
+      saveDisabled: save?.hasAttribute('disabled') ?? null,
+      chip: document.querySelector('[data-testid=action-chip] [aria-checked=true]')?.getAttribute('data-action-type') ?? null,
+    };
+  });
+  if (beforeSave.chip !== 'redirect' || beforeSave.toValue !== '' || beforeSave.saveDisabled) {
+    throw new Error(`pre-save state unexpected: ${JSON.stringify(beforeSave)}`);
+  }
+  await editor.$eval('[data-testid=save-now]', (el) => {
+    if (el.hasAttribute('disabled')) throw new Error('save-now disabled');
+    el.click();
+  });
+  await editor.waitForFunction(
+    () =>
+      [...document.querySelectorAll('.message.error')].some((el) => /where matching/i.test(el.textContent ?? '')) ||
+      document.activeElement?.id?.endsWith('-to') ||
+      document.querySelector('[data-testid=drawer] input[id$="-to"][aria-invalid=true]'),
+    { timeout: 8000 },
+  );
+  check(
+    'save blocked with a field error for the empty target',
+    await editor.evaluate(
+      () =>
+        document.activeElement?.id?.endsWith('-to') ||
+        document.querySelector('[data-testid=drawer] input[id$="-to"]')?.getAttribute('aria-invalid') === 'true',
+    ),
+    true,
+  );
 
-  await (await mine.$('input[id$="-to"]')).type('http://127.0.0.1:8002/c.js');
-  await (await mine.$('input[id$="-sample"]')).type('http://localhost:8001/c.js');
-  const preview = await mine.$eval('[data-testid=preview]', (el) => el.textContent.replace(/\s+/g, ' ').trim());
+  await (await drawerTo()).type('http://127.0.0.1:8002/c.js');
+  await openDrawerTab('Test');
+  await (await editor.waitForSelector('[data-testid=drawer] input[id$="-sample"]', { timeout: 5000 })).type('http://localhost:8001/c.js');
+  const preview = await editor.$eval('[data-testid=drawer] [data-testid=preview]', (el) => el.textContent.replace(/\s+/g, ' ').trim());
   check('live preview shows the redirect target', preview, 'Matches. It would go to http://127.0.0.1:8002/c.js'.replace(/^/, '✓ '));
 
-  await editor.click('button.primary');
+  const clickSaveNow = async () => {
+    await editor.$eval('[data-testid=save-now]', (el) => {
+      if (el.hasAttribute('disabled')) throw new Error('save-now disabled');
+      el.click();
+    });
+  };
+  await clickSaveNow();
   const lastStatus = () => mine.$$eval('[data-testid=rule-status]', (els) => els[els.length - 1].textContent.trim());
   await editor.waitForFunction(
     () => [...document.querySelectorAll('[data-testid=rule-status]')].at(-1)?.textContent.includes('Applied'),
     { timeout: 10000 },
   );
-  check('editor shows the new rule as applied', await lastStatus(), '✓ Applied');
-  check('save state settles', (await editor.$eval('[data-testid=save-state]', (el) => el.textContent.trim())), '✓ All changes saved');
+  check('editor shows the new rule as applied', await lastStatus(), 'Applied');
+  check('save state settles', /^Autosave/.test(await editor.$eval('[data-testid=save-state]', (el) => el.textContent.trim())), true);
   check('rule created in the editor fires', (await run('http://localhost:8001/page.html')).C, 'LOCAL');
 
-  // Per-rule switch: off + save stops the redirect.
+  // Per-rule switch: off + Save now stops the redirect.
+  const closeIfOpen = async () => {
+    const done = await editor.$('[data-testid=drawer-done]');
+    if (done) {
+      await done.click();
+      await editor.waitForFunction(() => !document.querySelector('[data-testid=drawer]'), { timeout: 5000 });
+    }
+  };
+  await closeIfOpen();
   await (await mine.$('article.rule button[role=switch]')).click();
-  await editor.click('button.primary');
+  await clickSaveNow();
   await editor.waitForFunction(() => [...document.querySelectorAll('[data-testid=rule-status]')].at(-1)?.textContent.includes('Off'), { timeout: 10000 });
-  await editor.waitForFunction(() => document.querySelector('[data-testid=save-state]')?.textContent.includes('All changes saved'), { timeout: 10000 });
+  await editor.waitForFunction(() => /Autosave/.test(document.querySelector('[data-testid=save-state]')?.textContent ?? ''), { timeout: 10000 });
   check('rule switched off in the editor stops firing', (await run('http://localhost:8001/page.html')).C, 'PROD');
+
+  // Autosave: valid rule writes without Save now; invalid stays out of storage; Undo restores.
+  await setAutosave(true);
+  const beforeAutosave = await editor.evaluate(async () => (await chrome.storage.local.get('workspace')).workspace.data);
+  await (await mine.$('button[id$="-add-rule"]')).click();
+  const lastRule = async () => (await mine.$$('article.rule')).at(-1);
+  await (await drawerPattern()).type('*:8001/autosave.js');
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  const midInvalid = await editor.evaluate(async () => (await chrome.storage.local.get('workspace')).workspace.data);
+  check(
+    'autosave does not write an invalid rule',
+    JSON.stringify(midInvalid) === JSON.stringify(beforeAutosave) && /Not saved:/.test(await editor.$eval('[data-testid=save-state]', (el) => el.textContent)),
+    true,
+  );
+
+  await chooseAction('redirect');
+  await openDrawerTab('Action');
+  await editor.waitForSelector('[data-testid=drawer] input[id$="-to"]', { timeout: 5000 });
+  await editor.$eval('[data-testid=drawer] input[id$="-to"]', (el, value) => {
+    el.focus();
+    el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, 'http://127.0.0.1:8002/autosave.js');
+  await editor.waitForFunction(() => document.querySelector('[data-testid=toast]')?.textContent.includes('Saved'), { timeout: 8000 }).catch(async (e) => {
+    console.log('--- autosave toast missing ---\n' + (await editorText()) + '\nstate=' + (await editor.$eval('[data-testid=save-state]', (el) => el.textContent)) + '\nautosave=' + (await editor.$eval('#autosave', (el) => el.getAttribute('aria-checked'))));
+    throw e;
+  });
+  await editor.waitForFunction(() => /Autosave/.test(document.querySelector('[data-testid=save-state]')?.textContent ?? ''), { timeout: 5000 });
+  const afterAutosave = await editor.evaluate(async () => (await chrome.storage.local.get('workspace')).workspace.data);
+  const autosavedPatterns = afterAutosave.groups.flatMap((g) => g.rules.map((r) => r.match.pattern));
+  check('autosave writes a valid rule without Save now', autosavedPatterns.includes('*:8001/autosave.js'), true);
+  // Toast starts as "Saved…" then becomes "Rules applied" when apply finishes.
+  check(
+    'autosave toast announces Saved or Applied',
+    /Saved|Rules applied/.test(await editor.$eval('[data-testid=toast]', (el) => el.textContent)),
+    true,
+  );
+
+  await editor.click('[data-testid=toast-undo]');
+  await editor.waitForFunction(async () => {
+    const data = (await chrome.storage.local.get('workspace')).workspace.data;
+    return !data.groups.flatMap((g) => g.rules.map((r) => r.match.pattern)).includes('*:8001/autosave.js');
+  }, { timeout: 10000 });
+  check(
+    'autosave Undo restores the previous workspace',
+    !(
+      await editor.evaluate(async () =>
+        (await chrome.storage.local.get('workspace')).workspace.data.groups.flatMap((g) => g.rules.map((r) => r.match.pattern)),
+      )
+    ).includes('*:8001/autosave.js'),
+    true,
+  );
+  await setAutosave(false);
 
   // ---- page-inject + api-mock ----------------------------------------------------------------
   const ruleIn = async (group) => (await group.$$('article.rule')).at(-1);
@@ -490,28 +673,63 @@ try {
       console.log(`--- waiting for "${text}", status is "${await statusOf(article)}" ---`);
       throw e;
     });
+  const openDrawer = async (article) => {
+    const already = await editor.$('[data-testid=drawer]');
+    if (!already) {
+      const row = await article.$('[data-testid=rule-row]');
+      if (!row) throw new Error('rule has no row');
+      await row.click();
+      await editor.waitForSelector('[data-testid=drawer]', { timeout: 5000 });
+    }
+    // Second tab is always the action panel (label varies by type).
+    await editor.$$eval('[data-testid=drawer] [role=tab]', (tabs) => tabs[1]?.click());
+  };
+  const closeDrawer = async () => {
+    const done = await editor.$('[data-testid=drawer-done]');
+    if (done) await done.click();
+    await editor.waitForFunction(() => !document.querySelector('[data-testid=drawer]'), { timeout: 5000 });
+  };
   const typeCode = async (article, code) => {
-    const content = await article.waitForSelector('.cm-content', { timeout: 10000 }).catch(async (e) => {
-      console.log('--- rule without a code editor ---\n' + (await article.evaluate((el) => el.innerHTML.slice(0, 2000))));
+    await openDrawer(article);
+    const content = await editor.waitForSelector('[data-testid=drawer] .cm-content', { timeout: 10000 }).catch(async (e) => {
+      console.log('--- drawer without a code editor ---\n' + (await editor.evaluate(() => document.querySelector('[data-testid=drawer]')?.innerHTML.slice(0, 2000))));
       throw e;
     });
     await content.click();
     await editor.keyboard.type(code);
+    await closeDrawer();
   };
-  const addPageRule = async (group, pattern, actionType) => {
+  const setDelivery = async (article, value) => {
+    await openDrawer(article);
+    await editor.$eval(
+      '[data-testid=drawer] select[id$="-delivery"]',
+      (el, next) => {
+        el.value = next;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      },
+      value,
+    );
+    await closeDrawer();
+  };
+  const setActionType = async (_article, actionType) => {
+    await editor.waitForSelector('[data-testid=drawer]', { timeout: 5000 });
+    await editor.$$eval('[data-testid=drawer] [role=tab]', (tabs) => tabs[1]?.click());
+    await editor.waitForSelector('[data-testid=drawer] [data-testid=action-chip]', { timeout: 5000 });
+    const item = await editor.waitForSelector(`[data-testid=drawer] [data-action-type="${actionType}"]`, { timeout: 5000 });
+    await item.click();
+  };
+  const addPageRule = async (group, pattern, actionType, delivery) => {
     await (await group.$('button[id$="-add-rule"]')).click();
     const article = await ruleIn(group);
-    await (await article.$('input[id$="-pattern"]')).type(pattern);
-    await article.$eval('select[id$="-action"]', (el, value) => {
-      el.value = value;
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-    }, actionType);
+    await (await drawerPattern()).type(pattern);
+    if (actionType !== 'redirect') await setActionType(article, actionType);
+    if (actionType === 'overrideBody' && delivery) await setDelivery(article, delivery);
     return article;
   };
   const saveAndSettle = async () => {
     await editor.bringToFront();
-    await editor.click('button.primary');
-    await editor.waitForFunction(() => document.querySelector('[data-testid=save-state]')?.textContent.includes('All changes saved'), { timeout: 10000 }).catch(async (e) => {
+    await editor.click('[data-testid=save-now]');
+    await editor.waitForFunction(() => /Autosave/.test(document.querySelector('[data-testid=save-state]')?.textContent ?? ''), { timeout: 10000 }).catch(async (e) => {
       console.log('--- editor when save did not settle ---\n' + (await editorText()));
       throw e;
     });
@@ -550,16 +768,18 @@ try {
   const cssRule = await addPageRule(pageGroup, 'http://localhost:8001/*', 'injectCss');
   await typeCode(cssRule, 'h1 { color: rgb(1, 2, 3) }');
   const mockRule = await addPageRule(pageGroup, '*/api/mocked', 'mock');
-  await mockRule.$eval('input[id$="-status"]', (el) => {
+  await openDrawer(mockRule);
+  await editor.$eval('[data-testid=drawer] input[id$="-status"]', (el) => {
     el.value = '201';
     el.dispatchEvent(new Event('input', { bubbles: true }));
   });
+  await closeDrawer();
   await saveAndSettle();
 
   await waitStatus(cssRule, 'Applied');
   await waitStatus(mockRule, 'Applied');
   await waitStatus(jsRule, 'Refused');
-  check('inline JS refused while user scripts are off', await statusOf(jsRule), '✕ Refused: User scripts off');
+  check('inline JS refused while user scripts are off', await statusOf(jsRule), 'Refused: User scripts off');
   check('user-scripts banner explains the toggle', /Allow User Scripts/.test(await editorText()) && (await editor.$('[data-testid=user-scripts-banner]')) !== null, true);
 
   // What a user does on chrome://extensions/?id=…: flip "Allow User Scripts".
@@ -570,7 +790,7 @@ try {
   await editor.bringToFront();
   await editor.evaluate(() => window.dispatchEvent(new Event('focus')));
   await waitStatus(jsRule, 'Applied');
-  check('inline JS applies once user scripts are allowed', await statusOf(jsRule), '✓ Applied');
+  check('inline JS applies once user scripts are allowed', await statusOf(jsRule), 'Applied');
   check('banner gone after allowing', (await editor.$('[data-testid=user-scripts-banner]')) === null, true);
 
   const matching = await inPage('http://localhost:8001/inject.html', pageState);
@@ -620,6 +840,10 @@ try {
   changed.data[0].rules.push({ id: 'c', type: 'normalOverride', match: '*:8001/c.js', replace: 'http://127.0.0.1:8002/c.js', on: true });
   fs.writeFileSync(changedPath, JSON.stringify(changed));
   await popup.bringToFront();
+  await popup.evaluate(() => {
+    const details = document.querySelector('details.import');
+    if (details) details.open = true;
+  });
   await (await popup.$('input[type=file]')).uploadFile(changedPath);
   const confirm = await popup.waitForSelector('[role=alertdialog]', { timeout: 10000 });
   check('name-only match asks before replacing', /Replace the earlier import of ro-export\.json\?/.test(await confirm.evaluate((el) => el.textContent)), true);
@@ -643,6 +867,7 @@ try {
   await popup.click('#theme-light');
   await popup.waitForFunction(() => document.documentElement.dataset.theme === 'light');
   check('light theme background', await popup.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(244, 246, 248)');
+  // tokens: --bg light remains #f4f6f8
   await popup.reload();
   await popup.waitForFunction(() => document.documentElement.dataset.theme === 'light', { timeout: 10000 });
   check('light theme persists across reload', await popup.$eval('#theme-light', (b) => b.getAttribute('aria-checked')), 'true');
@@ -684,6 +909,8 @@ try {
 
   await editor.bringToFront();
   await editor.reload();
+  await editor.waitForSelector('nav.tabs');
+  await editor.$$eval('nav.tabs button', (tabs) => tabs.find((el) => el.textContent.includes('Recipes'))?.click());
   await editor.waitForSelector('#recipes');
   await (await editor.waitForSelector('#recipes button')).click();
   const host = await editor.waitForSelector('#recipe-host');
@@ -697,8 +924,8 @@ try {
   await editor.click('#recipe-add');
   // The group name lives in an input and a clipped heading, so innerText misses it.
   await editor.waitForFunction(() => document.body.textContent.includes('127.0.0.1:9 → 127.0.0.1:8002'), { timeout: 5000 });
-  await editor.click('button.primary');
-  await editor.waitForFunction(() => document.querySelector('[data-testid=save-state]')?.textContent.includes('All changes saved'), { timeout: 10000 });
+  await editor.click('[data-testid=save-now]');
+  await editor.waitForFunction(() => /Autosave/.test(document.querySelector('[data-testid=save-state]')?.textContent ?? ''), { timeout: 10000 });
   const recipeHit = await browser.newPage();
   await recipeHit.goto('http://127.0.0.1:9/a.js', { waitUntil: 'load' });
   check('localhost recipe redirects the host', recipeHit.url(), 'http://127.0.0.1:8002/a.js');
@@ -729,16 +956,36 @@ try {
   await popup.screenshot({ path: path.join(outDir, 'popup.png'), fullPage: true });
   console.log('screenshot', path.join(outDir, 'popup.png'));
 
-  // Body override. The imported file override already asked for the debugger; allow it, then replace one script.
+  // Redirect-delivery JSON override: DNR data: URL, no Allow debugger.
   await editor.bringToFront();
-  await editor.waitForSelector('#allow-body', { timeout: 10000 });
-  await editor.click('#allow-body');
-  await editor.waitForFunction(() => !document.querySelector('[data-testid=body-permission-banner]'), { timeout: 10000 }).catch(async (e) => {
-    console.log('--- body banner still up ---\n' + (await editorText()));
-    throw e;
+  await editor.click('#add-group');
+  await editor.keyboard.type('JSON redirect');
+  const jsonGroup = (await editor.$$('section.group')).at(-1);
+  const jsonRule = await addPageRule(jsonGroup, '*:8001/switch.json', 'overrideBody');
+  await openDrawer(jsonRule);
+  check('body drawer opens for redirect rule', (await editor.$('[data-testid=drawer]')) !== null, true);
+  const drawerCode = await editor.waitForSelector('[data-testid=drawer] .cm-content', { timeout: 10000 });
+  await drawerCode.click();
+  await editor.keyboard.type('{"route":"LOCAL"}');
+  check('preview data: URL control is present', (await editor.$('[data-testid=preview-data-url]')) !== null, true);
+  check('redirect body note mentions 307', /307 Internal Redirect/.test(await editor.$eval('[data-testid=drawer]', (el) => el.textContent)), true);
+  await closeDrawer();
+  await saveAndSettle();
+  await waitStatus(jsonRule, 'Applied');
+  check('redirect body rule shows applied', await statusOf(jsonRule), 'Applied');
+  check('no debugger banner for redirect-only body', (await editor.$('#allow-body')) === null, true);
+  const jsonHit = await browser.newPage();
+  await jsonHit.goto('http://127.0.0.1:8001/json-page.html', { waitUntil: 'load' });
+  const jsonBody = await jsonHit.evaluate(async () => {
+    const response = await fetch('/switch.json');
+    return response.text();
   });
-  check('debugger permission granted from the editor', true, true);
+  await jsonHit.close();
+  check('redirect-delivery JSON override without consent', jsonBody, '{"route":"LOCAL"}');
+  check('drawer-edited redirect body is fetched replaced', jsonBody, '{"route":"LOCAL"}');
 
+  // Default redirect delivery for a script (works with DevTools / Puppeteer attached).
+  await editor.bringToFront();
   await editor.click('#add-group');
   await editor.keyboard.type('Body override');
   const bodyGroup = (await editor.$$('section.group')).at(-1);
@@ -746,59 +993,43 @@ try {
   await typeCode(bodyRule, 'window.BODY = "LOCAL";');
   await saveAndSettle();
   await waitStatus(bodyRule, 'Applied');
-  check('body rule shows applied', await statusOf(bodyRule), '✓ Applied');
-  check('body editor says page JavaScript integrity is updated', (await editorText()).includes('page JavaScript'), true);
-  check('body editor says markup integrity is updated', (await editorText()).includes('insertAdjacentHTML'), true);
-  check('body editor says script-running markup integrity is updated', (await editorText()).includes('createContextualFragment'), true);
-  check('body editor says inert markup integrity is updated', (await editorText()).includes('setAttributeNS'), true);
-  check('body editor says parseHTMLUnsafe integrity is updated', (await editorText()).includes('parseHTMLUnsafe'), true);
-  check('body editor says setAttributeNode integrity is updated', (await editorText()).includes('setAttributeNode'), true);
-  check('body editor says setNamedItem integrity is updated', (await editorText()).includes('setNamedItem'), true);
-  check('body editor says document.write integrity is updated', (await editorText()).includes('document.write'), true);
-  check('body editor says iframe srcdoc integrity is updated', (await editorText()).includes('srcdoc'), true);
-
-  shieldPaths.push('/body.html');
-  const workerTarget = await browser.waitForTarget((t) => t.type() === 'service_worker' && t.url().includes(id), { timeout: 10000 });
-  const worker = await workerTarget.worker();
-  const replaced = await worker.evaluate(async (url) => {
-    const tab = await chrome.tabs.create({ url, active: false });
-    const waitComplete = async () => {
-      const current = await chrome.tabs.get(tab.id);
-      if (current.status === 'complete') return;
-      await new Promise((resolve) => {
-        const listener = (tabId, info) => {
-          if (tabId === tab.id && info.status === 'complete') {
-            chrome.tabs.onUpdated.removeListener(listener);
-            resolve();
-          }
-        };
-        chrome.tabs.onUpdated.addListener(listener);
-      });
-    };
-    await waitComplete();
-    await chrome.tabs.reload(tab.id);
-    await waitComplete();
-    const [injected] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      world: 'MAIN',
-      func: () => ({ BODY: window.BODY, KEPT: window.KEPT }),
-    });
-    await chrome.tabs.remove(tab.id);
-    return injected.result;
-  }, 'http://127.0.0.1:8001/body.html');
+  check('body rule shows applied', await statusOf(bodyRule), 'Applied');
+  check('redirect body does not show in-place integrity copy', (await editorText()).includes('insertAdjacentHTML'), false);
+  const bodyPage = await browser.newPage();
+  await bodyPage.goto('http://127.0.0.1:8001/body.html', { waitUntil: 'load' });
+  const replaced = await bodyPage.evaluate(() => ({ BODY: window.BODY, KEPT: window.KEPT }));
+  await bodyPage.close();
   check('replaced script body runs', replaced.BODY, 'LOCAL');
   check('unmatched script is untouched', replaced.KEPT, 'PROD');
-  shieldPaths.length = 0;
 
-  // The published integrity hash is of the production file. Detour must swap in a hash of the override or the script never runs.
+  // In-place delivery needs Allow debugger; SRI series uses that path.
   shieldPaths.push('/sri.html');
   await editor.bringToFront();
   await editor.click('#add-group');
   await editor.keyboard.type('SRI');
   const sriGroup = (await editor.$$('section.group')).at(-1);
-  const sriRule = await addPageRule(sriGroup, '*:8001/sri.js', 'overrideBody');
+  const sriRule = await addPageRule(sriGroup, '*:8001/sri.js', 'overrideBody', 'inPlace');
   await typeCode(sriRule, 'window.SRI = "LOCAL";');
   await saveAndSettle();
+  await editor.waitForSelector('#allow-body', { timeout: 10000 });
+  await editor.click('#allow-body');
+  await editor.waitForFunction(() => !document.querySelector('[data-testid=body-permission-banner]'), { timeout: 10000 }).catch(async (e) => {
+    console.log('--- body banner still up ---\n' + (await editorText()));
+    throw e;
+  });
+  check('debugger permission granted from the editor', true, true);
+  await openDrawer(sriRule);
+  const inPlaceNote = await editor.$eval('[data-testid=drawer]', (el) => el.textContent);
+  check('body editor says page JavaScript integrity is updated', inPlaceNote.includes('page JavaScript'), true);
+  check('body editor says markup integrity is updated', inPlaceNote.includes('insertAdjacentHTML'), true);
+  check('body editor says script-running markup integrity is updated', inPlaceNote.includes('createContextualFragment'), true);
+  check('body editor says inert markup integrity is updated', inPlaceNote.includes('setAttributeNS'), true);
+  check('body editor says parseHTMLUnsafe integrity is updated', inPlaceNote.includes('parseHTMLUnsafe'), true);
+  check('body editor says setAttributeNode integrity is updated', inPlaceNote.includes('setAttributeNode'), true);
+  check('body editor says setNamedItem integrity is updated', inPlaceNote.includes('setNamedItem'), true);
+  check('body editor says document.write integrity is updated', inPlaceNote.includes('document.write'), true);
+  check('body editor says iframe srcdoc integrity is updated', inPlaceNote.includes('srcdoc'), true);
+  await closeDrawer();
   await waitStatus(sriRule, 'Applied');
   const sriWorkerTarget = await browser.waitForTarget((t) => t.type() === 'service_worker' && t.url().includes(id), { timeout: 10000 });
   const sriWorker = await sriWorkerTarget.worker();
@@ -832,7 +1063,7 @@ try {
   check('sibling with a valid integrity hash still runs', sriPage.SRI_KEPT, 'OK');
   check('sibling with a bad integrity hash stays blocked', sriPage.SRI_BAD, undefined);
 
-  const sriJsRule = await addPageRule(sriGroup, '*:8001/sri-js.js', 'overrideBody');
+  const sriJsRule = await addPageRule(sriGroup, '*:8001/sri-js.js', 'overrideBody', 'inPlace');
   await typeCode(sriJsRule, 'window.SRI_JS = "LOCAL";');
   await saveAndSettle();
   await waitStatus(sriJsRule, 'Applied');
@@ -872,7 +1103,7 @@ try {
   check('integrity list is on the page', sriJsPage.meta.length > 0, true);
   check('integrity list does not include the override source', sriJsPage.meta.includes('window.SRI_JS = "LOCAL"'), false);
 
-  const sriHtmlRule = await addPageRule(sriGroup, '*:8001/sri-html.js', 'overrideBody');
+  const sriHtmlRule = await addPageRule(sriGroup, '*:8001/sri-html.js', 'overrideBody', 'inPlace');
   await typeCode(sriHtmlRule, 'window.SRI_HTML = "LOCAL";');
   await saveAndSettle();
   await waitStatus(sriHtmlRule, 'Applied');
@@ -915,9 +1146,9 @@ try {
   check('insertAdjacentHTML with a production integrity hash runs the override', sriHtmlPage.SRI_HTML, 'LOCAL');
   check('sibling inserted in that markup stays blocked', sriHtmlPage.SRI_HTML_BAD, undefined);
 
-  const sriExecRule = await addPageRule(sriGroup, '*:8001/sri-exec.js', 'overrideBody');
+  const sriExecRule = await addPageRule(sriGroup, '*:8001/sri-exec.js', 'overrideBody', 'inPlace');
   await typeCode(sriExecRule, 'window.SRI_EXEC = "LOCAL";');
-  const sriUnsafeRule = await addPageRule(sriGroup, '*:8001/sri-unsafe.js', 'overrideBody');
+  const sriUnsafeRule = await addPageRule(sriGroup, '*:8001/sri-unsafe.js', 'overrideBody', 'inPlace');
   await typeCode(sriUnsafeRule, 'window.SRI_UNSAFE = "LOCAL";');
   await saveAndSettle();
   await waitStatus(sriExecRule, 'Applied');
@@ -968,11 +1199,11 @@ try {
   check('setHTMLUnsafe with runScripts and a production integrity hash runs the override', sriExecPage.SRI_UNSAFE, 'LOCAL');
   check('sibling inserted by setHTMLUnsafe stays blocked', sriExecPage.SRI_UNSAFE_BAD, undefined);
 
-  const sriNsRule = await addPageRule(sriGroup, '*:8001/sri-ns.js', 'overrideBody');
+  const sriNsRule = await addPageRule(sriGroup, '*:8001/sri-ns.js', 'overrideBody', 'inPlace');
   await typeCode(sriNsRule, 'window.SRI_NS = "LOCAL";');
-  const sriOuterRule = await addPageRule(sriGroup, '*:8001/sri-outer.css', 'overrideBody');
+  const sriOuterRule = await addPageRule(sriGroup, '*:8001/sri-outer.css', 'overrideBody', 'inPlace');
   await typeCode(sriOuterRule, 'html{--sri-outer:local}');
-  const sriShadowRule = await addPageRule(sriGroup, '*:8001/sri-shadow.css', 'overrideBody');
+  const sriShadowRule = await addPageRule(sriGroup, '*:8001/sri-shadow.css', 'overrideBody', 'inPlace');
   await typeCode(sriShadowRule, 'span{--sri-shadow:local}');
   await saveAndSettle();
   await waitStatus(sriNsRule, 'Applied');
@@ -1030,9 +1261,9 @@ try {
   check('shadow innerHTML stylesheet with a production integrity hash is accepted', sriInertPage.shadow, 'local');
   check('sibling stylesheet in that shadow root stays blocked', sriInertPage.shadowBad, '');
 
-  const sriUnsafeCssRule = await addPageRule(sriGroup, '*:8001/sri-unsafe-css.css', 'overrideBody');
+  const sriUnsafeCssRule = await addPageRule(sriGroup, '*:8001/sri-unsafe-css.css', 'overrideBody', 'inPlace');
   await typeCode(sriUnsafeCssRule, 'html{--sri-unsafe-css:local}');
-  const sriUnsafeShadowRule = await addPageRule(sriGroup, '*:8001/sri-unsafe-shadow.css', 'overrideBody');
+  const sriUnsafeShadowRule = await addPageRule(sriGroup, '*:8001/sri-unsafe-shadow.css', 'overrideBody', 'inPlace');
   await typeCode(sriUnsafeShadowRule, 'span{--sri-unsafe-shadow:local}');
   await saveAndSettle();
   await waitStatus(sriUnsafeCssRule, 'Applied');
@@ -1092,7 +1323,7 @@ try {
   check('sibling stylesheet in that shadow setHTMLUnsafe stays blocked', sriUnsafeCssPage.shadowBad, '');
   check('sibling hash in that shadow setHTMLUnsafe stays', sriUnsafeCssPage.shadowSibling, badIntegrity);
 
-  const sriParseRule = await addPageRule(sriGroup, '*:8001/sri-parse.css', 'overrideBody');
+  const sriParseRule = await addPageRule(sriGroup, '*:8001/sri-parse.css', 'overrideBody', 'inPlace');
   await typeCode(sriParseRule, 'html{--sri-parse:local}');
   await saveAndSettle();
   await waitStatus(sriParseRule, 'Applied');
@@ -1150,7 +1381,7 @@ try {
   check('DOMParser text/html carries the override hash', sriParsePage.parser, sha384('html{--sri-parse:local}'));
   check('DOMParser XHTML keeps the page hash', sriParsePage.xml, badIntegrity);
 
-  const sriNodeRule = await addPageRule(sriGroup, '*:8001/sri-node.js', 'overrideBody');
+  const sriNodeRule = await addPageRule(sriGroup, '*:8001/sri-node.js', 'overrideBody', 'inPlace');
   await typeCode(sriNodeRule, 'window.SRI_NODE = "LOCAL";');
   await saveAndSettle();
   await waitStatus(sriNodeRule, 'Applied');
@@ -1204,7 +1435,7 @@ try {
   check('sibling hash set with setAttributeNodeNS stays', sriNodePage.sibling, badIntegrity);
   shieldPaths.length = 0;
 
-  const sriNamedRule = await addPageRule(sriGroup, '*:8001/sri-named.js', 'overrideBody');
+  const sriNamedRule = await addPageRule(sriGroup, '*:8001/sri-named.js', 'overrideBody', 'inPlace');
   await typeCode(sriNamedRule, 'window.SRI_NAMED = "LOCAL";');
   await saveAndSettle();
   await waitStatus(sriNamedRule, 'Applied');
@@ -1259,7 +1490,7 @@ try {
   check('sibling hash set with setNamedItemNS stays', sriNamedPage.sibling, badIntegrity);
   shieldPaths.length = 0;
 
-  const sriWriteRule = await addPageRule(sriGroup, '*:8001/sri-write.js', 'overrideBody');
+  const sriWriteRule = await addPageRule(sriGroup, '*:8001/sri-write.js', 'overrideBody', 'inPlace');
   await typeCode(sriWriteRule, 'window.SRI_WRITE = "LOCAL";');
   await saveAndSettle();
   await waitStatus(sriWriteRule, 'Applied');
@@ -1313,7 +1544,7 @@ try {
   check('sibling hash written with document.writeln stays', sriWritePage.sibling, badIntegrity);
   shieldPaths.length = 0;
 
-  const sriSrcdocRule = await addPageRule(sriGroup, '*:8001/sri-srcdoc.js', 'overrideBody');
+  const sriSrcdocRule = await addPageRule(sriGroup, '*:8001/sri-srcdoc.js', 'overrideBody', 'inPlace');
   await typeCode(sriSrcdocRule, 'window.SRI_SRCDOC = "LOCAL";');
   await saveAndSettle();
   await waitStatus(sriSrcdocRule, 'Applied');
@@ -1400,6 +1631,9 @@ try {
     wait();
   });
   await editor.bringToFront();
+  await clickTab('Rules');
+  await editor.click('button.bridge-btn');
+  await editor.waitForSelector('#bridge-port', { timeout: 5000 });
   await editor.$eval('#bridge-port', (el) => {
     el.value = '8099';
     el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -1414,18 +1648,23 @@ try {
     throw e;
   });
   check('local bridge connected from the rules page', true, true);
+  await editor.click('[data-testid=drawer-done]');
 
   await editor.click('#add-group');
   await editor.keyboard.type('Local bridge');
   const bridgeGroup = (await editor.$$('section.group')).at(-1);
   const bridgeRule = await addPageRule(bridgeGroup, '*:8001/bridge.js', 'serveLocal');
-  await (await bridgeRule.$('input[id$="-path"]')).type('bridge.js');
+  await editor.$$eval('[data-testid=drawer] [role=tab]', (tabs) => tabs[1]?.click());
+  await (await editor.waitForSelector('[data-testid=drawer] input[id$="-path"]', { timeout: 5000 })).type('bridge.js');
+  await closeDrawer();
   const cspRule = await addPageRule(bridgeGroup, '*:8001/csp-bridge.js', 'serveLocal');
-  await (await cspRule.$('input[id$="-path"]')).type('csp-bridge.js');
+  await editor.$$eval('[data-testid=drawer] [role=tab]', (tabs) => tabs[1]?.click());
+  await (await editor.waitForSelector('[data-testid=drawer] input[id$="-path"]', { timeout: 5000 })).type('csp-bridge.js');
+  await closeDrawer();
   await saveAndSettle();
   await waitStatus(bridgeRule, 'Applied');
   await waitStatus(cspRule, 'Applied');
-  check('serve-local rule applied', await statusOf(bridgeRule), '✓ Applied');
+  check('serve-local rule applied', await statusOf(bridgeRule), 'Applied');
 
   const bridgeWorkerTarget = await browser.waitForTarget((t) => t.type() === 'service_worker' && t.url().includes(id), { timeout: 10000 });
   const bridgeWorker = await bridgeWorkerTarget.worker();
@@ -1471,7 +1710,9 @@ try {
   check('CSP page never requested the bridge port', fromCsp.urls.some((item) => item.includes(':8099')), false);
 
   const sriDiskRule = await addPageRule(bridgeGroup, '*:8001/sri-disk.js', 'serveLocal');
-  await (await sriDiskRule.$('input[id$="-path"]')).type('sri-disk.js');
+  await editor.$$eval('[data-testid=drawer] [role=tab]', (tabs) => tabs[1]?.click());
+  await (await editor.waitForSelector('[data-testid=drawer] input[id$="-path"]', { timeout: 5000 })).type('sri-disk.js');
+  await closeDrawer();
   await saveAndSettle();
   await waitStatus(sriDiskRule, 'Applied');
   shieldPaths.push('/sri-disk.html');

@@ -113,7 +113,17 @@ describe('page actions (inject / mock)', () => {
 
   it('accepts a body override and keeps the text byte-for-byte', () => {
     const parsed = parseRule(rule({ type: 'overrideBody', body: '  window.A = 1;\n', contentType: ' text/javascript ' }));
-    expect(parsed).toMatchObject({ ok: true, value: { action: { type: 'overrideBody', body: '  window.A = 1;\n', contentType: 'text/javascript' } } });
+    expect(parsed).toMatchObject({
+      ok: true,
+      value: { action: { type: 'overrideBody', body: '  window.A = 1;\n', contentType: 'text/javascript', delivery: 'redirect' } },
+    });
+  });
+
+  it('defaults delivery to redirect and accepts inPlace', () => {
+    const missing = parseRule(rule({ type: 'overrideBody', body: 'x' }));
+    expect(missing).toMatchObject({ ok: true, value: { action: { delivery: 'redirect' } } });
+    const inPlace = parseRule(rule({ type: 'overrideBody', body: 'x', delivery: 'inPlace' }));
+    expect(inPlace).toMatchObject({ ok: true, value: { action: { delivery: 'inPlace' } } });
   });
 
   it.each([

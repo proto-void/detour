@@ -6,7 +6,7 @@ const body = (id: string, pattern: string, text = 'local', extra: Partial<Rule> 
   id,
   enabled: true,
   match: { kind: 'glob', pattern },
-  action: { type: 'overrideBody', body: text },
+  action: { type: 'overrideBody', body: text, delivery: 'inPlace' },
   resourceTypes: ['script'],
   ...extra,
 });
@@ -77,5 +77,21 @@ describe('planBody', () => {
     expect(planBody(ws([body('b', '*')], { enabled: false })).rules).toEqual([]);
     const scoped = planBody(ws([body('b', 'https://cdn.example.com/a.js')], { pageDomains: ['app.example.com'] }));
     expect(scoped.rules[0]).toMatchObject({ pageDomains: ['app.example.com'], body: 'local' });
+  });
+
+  it('skips redirect-delivery overrideBody (those are DNR)', () => {
+    const plan = planBody(
+      ws([
+        {
+          id: 'r',
+          enabled: true,
+          match: { kind: 'glob', pattern: 'https://cdn.example.com/switch.json' },
+          action: { type: 'overrideBody', body: '{"ok":true}', delivery: 'redirect' },
+          resourceTypes: ['xmlhttprequest'],
+        },
+        body('p', 'https://cdn.example.com/app.js', 'inline'),
+      ]),
+    );
+    expect(plan.rules.map((rule) => rule.ruleId)).toEqual(['p']);
   });
 });

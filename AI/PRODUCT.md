@@ -1,6 +1,6 @@
 # Product strategy (locked)
 
-**Last verified:** 2026-10-06
+**Last verified:** 2026-10-09
 
 ## Product
 
@@ -12,6 +12,15 @@
 - **Tagline:** “Point production at your code.”
 - **License:** MIT
 - **Business model:** Free forever for core; **$0** recurring ops (no Detour backend)
+
+## Developer workbench: API Tester + Databases
+
+Beyond rule engines, Detour ships in-extension developer tools that stay free, MIT, and account-free:
+
+- **API Tester** — send HTTP / WebSocket / SSE from the options page; collections/folders; OAuth/SigV4/Digest; see which Detour rules apply ([api-client](specs/api-client.md) A–C Done).
+- **Databases** — connect to local or production databases via a self-managing native-messaging helper; query collections; production safety rails ([db-client](specs/db-client.md) Approved; Slices A–D shipped).
+
+These widen the product past “point production at your code” into a local workbench. They must not introduce a Detour backend, paid SaaS, or accounts.
 
 ## Architecture (tiered engines)
 

@@ -1,6 +1,6 @@
 # Specs (Spec-Driven Development)
 
-**Last verified:** 2026-10-07
+**Last verified:** 2026-10-09
 
 Specs live **only** here. Status is **Draft** until a human Approves. See project skill `spec-workflow`.
 
@@ -16,7 +16,9 @@ Specs live **only** here. Status is **Draft** until a human Approves. See projec
 | 6 | [local-bridge](local-bridge.md) | **Approved** (Hamza, 2026-10-07) — localhost HTTP, plus in-place body when rewriting is allowed |
 | 7 | [workspace-ui](workspace-ui.md) | **Approved — slices 1–4** (popup, editor, rule tester, remainder) (Hamza, 2026-10-06) |
 | 8 | [observability](observability.md) | **Approved** — badge + match log (Hamza, 2026-10-06). Local Bridge still Draft |
-| 9 | [distribution](distribution.md) | **Approved — CI + packaging** (Hamza, 2026-10-07). Local Bridge and store-API upload stay out |
+| 9 | [distribution](distribution.md) | **Approved — CI + packaging** (Hamza, 2026-10-07); OS packs + partner-helper public hooks (Hamza, 2026-10-09). Local Bridge and store-API upload stay out |
+| 10 | [api-client](api-client.md) | **Approved — Slices A + B + C** (Hamza, 2026-10-09) |
+| 11 | [db-client](db-client.md) | **Approved — Slices A–D + Connection options + OS packs + partner-helper public hooks** (Hamza, 2026-10-09). Plans [026](../plans/026-db-client.md)–[029](../plans/029-closed-rogers-native-helper.md) |
 
 Capability overview: [000-capability-map.md](000-capability-map.md).
 

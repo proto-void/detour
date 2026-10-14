@@ -1,11 +1,13 @@
 import type { StorageAreaLike } from '../rule-model/storage';
+import { brandDefaultTheme } from './brand-config';
 
 export const THEME_KEY = 'theme';
 export type Theme = 'dark' | 'light';
 
-/** Anything other than an explicit light choice stays on the dark default. */
-export function parseTheme(value: unknown): Theme {
-  return value === 'light' ? 'light' : 'dark';
+/** Missing preference uses the active brand's defaultTheme. */
+export function parseTheme(value: unknown, fallback: Theme = brandDefaultTheme): Theme {
+  if (value === 'light' || value === 'dark') return value;
+  return fallback;
 }
 
 export async function loadTheme(area: StorageAreaLike): Promise<Theme> {

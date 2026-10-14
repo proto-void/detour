@@ -33,6 +33,9 @@
     display: grid;
     gap: var(--space-1);
     min-width: 0;
+    /* Keep label/control top-aligned when a sibling field is taller (hints/errors). */
+    align-self: start;
+    align-content: start;
   }
 
   label {

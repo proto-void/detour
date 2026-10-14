@@ -1,7 +1,9 @@
 # Privacy policy
 
 **Detour** (“Point production at your code.”)  
-**Effective:** 2026-10-07
+**Effective:** 2026-10-07  
+**Product site:** [https://detour.protovoid.com](https://detour.protovoid.com)  
+**Canonical policy URL:** [https://detour.protovoid.com/privacy/](https://detour.protovoid.com/privacy/)
 
 Detour is a browser extension that runs on your device. It is free, MIT-licensed software. The project does not operate an account system or a server for the extension.
 
@@ -27,4 +29,4 @@ Chrome, Edge, and Firefox will show the extension’s permissions at install. Wh
 
 ## Contact
 
-This policy lives with the source code. Questions go to the project maintainers via the repository that distributed the build you installed. There is no separate Detour website required to use the extension.
+Questions about this policy or Detour go to the maintainers via the [product site](https://detour.protovoid.com), the public repository [github.com/proto-void/detour](https://github.com/proto-void/detour), or email **detour@protovoid.com**. There is no account system and no Detour cloud service for the extension.

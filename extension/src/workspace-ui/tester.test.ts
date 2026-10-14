@@ -285,8 +285,12 @@ describe('resolveProbe action lanes', () => {
     expect(view.notes.some((n) => /user scripts/i.test(n))).toBe(true);
   });
 
-  it('lets an earlier body replacement win, and notes a redirect on the same URL', () => {
-    const body = rule('body', { type: 'overrideBody', body: 'local', contentType: 'text/javascript' }, { match: { kind: 'glob', pattern: 'https://cdn.example.com/*.js' }, resourceTypes: ['script'] });
+  it('lets an earlier in-place body replacement win, and notes a redirect on the same URL', () => {
+    const body = rule(
+      'body',
+      { type: 'overrideBody', body: 'local', contentType: 'text/javascript', delivery: 'inPlace' },
+      { match: { kind: 'glob', pattern: 'https://cdn.example.com/*.js' }, resourceTypes: ['script'] },
+    );
     const later = redirect('r', 'https://cdn.example.com/*', 'http://127.0.0.1/*', { resourceTypes: ['script'] });
     const view = lines(ws(group('g', 'Files', [body, later])), probe('https://cdn.example.com/app.js', { resourceType: 'script' }));
     expect(view.headline).toBe('This rule wins.');
@@ -298,9 +302,24 @@ describe('resolveProbe action lanes', () => {
     expect(redirectFirst.notes.some((note) => /body replacement/i.test(note))).toBe(true);
   });
 
+  it('attributes redirect-delivery body rules as a truncated data: redirect', () => {
+    const body = rule(
+      'body',
+      { type: 'overrideBody', body: '{"ok":true}', delivery: 'redirect' },
+      { match: { kind: 'glob', pattern: 'https://cdn.example.com/switch.json' }, resourceTypes: ['xmlhttprequest'] },
+    );
+    const view = lines(ws(group('g', 'JSON', [body])), probe('https://cdn.example.com/switch.json', { resourceType: 'xmlhttprequest' }));
+    expect(view.headline).toBe('This rule wins.');
+    expect(view.lines[0]?.outcome).toBe('Body replaced (redirect) → data:application/json (11 bytes).');
+  });
+
   it('lets a fetch mock win over a body replacement', () => {
     const mock = rule('m', { type: 'mock', method: 'ANY', status: 201, headers: [], body: '{}', delayMs: 0 }, { match: { kind: 'glob', pattern: '*' } });
-    const body = rule('b', { type: 'overrideBody', body: 'nope' }, { match: { kind: 'glob', pattern: '*' }, resourceTypes: ['xmlhttprequest'] });
+    const body = rule(
+      'b',
+      { type: 'overrideBody', body: 'nope', delivery: 'inPlace' },
+      { match: { kind: 'glob', pattern: '*' }, resourceTypes: ['xmlhttprequest'] },
+    );
     const view = lines(ws(group('g', 'API', [body, mock])), probe('https://api.example.com/x', { resourceType: 'xmlhttprequest' }));
     expect(view.lines.map((line) => line.outcome)).toEqual(['Returns 201 with body "{}".']);
   });

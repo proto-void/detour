@@ -1,13 +1,17 @@
 # Capability map
 
 **Status:** Draft  
-**Last updated:** 2026-10-07
+**Last updated:** 2026-10-09
 
 `local-bridge` is Approved (Hamza, 2026-10-07): a Node CLI on `127.0.0.1`, not a backend. In-place fulfill (keep the original URL) is Approved the same day when response rewriting is allowed. See [local-bridge](local-bridge.md), ADR-012, and ADR-013.
 
+`api-client` **Slices A + B + C** are Approved (Hamza, 2026-10-09; B/C via “Continue B/C”): options **API Tester** — Postman-class client, no backend. See [api-client](api-client.md) and plan [025](../plans/025-api-client.md).
+
+`db-client` is **Approved** for Slices A–D + **Connection options** (Hamza, 2026-10-09): options **Databases** — native-messaging DB helper ([ADR-027](../DECISIONS.md)). See [db-client](db-client.md), plans [026](../plans/026-db-client.md) (Done) and [027](../plans/027-db-connection-options.md) (In Progress).
+
 ## Product intent
 
-Detour lets developers **point production at their code** via rules compiled into the least-privilege engine.
+Detour lets developers **point production at their code** via rules compiled into the least-privilege engine. A **Developer workbench** (API Tester + Databases) extends that with free, local, account-free tools — see [PRODUCT.md](../PRODUCT.md).
 
 ## Module matrix
 
@@ -22,6 +26,8 @@ Detour lets developers **point production at their code** via rules compiled int
 | workspace-ui | Popup, workspace, recipes, rule tester, dark default | — |
 | observability | Badge, match log, compile errors | — |
 | distribution | Stores, permissions copy, CI artifacts | — |
+| api-client | API Tester A–C: send, collections, runner/load, OAuth/SigV4/Digest, cookies, GraphQL/WS/SSE, visualizer, folder sync, capture | Extension page fetch + DNR session headers |
+| db-client | Databases: native host + adapters (A–D); Connection options v2 (Approved; plan 027) | Native messaging host (`com.detour.db`) |
 
 ## Non-goals (global)
 
@@ -31,8 +37,8 @@ Detour lets developers **point production at their code** via rules compiled int
 
 ## Dependencies (build order)
 
-`rule-model` → `engine-core` → (`page-inject` ∥ `api-mock`) → `engine-deep` → `local-bridge` → `workspace-ui` → `observability` → `distribution`
+`rule-model` → `engine-core` → (`page-inject` ∥ `api-mock`) → `engine-deep` → `local-bridge` → `workspace-ui` → `observability` → `distribution` → `api-client` (A–C Approved) → `db-client` (A–D via `026`; Connection options via `027`)
 
 UI may prototype against mocks earlier, but production wiring follows Approved specs in order.
 
-`distribution` is Approved for CI and packaging only (Hamza, 2026-10-07). `local-bridge` is Approved for the localhost file CLI and in-place fulfill (Hamza, 2026-10-07). npm publish of `@detour/cli` is still out of scope.
+`distribution` is Approved for CI and packaging only (Hamza, 2026-10-07). `local-bridge` is Approved for the localhost file CLI and in-place fulfill (Hamza, 2026-10-07). npm publish of `@detour/cli` is still out of scope. `api-client` Slices A–C may implement (`025`). `db-client` A–D shipped (`026`); Connection options Approved — implement via `027`.

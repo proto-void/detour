@@ -1,7 +1,7 @@
 import type { Refusal } from '../engine-core/compile';
 import { BRIDGE_PATH_REFUSED, isSafeRelative } from '../local-bridge/paths';
 import { compileMatcher } from '../rule-model/match';
-import type { Match, ResourceType, Rule, Workspace } from '../rule-model/schema';
+import { isInPlaceBody, type Match, type ResourceType, type Rule, type Workspace } from '../rule-model/schema';
 
 const PRINTABLE_ASCII = /^[\x20-\x7e]*$/;
 
@@ -58,8 +58,8 @@ interface ArmedBody {
 }
 
 /**
- * Enabled overrideBody rules, in workspace order. When `bridgeInPlace` is set, enabled
- * serveLocal rules are armed here too (the compiler must not also redirect them).
+ * Enabled in-place overrideBody rules, in workspace order. Redirect delivery is DNR (engine-core).
+ * When `bridgeInPlace` is set, enabled serveLocal rules are armed here too (the compiler must not also redirect them).
  * Patterns are hints for Chrome's Fetch.enable; the handler still matches with the rule's own glob or regex.
  * Pass an empty workspace when Detour is off.
  */
@@ -103,7 +103,7 @@ export function planBody(workspace: Workspace, options: { bridgeInPlace?: boolea
     if (!group.enabled) continue;
     for (const rule of group.rules) {
       if (!rule.enabled) continue;
-      if (rule.action.type === 'overrideBody') {
+      if (isInPlaceBody(rule.action)) {
         arm(group.id, rule, group.pageDomains, {
           body: rule.action.body,
           ...(rule.action.contentType && { contentType: rule.action.contentType }),

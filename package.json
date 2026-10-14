@@ -6,6 +6,8 @@
   "scripts": {
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "build": "pnpm -r build"
+    "build": "pnpm -r build",
+    "pack:os": "corepack pnpm --filter @detour/cli pack:os",
+    "pack:os:rogers": "DETOUR_BRAND=rogers corepack pnpm --filter @detour/cli pack:os"
   }
 }

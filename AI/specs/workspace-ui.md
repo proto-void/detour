@@ -46,7 +46,7 @@ Deliver Detour's primary UX: popup quick controls, full workspace editor, recipe
 - [x] Rules: create, edit, delete, move up/down within a group, on/off switch; actions **redirect**, **block**, **modify headers** (request/response set/append/remove)
 - [x] Match field: glob or regex, a plain-language description, field-level errors from the valibot schemas plus the engine's pre-checks (non-ASCII, bad redirect target, loop, too many wildcards); a sample-URL preview showing match / no match and the redirect result
 - [x] Rule options: case sensitivity, which requests (all incl. page loads / subresources only / custom kept as-is), note
-- [x] Explicit **Save** writes the workspace (validated) which triggers engine apply; unsaved changes are flagged and can be discarded; external changes (e.g. a popup import) don't silently overwrite unsaved edits
+- [x] **Autosave** (on by default) writes a validated draft about 1 s after the last edit; invalid drafts are held without forcing focus. Explicit **Save now** (Ctrl/Cmd+S) still writes immediately with validation focus. Unsaved changes are flagged and can be discarded; a toast Undo restores the previous autosave. External changes (e.g. a popup import) pause autosave and don't silently overwrite unsaved edits
 - [x] Inline per-rule status from `applyReport`: applied, refused + reason, off, or waiting for apply
 - [x] **Export** button downloads the saved workspace as `{ v: 1, data }`
 - [x] Site-scoped groups show an **iframe coverage warning** on browsers without `topDomains` (Firefox, Chrome < 145): requests made by cross-site iframes on those pages aren't covered (accepted gap, Hamza 2026-10-06)

@@ -1,0 +1,56 @@
+# {{brandName}} database helper ({{osLabel}} {{arch}})
+
+Browsers cannot open raw database connections from an extension. This helper is a small local program that {{brandName}} starts and stops through **native messaging**. A one-time install is required; day-to-day start/stop is automatic.
+
+## What the installer does
+
+1. Copies this `helper/` folder to:
+
+   `{{installDirExample}}`
+
+2. Writes native-messaging manifests for Chrome, Edge, Brave, Chromium, and Firefox (and Windows HKCU registry keys when on Windows).
+3. Points the manifest `path` at the installed `{{helperBinary}}` (no Node required).
+4. On Windows, copies sibling `detour-pickfile` (native Browse dialog) when present. On macOS, compiles `pickfile-nsopen.scpt` for fast Browse.
+5. Changes nothing else on your system.
+
+## First-run warnings ($0 unsigned builds)
+
+{{brandName}} does not pay for Apple notarization or Windows code signing (product rule: $0 recurring ops). Expect a first-run warning:
+
+{{firstRunNotes}}
+
+## Command line
+
+From this folder (or after install, from the install directory):
+
+```text
+{{helperBinary}} install [--extension-id=…] [--no-firefox] [--dry-run] [--brand=detour|rogers]
+{{helperBinary}} uninstall
+{{helperBinary}} doctor
+{{helperBinary}} --version
+```
+
+With no arguments, the browser spawns the helper for native messaging (stdio JSON-RPC).
+
+## Troubleshooting
+
+| Symptom | What to try |
+|---------|-------------|
+| **Not installed** / Helper missing | Re-run **{{installScript}}**, reload the options page, click **Start** |
+| **Native host disconnected** | Run `{{helperBinary}} doctor` and check the binary + manifest paths |
+| Moved the `extension/` folder | No action for the helper — the extension id is fixed by the public manifest key |
+| Edge or Brave never installed | Installer skips missing browsers; Chrome/Chromium manifests still work |
+| Corporate policy blocks native hosts | Ask IT to allow `com.detour.db` (e.g. Chrome `NativeMessagingAllowlist`) |
+
+## Secrets
+
+Passwords and tokens live in your OS keychain (service `com.detour.db`), not in the extension. Uninstall removes manifests and the helper files; clear keychain entries separately if you want secrets gone too.
+
+## Developers
+
+From a Detour repo checkout with Node 24+:
+
+```sh
+corepack pnpm --filter @detour/cli exec detour db install
+corepack pnpm --filter @detour/cli exec detour db uninstall
+```

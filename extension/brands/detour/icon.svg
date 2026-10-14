@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none" role="img" aria-label="Detour">
+  <defs>
+    <linearGradient id="detour-stroke" x1="20" y1="100" x2="108" y2="28" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f20294"/>
+      <stop offset="0.38" stop-color="#7b1398"/>
+      <stop offset="0.68" stop-color="#4a1f9a"/>
+      <stop offset="1" stop-color="#c08cff"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="#0f0c1b"/>
+  <!-- Detour path: straight → bend up → continue → arrow (thick for 16px) -->
+  <path
+    d="M24 78h28c10 0 12-28 24-28h28"
+    stroke="url(#detour-stroke)"
+    stroke-width="12"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M90 40l14 10-14 10"
+    stroke="url(#detour-stroke)"
+    stroke-width="12"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

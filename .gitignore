@@ -15,9 +15,16 @@ Thumbs.db
 .env.*
 !.env.example
 *.pem
+!cli/src/db/certs/*.pem
+cli/src/db/certs/test/
 *.p12
 **/secrets/
 **/credentials/
+
+# Node SEA build output for DB host + OS packs + official Node cache for SEA
+cli/.sea/
+cli/.packs/
+cli/.cache/
 
 # Node / extension build (when scaffolded)
 node_modules/
@@ -37,3 +44,9 @@ lcov.info
 # Local tooling caches
 .cursor/mcp.json
 .cursor/*.log
+
+# Private white-label brands (name/marks must not ship in the public MIT tree)
+extension/brands/rogers/
+
+# Local Chrome profile used by e2e / load-unpacked
+extension/.chrome-dev-profile/

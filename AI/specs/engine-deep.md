@@ -1,10 +1,10 @@
 # Spec: engine-deep
 
-**Status:** Approved — body override (Hamza, 2026-10-06); SRI hashes (Hamza, 2026-10-07); page-world integrity (Hamza, 2026-10-07); markup integrity (Hamza, 2026-10-07); script-running markup (Hamza, 2026-10-07); inert markup (Hamza, 2026-10-07); setHTMLUnsafe with scripts off (Hamza, 2026-10-07); `Document.parseHTMLUnsafe` (Hamza, 2026-10-07); `setAttributeNode` (Hamza, 2026-10-07); `setNamedItem` and `Attr.value` (Hamza, 2026-10-07); `document.write` and `document.writeln` (Hamza, 2026-10-07); `iframe` `srcdoc` (Hamza, 2026-10-07)  
+**Status:** Approved — body override (Hamza, 2026-10-06); SRI hashes (Hamza, 2026-10-07); page-world integrity (Hamza, 2026-10-07); markup integrity (Hamza, 2026-10-07); script-running markup (Hamza, 2026-10-07); inert markup (Hamza, 2026-10-07); setHTMLUnsafe with scripts off (Hamza, 2026-10-07); `Document.parseHTMLUnsafe` (Hamza, 2026-10-07); `setAttributeNode` (Hamza, 2026-10-07); `setNamedItem` and `Attr.value` (Hamza, 2026-10-07); `document.write` and `document.writeln` (Hamza, 2026-10-07); `iframe` `srcdoc` (Hamza, 2026-10-07); body redirect delivery (Hamza, 2026-10-08)  
 **Last updated:** 2026-10-08  
 **Build order:** 5  
 **Depends on:** rule-model, engine-core  
-**Plan:** [008-engine-deep-body](../plans/008-engine-deep-body.md), [013-sri-handling](../plans/013-sri-handling.md), [014-sri-page-integrity](../plans/014-sri-page-integrity.md), [015-sri-markup-integrity](../plans/015-sri-markup-integrity.md), [016-sri-script-markup](../plans/016-sri-script-markup.md), [017-sri-inert-markup](../plans/017-sri-inert-markup.md), [018-sri-unsafe-html-scripts-off](../plans/018-sri-unsafe-html-scripts-off.md), [019-sri-parse-html-unsafe](../plans/019-sri-parse-html-unsafe.md), [020-sri-attribute-node](../plans/020-sri-attribute-node.md), [021-sri-named-item](../plans/021-sri-named-item.md), [022-sri-document-write](../plans/022-sri-document-write.md), [023-sri-iframe-srcdoc](../plans/023-sri-iframe-srcdoc.md)
+**Plan:** [008-engine-deep-body](../plans/008-engine-deep-body.md), [013-sri-handling](../plans/013-sri-handling.md), [014-sri-page-integrity](../plans/014-sri-page-integrity.md), [015-sri-markup-integrity](../plans/015-sri-markup-integrity.md), [016-sri-script-markup](../plans/016-sri-script-markup.md), [017-sri-inert-markup](../plans/017-sri-inert-markup.md), [018-sri-unsafe-html-scripts-off](../plans/018-sri-unsafe-html-scripts-off.md), [019-sri-parse-html-unsafe](../plans/019-sri-parse-html-unsafe.md), [020-sri-attribute-node](../plans/020-sri-attribute-node.md), [021-sri-named-item](../plans/021-sri-named-item.md), [022-sri-document-write](../plans/022-sri-document-write.md), [023-sri-iframe-srcdoc](../plans/023-sri-iframe-srcdoc.md), [024-body-redirect-delivery](../plans/024-body-redirect-delivery.md)
 
 Amended 2026-10-07 (Hamza, in-place bridge read): the same fulfill / filter path may replace a response with bytes the extension read from Local Bridge. Disk mapping, the token, and path confinement stay in [local-bridge](local-bridge.md) and [ADR-013](../DECISIONS.md). Consent is still `bodyEngineConsent`. This spec does not grow a folder browser.
 
@@ -30,18 +30,21 @@ Amended 2026-10-07 (Hamza, `document.write` and `document.writeln`): the same ho
 
 Amended 2026-10-07 (Hamza, `iframe` `srcdoc`): the same hook rewrites `integrity` in a string assigned to `HTMLIFrameElement.srcdoc`, or passed to `setAttribute` / `setAttributeNS` as HTML `srcdoc` on an iframe, before the browser parses that string as the frame's document. Other hashes in the string stay. A value that is not a string is passed through unchanged. [ADR-024](../DECISIONS.md).
 
+Amended 2026-10-08 (Hamza, body redirect delivery): `overrideBody.delivery` is `redirect` (default, DNR `data:` URL via engine-core) or `inPlace` (this module's debugger / filter path). Only `inPlace` arms the body engines, shows the Allow debugger banner, and rewrites Subresource Integrity. [ADR-025](../DECISIONS.md).
+
 ## Objective
 
-Replace the response body of a matched request with text the user wrote, without a `data:` redirect. Chromium uses the debugger (`Fetch` domain). Firefox uses `webRequest.filterResponseData`. The same rule action drives both.
+Replace the response body of a matched request with text the user wrote. The default delivery is a DNR redirect to a `data:` URL (Resource Override 2.0 parity, works with DevTools open). Opt-in **in place** keeps the URL via Chromium debugger (`Fetch`) or Firefox `webRequest.filterResponseData` for CSP/SRI pages.
 
-Hamza approved **engine-deep** for body override on 2026-10-06. Local Bridge stays Draft. This spec records the thinnest slice that delivers a real override.
+Hamza approved **engine-deep** for body override on 2026-10-06 and redirect delivery on 2026-10-08.
 
 ## User stories
 
-- As a developer, I can replace a remote JS, CSS, JSON, or other text response with my own body while the URL stays the same.
-- As a developer, I am asked before Detour attaches the debugger (Chrome) or filters responses (Firefox), and nothing attaches on install.
+- As a developer, I can replace a remote JS, CSS, JSON, or other text response with my own body. By default the browser redirects to a `data:` URL so DevTools can stay open.
+- As a developer, I can choose **Replace in place** so the URL stays the same (CSP/SRI-safe), using the debugger on Chrome or response filtering on Firefox.
+- As a developer, I am asked before Detour attaches the debugger (Chrome) or filters responses (Firefox) for in-place rules, and nothing attaches on install. Redirect-only workspaces never show that banner.
 - As a developer, I can turn the rule or Detour off and the browser stops rewriting bodies.
-- As a developer, I can import a Resource Override `fileOverride` and get this action instead of a skip.
+- As a developer, I can import a Resource Override `fileOverride` and get redirect delivery (RO 2.0 parity).
 - As a developer, I can replace a script or stylesheet that the page protects with Subresource Integrity, and the browser runs my file.
 - As a developer, I can override a script whose `integrity` is assigned by page JavaScript after the HTML is parsed.
 - As a developer, I can override a script or stylesheet whose `integrity` is carried in markup passed to `innerHTML` or `insertAdjacentHTML`.
@@ -56,16 +59,17 @@ Hamza approved **engine-deep** for body override on 2026-10-06. Local Bridge sta
 
 ## Acceptance criteria
 
-- [x] Rule action `overrideBody` with an inline UTF-8 `body` (1 MB max) and an optional `contentType`. Match, resource types, and site scoping work like other request rules
-- [x] Chromium: `debugger` is an install-time permission (the API is missing until it is granted, and Chrome 154 headless will not accept an optional grant from a click). Attach still waits for **Allow debugger**, which sets `storage.local.bodyEngineConsent`. CDP `Fetch.enable` at the **Response** stage; `Fetch.fulfillRequest` swaps the body; other paused requests `Fetch.continueResponse`. Protocol version `1.3`. Detach when no body rule is enabled or Detour is off
-- [x] Cancelling Chrome’s debugging banner leaves that tab detached until the body rules change. Opening DevTools detaches the override (Chrome documents this)
-- [x] Firefox: optional `webRequest`, `webRequestBlocking`, and `webRequestFilterResponse` (required for MV3 since Firefox 110). `filterResponseData` replaces the body. No debugger on Firefox. The same Allow click requests that permission and sets `bodyEngineConsent`
-- [x] The DNR compiler does not emit these rules. `applyReport.bodies` lists armed rules (ids only). Missing permission or consent refuses them with `body-permission-denied`
-- [x] Rule tester treats body replacement as a request outcome. The earliest block, redirect, or body rule wins. A note covers the Chrome overlap with a redirect
-- [x] Editor: “Replace response body”, code editor, content type, and honest Chrome vs Firefox copy (banner, DevTools, SRI, CSP)
-- [x] RO `fileOverride` imports as `overrideBody` using the export’s `file` string. Empty files are skipped. `fileInject` stays skipped
+- [x] Rule action `overrideBody` with an inline UTF-8 `body` (1 MB max), optional `contentType`, and `delivery` (`redirect` default, or `inPlace`). Match, resource types, and site scoping work like other request rules
+- [x] **`delivery: redirect` (default):** engine-core emits a DNR redirect to a `data:` URL. No debugger, no consent. MIME from `contentType` or the match URL's extension. Rule tester and apply status attribute it as a DNR redirect
+- [x] **`delivery: inPlace`:** Chromium `debugger` is an install-time permission (the API is missing until it is granted, and Chrome 154 headless will not accept an optional grant from a click). Attach still waits for **Allow debugger**, which sets `storage.local.bodyEngineConsent`. CDP `Fetch.enable` at the **Response** stage; `Fetch.fulfillRequest` swaps the body; other paused requests `Fetch.continueResponse`. Protocol version `1.3`. Detach when no in-place body rule is enabled or Detour is off
+- [x] Cancelling Chrome’s debugging banner leaves that tab detached until the in-place body rules change. Opening DevTools detaches the override (Chrome documents this)
+- [x] Firefox in-place: optional `webRequest`, `webRequestBlocking`, and `webRequestFilterResponse` (required for MV3 since Firefox 110). `filterResponseData` replaces the body. No debugger on Firefox. The same Allow click requests that permission and sets `bodyEngineConsent`
+- [x] The DNR compiler emits redirect-delivery rules and skips in-place ones. `applyReport.bodies` lists armed in-place rules (ids only). Missing permission or consent refuses in-place rules with `body-permission-denied`. Redirect-only workspaces never arm the body engines
+- [x] Rule tester treats redirect delivery as a DNR redirect and in-place as body replacement. The earliest block, redirect, or body rule wins. A note covers the Chrome overlap with a redirect
+- [x] Editor: “Replace response body”, Delivery select, code editor, content type, mode-specific notes (redirect: CSP/`data:`/SRI; in-place: Chrome vs Firefox, consent-aware CTA, DevTools, integrity)
+- [x] RO `fileOverride` imports as `overrideBody` with `delivery: 'redirect'` using the export’s `file` string. Empty files are skipped. `fileInject` stays skipped
 - [x] No attach on install. Rule bodies are not written to the apply report
-- [x] While body rules are armed, a UTF-8 HTML document is rewritten so each matching script or stylesheet tag's `integrity` is `sha384-` of the override bytes (`overrideBody` text, or the in-place bridge file). Tags that do not match an armed rule keep their hashes
+- [x] While in-place body rules are armed, a UTF-8 HTML document is rewritten so each matching script or stylesheet tag's `integrity` is `sha384-` of the override bytes (`overrideBody` text, or the in-place bridge file). Tags that do not match an armed rule keep their hashes. Redirect delivery does not rewrite the document
 - [x] The hash and the fulfilled body come from the same read. If that read fails, the published hash stays
 - [x] Documents that are not UTF-8 HTML, or are over 2 MiB, are left unchanged
 - [x] The rules page says Detour updates that hash, that other files keep theirs, and that a redirect with rewriting off does not change the page
@@ -123,8 +127,8 @@ Hamza approved **engine-deep** for body override on 2026-10-06. Local Bridge sta
 ## Out of scope
 
 - Local-folder mapping and external editors. [local-bridge](local-bridge.md) may call this fulfill path with bytes it already read. The token never enters this module’s apply report
-- Binary bodies and `data:` redirects
-- Rewriting the document when response rewriting is off
+- Binary bodies (redirect delivery uses UTF-8 text in a `data:` URL; see engine-core)
+- Rewriting the document when response rewriting is off, or for redirect-delivery `overrideBody`
 - Non-UTF-8 HTML and documents over 2 MiB
 - The safe `setHTML` methods and `Document.parseHTML`
 - `DOMParser.parseFromString` for any type other than `text/html`

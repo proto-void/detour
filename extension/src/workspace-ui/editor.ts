@@ -1,5 +1,6 @@
 import * as v from 'valibot';
 import type { ApplyReport } from '../engine-core/apply';
+import { bodyDataUrl } from '../engine-core/body-data-url';
 import { compileRule, type RefusalReason } from '../engine-core/compile';
 import { compileMatcher, countWildcards } from '../rule-model/match';
 import {
@@ -79,6 +80,22 @@ export function findRule(ws: Workspace | undefined, ruleId: string): { group: Gr
 
 export const isDirty = (draft: Workspace, saved: Workspace): boolean => JSON.stringify(draft) !== JSON.stringify(saved);
 
+/** Pure gate for the options-page autosave timer. */
+export type AutosaveDecision = 'save' | 'invalid' | 'paused' | 'idle';
+
+export function autosaveDecision(input: {
+  dirty: boolean;
+  errorCount: number;
+  changedElsewhere: boolean;
+  saving: boolean;
+  autosave: boolean;
+}): AutosaveDecision {
+  if (!input.autosave || !input.dirty) return 'idle';
+  if (input.changedElsewhere || input.saving) return 'paused';
+  if (input.errorCount > 0) return 'invalid';
+  return 'save';
+}
+
 // ---------------------------------------------------------------------------------------------
 // Rule fields
 
@@ -97,7 +114,7 @@ export function defaultAction(type: Action['type']): Action {
     case 'mock':
       return { type, method: 'GET', status: 200, headers: [{ name: 'content-type', value: 'application/json' }], body: '{}', delayMs: 0 };
     case 'overrideBody':
-      return { type, body: '' };
+      return { type, body: '', delivery: 'redirect' };
     case 'serveLocal':
       return { type, path: '' };
   }
@@ -244,7 +261,22 @@ export function validateRule(rule: Rule): RuleValidation {
     const compiled = compileRule(parsed.output);
     if (!compiled.ok) warnings[REASON_FIELD[compiled.reason] ?? 'match.pattern'] = `${REASON_LABELS[compiled.reason]}: ${compiled.message}`;
   }
-  if (rule.action.type === 'overrideBody' && (rule.match.kind === 'regex' || /^\*+$/.test(rule.match.pattern))) {
+  if (parsed.output.action.type === 'overrideBody' && (parsed.output.action.delivery ?? 'redirect') === 'redirect') {
+    const asRedirect = {
+      ...parsed.output,
+      action: {
+        type: 'redirect' as const,
+        to: bodyDataUrl(parsed.output.action.body, parsed.output.match.pattern, parsed.output.action.contentType),
+      },
+    };
+    const compiled = compileRule(asRedirect);
+    if (!compiled.ok) warnings[REASON_FIELD[compiled.reason] ?? 'match.pattern'] = `${REASON_LABELS[compiled.reason]}: ${compiled.message}`;
+  }
+  if (
+    rule.action.type === 'overrideBody' &&
+    (rule.action.delivery ?? 'redirect') === 'inPlace' &&
+    (rule.match.kind === 'regex' || /^\*+$/.test(rule.match.pattern))
+  ) {
     warnings['match.pattern'] =
       'This pattern pauses every response while the rule is on, then lets non-matches continue. A more specific URL avoids that.';
   }
@@ -354,6 +386,9 @@ export function previewMatch(rule: Rule, url: string): Preview {
   const hit = matcher.exec(url);
   if (!hit) return { kind: 'no-match' };
   const { action } = rule;
+  if (action.type === 'overrideBody' && (action.delivery ?? 'redirect') === 'redirect') {
+    return { kind: 'match', outcome: 'redirect', to: bodyDataUrl(action.body, rule.match.pattern, action.contentType) };
+  }
   if (action.type !== 'redirect') return { kind: 'match', outcome: action.type };
 
   if (rule.match.kind === 'glob') {
@@ -413,6 +448,73 @@ export function codeLanguage(action: Action): CodeLanguage {
   return 'text';
 }
 
+/** Short chip label for the compact rule row. */
+export function actionLabel(type: Action['type']): string {
+  switch (type) {
+    case 'redirect':
+      return 'Redirect';
+    case 'block':
+      return 'Block';
+    case 'modifyHeaders':
+      return 'Headers';
+    case 'injectJs':
+      return 'JS';
+    case 'injectCss':
+      return 'CSS';
+    case 'mock':
+      return 'Mock';
+    case 'overrideBody':
+      return 'Body';
+    case 'serveLocal':
+      return 'Local';
+  }
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  const kb = n / 1024;
+  if (kb < 1024) return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} KB`;
+  const mb = kb / 1024;
+  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
+}
+
+/** Size hint for body/code actions on the compact row (e.g. `1.2 KB JSON`). */
+export function bodySizeHint(action: Action): string {
+  let text = '';
+  let kind = '';
+  if (action.type === 'overrideBody') {
+    text = action.body;
+    const lang = codeLanguage(action);
+    kind = lang === 'text' ? '' : lang.toUpperCase();
+  } else if (action.type === 'mock') {
+    text = action.body;
+    kind = codeLanguage(action) === 'json' ? 'JSON' : '';
+  } else if (action.type === 'injectJs' || action.type === 'injectCss') {
+    if (action.source.kind === 'url') return 'URL';
+    text = action.source.code;
+    kind = action.type === 'injectJs' ? 'JS' : 'CSS';
+  } else {
+    return '';
+  }
+  if (text === '') return kind ? `empty ${kind}` : 'empty';
+  const size = formatBytes(new TextEncoder().encode(text).length);
+  return kind ? `${size} ${kind}` : size;
+}
+
+/** Insert a deep copy of a rule after the original. */
+export function duplicateRule(ws: Workspace, groupId: string, ruleId: string, newId: NewId): Workspace {
+  return mapGroup(ws, groupId, (g) => {
+    const index = g.rules.findIndex((r) => r.id === ruleId);
+    if (index < 0) return g;
+    const original = g.rules[index]!;
+    const copy = structuredClone(original) as Rule;
+    copy.id = newId();
+    const rules = [...g.rules];
+    rules.splice(index + 1, 0, copy);
+    return { ...g, rules };
+  });
+}
+
 export function ruleStatus(draftRule: Rule, { report, saved, awaitingApply, failures }: StatusContext): RuleStatus {
   const stored = findRule(saved, draftRule.id);
   if (!stored || JSON.stringify(stored.rule) !== JSON.stringify(draftRule)) return { kind: 'unsaved' };
@@ -436,3 +538,156 @@ export const isAwaitingApply = (report: ApplyReport | undefined, savedAt: number
   savedAt !== undefined && (!report || Date.parse(report.appliedAt) < savedAt);
 
 export const exportFileName = (date: Date): string => `detour-${date.toISOString().slice(0, 10)}.json`;
+
+/** Move a rule to an absolute index within its group (for drag-and-drop). */
+export function moveRuleToIndex(ws: Workspace, groupId: string, ruleId: string, toIndex: number): Workspace {
+  return mapGroup(ws, groupId, (g) => {
+    const from = g.rules.findIndex((r) => r.id === ruleId);
+    if (from < 0 || toIndex < 0 || toIndex >= g.rules.length || from === toIndex) return g;
+    const next = [...g.rules];
+    const [item] = next.splice(from, 1);
+    next.splice(toIndex, 0, item!);
+    return { ...g, rules: next };
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Options workspace helpers (filter, tabs, status strip, ACTION_INFO)
+
+export type OptionsTab = 'rules' | 'tester' | 'databases' | 'recipes' | 'log';
+
+/** Map location.hash to a workspace tab. Empty / #rules → Rules. */
+export function tabFromHash(hash: string): OptionsTab {
+  const raw = hash.startsWith('#') ? hash.slice(1) : hash;
+  if (raw === 'tester') return 'tester';
+  if (raw === 'databases' || raw === 'db') return 'databases';
+  if (raw === 'recipes') return 'recipes';
+  if (raw === 'log') return 'log';
+  return 'rules';
+}
+
+export interface ActionInfo {
+  type: Action['type'];
+  label: string;
+  description: string;
+}
+
+export const ACTION_INFO: readonly ActionInfo[] = [
+  { type: 'redirect', label: 'Redirect', description: 'Send matching requests to another URL.' },
+  { type: 'block', label: 'Block', description: 'Cancel matching requests.' },
+  { type: 'modifyHeaders', label: 'Modify Headers', description: 'Add, set, or remove request and response headers.' },
+  { type: 'injectJs', label: 'Inject JS', description: 'Run JavaScript on matching pages.' },
+  { type: 'injectCss', label: 'Inject CSS', description: 'Insert a stylesheet on matching pages.' },
+  { type: 'mock', label: 'Mock Fetch', description: 'Answer fetch/XHR with a fixed response.' },
+  { type: 'overrideBody', label: 'Replace Body', description: 'Replace the response body (redirect or in place).' },
+  { type: 'serveLocal', label: 'Serve Local', description: 'Serve a file from Local Bridge.' },
+];
+
+export function actionInfo(type: Action['type']): ActionInfo {
+  return ACTION_INFO.find((a) => a.type === type) ?? ACTION_INFO[0]!;
+}
+
+/** Relative time for save-state and match log (“2m ago”, “just now”). */
+export function formatRelativeTime(at: number, now = Date.now()): string {
+  const sec = Math.round((now - at) / 1000);
+  if (sec < 45) return 'just now';
+  if (sec < 3600) return `${Math.max(1, Math.round(sec / 60))}m ago`;
+  if (sec < 86400) return `${Math.max(1, Math.round(sec / 3600))}h ago`;
+  return `${Math.max(1, Math.round(sec / 86400))}d ago`;
+}
+
+export type StatusFilter = 'all' | RuleStatus['kind'];
+export type ActionFilter = 'all' | Action['type'];
+
+export interface StatusCounts {
+  applied: number;
+  refused: number;
+  unsaved: number;
+  off: number;
+}
+
+/** Counts for the status strip from draft rules + ruleStatus. */
+export function statusCounts(
+  draft: Workspace,
+  ctx: StatusContext,
+): StatusCounts {
+  const counts: StatusCounts = { applied: 0, refused: 0, unsaved: 0, off: 0 };
+  for (const group of draft.groups) {
+    for (const rule of group.rules) {
+      const status = ruleStatus(rule, ctx);
+      if (status.kind === 'applied') counts.applied += 1;
+      else if (status.kind === 'refused' || status.kind === 'failing') counts.refused += 1;
+      else if (status.kind === 'unsaved' || status.kind === 'pending') counts.unsaved += 1;
+      else if (status.kind === 'off' || status.kind === 'detour-off' || status.kind === 'not-applied') counts.off += 1;
+    }
+  }
+  return counts;
+}
+
+/** Visible rule ids per group for the Rules toolbar filters. */
+export function filterRules(
+  workspace: Workspace,
+  query: string,
+  actionFilter: ActionFilter,
+  statusFilter: StatusFilter,
+  ctx: StatusContext,
+): Map<string, string[]> {
+  const q = query.trim().toLowerCase();
+  const result = new Map<string, string[]>();
+  for (const group of workspace.groups) {
+    const ids: string[] = [];
+    for (const rule of group.rules) {
+      if (actionFilter !== 'all' && rule.action.type !== actionFilter) continue;
+      if (statusFilter !== 'all') {
+        const kind = ruleStatus(rule, ctx).kind;
+        if (statusFilter === 'refused') {
+          if (kind !== 'refused' && kind !== 'failing') continue;
+        } else if (statusFilter === 'unsaved') {
+          if (kind !== 'unsaved' && kind !== 'pending') continue;
+        } else if (statusFilter === 'off') {
+          if (kind !== 'off' && kind !== 'detour-off' && kind !== 'not-applied') continue;
+        } else if (kind !== statusFilter) continue;
+      }
+      if (q) {
+        const hay = [
+          rule.match.pattern,
+          group.name,
+          actionLabel(rule.action.type),
+          actionInfo(rule.action.type).label,
+          ruleTargetSummary(rule),
+          rule.note ?? '',
+        ]
+          .join(' ')
+          .toLowerCase();
+        if (!hay.includes(q)) continue;
+      }
+      ids.push(rule.id);
+    }
+    result.set(group.id, ids);
+  }
+  return result;
+}
+
+/** Muted mono target shown on a read-only rule row. */
+export function ruleTargetSummary(rule: Rule): string {
+  const { action } = rule;
+  switch (action.type) {
+    case 'redirect':
+      return action.to || '…';
+    case 'block':
+      return 'blocked';
+    case 'modifyHeaders': {
+      const n = action.request.length + action.response.length;
+      return `${n} header${n === 1 ? '' : 's'}`;
+    }
+    case 'injectJs':
+    case 'injectCss':
+      return action.source.kind === 'url' ? action.source.url || 'URL' : bodySizeHint(action) || 'code';
+    case 'mock':
+      return `${action.method} · ${bodySizeHint(action) || 'body'}`;
+    case 'overrideBody':
+      return bodySizeHint(action) || 'body';
+    case 'serveLocal':
+      return action.path || '…';
+  }
+}

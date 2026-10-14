@@ -60,7 +60,7 @@ export function summarizeRule(rule: Rule): string {
     case 'mock':
       return `Mock ${rule.action.method === 'ANY' ? '' : `${rule.action.method} `}${pattern} → ${rule.action.status}`;
     case 'overrideBody':
-      return `Replace body of ${pattern}`;
+      return (rule.action.delivery ?? 'redirect') === 'inPlace' ? `Replace body of ${pattern}` : `Redirect body of ${pattern}`;
     case 'serveLocal':
       return `Serve ${rule.action.path} for ${pattern}`;
   }

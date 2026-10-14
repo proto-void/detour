@@ -1,6 +1,6 @@
 # Architecture
 
-**Last verified:** 2026-10-08
+**Last verified:** 2026-10-09 (Go Cassandra TLS passphrase/SNI; popup DB tile; TLS `:sslKeyPass`; plan 029; OS packs; API Tester A–C)
 
 ## Pipeline
 
@@ -11,6 +11,9 @@ Rules → RuleCompiler → Core DNR            (built: engine-core)
                      → Deep chrome.debugger
                      → FF filterResponseData
                      → Local Bridge CLI
+Workbench (separate from RuleCompiler):
+  API Tester (api-client Slices A–C Done)
+  Databases (db-client A–D + partner-helper public hooks)
 ```
 
 ## Modules (spec map)
@@ -26,6 +29,37 @@ Rules → RuleCompiler → Core DNR            (built: engine-core)
 | `workspace-ui` | Popup, options, recipes, tester, RO import | `extension/src/workspace-ui/` (logic) + `src/entrypoints/popup/` (slice 1) + `src/entrypoints/options/` (slice 2) |
 | `observability` | Toolbar badge and session match log (no rule-body telemetry) | `extension/src/observability/` |
 | `distribution` | Store listing docs, permission rationale, CI and zip artifacts | `.github/workflows/ci.yml`, `docs/distribution/`, `extension/scripts/install-chrome.mjs` |
+| `api-client` | API Tester A–C: collections, send, scripts, dual-scope Apply Detour; runner/power; OAuth/SigV4/Digest, cookies, GraphQL/WS/SSE, visualizer, folder sync, capture | `extension/src/api-client/` + `ApiTester.svelte` + `ApiTesterPower.svelte` + `ApiTesterAdvanced.svelte` |
+| `db-client` | Databases tab + JSON-RPC to brand `nativeHostName` (default `com.detour.db`) | `extension/src/db-client/` + `cli/src/db/` + `Databases.svelte` (A–D + hooks) |
+
+## Databases helper (Slices A–D + Connection options + partner hooks, ADR-027/029/030)
+
+```
+Databases tab → optional nativeMessaging → connectNative(brand.nativeHostName || 'com.detour.db')
+  → hello → { protocolVersion, hostVersion, capabilities[] } (mismatch UX; engine/SSH/proxy gated)
+  → host JSON-RPC (chunk ≤ ~900 KB; cancel; idle / stdin-end exit; pickFile)
+  → adapters: cassandra, postgres, mysql/mariadb, mssql, sqlite, oracle,
+               mongodb, redis, clickhouse, elasticsearch/opensearch, dynamodb
+  → pure *-config.ts mappers; path-based TLS files; ssh2 (+ agent/jump); SOCKS5/HTTP proxy
+  → explain/tx/edits; ER/designer/compare; collection folder sync
+  → optional Local Bridge process start/stop (HTTP protocol unchanged)
+  → keychain secrets (kinds: password, :token, :sshKey, :sshPass, :sshKeyPass,
+       :sslKeyPass, :proxyPass, :walletPass) + Amazon Root CA1 for Keyspaces
+Install (preferred): OS pack → double-click Install → SEA copies to per-user dir
+  macOS `~/Library/Application Support/Detour/db-host/`
+  Windows `%LOCALAPPDATA%\Detour\db-host\`
+  Linux `${XDG_DATA_HOME:-~/.local/share}/detour/db-host/`
+  Manifest `path` = SEA binary; `allowed_origins` from stable public manifest `key` (ADR-029)
+Install (developers): `detour db install` / `uninstall` / `doctor` — Node launcher with absolute `process.execPath`
+SEA: `cli/scripts/build-sea.mjs` (esbuild CJS + postject + official Node base + keyring beside binary);
+  CI matrix windows-x64 / macos-arm64 / macos-x64 / linux-x64; `os-packs` + `v*` release assets
+Pack: `cli/scripts/pack-os.mjs` + `cli/pack/templates/`; store zips remain extension-only
+Compose: `docker-compose.db.yml` (+ profile `tls`) + `DETOUR_DB_E2E=1`; portable host via `DETOUR_DB_HOST_CMD`
+Brand build: `DETOUR_BRAND` and/or `DETOUR_BRAND_DIR` (absolute external brand tree, ADR-030)
+Connection form: declarative `fields.ts`; DbConnection v2 nested tls/ssh/proxy/advanced
+  TLS verify-full: CA / client cert / client key paths + Key passphrase → `:sslKeyPass`
+```
+
 
 ## Core DNR data flow (as built)
 
@@ -66,26 +100,29 @@ enabled workspace
 - Runtime failures (CSP-blocked script URL, unreachable CSS URL) append to `storage.session.pageFailures` (last 50, page origin + message, no bodies). The editor shows them on the rule.
 - Permissions: `scripting` always; `userScripts` in Chrome `permissions`, Firefox `optional_permissions`. Content scripts are not listed in the manifest; `syncPage` registers them.
 
-## Body override (as built, ADR-009)
+## Body override (as built, ADR-009 + ADR-025)
 
 ```
 enabled workspace
-  → planBody → overrideBody rules (workspace order) + Fetch urlPatterns
-  → sync (inside syncRules), only when bodyEngineConsent is true and the browser permission is present:
-       Chrome: debugger.attach(tab, "1.3") on http(s) tabs, Fetch.enable at Response,
-               fulfillRequest (base64 UTF-8) on match, continueResponse otherwise
-       Firefox: blocking webRequest listener; filterResponseData only for a match
-  → applyReport.bodies = [{ groupId, ruleId }]  (ids only)
-     refused reason body-permission-denied when consent or permission is missing
+  → overrideBody delivery redirect (default):
+       compileWorkspace → DNR redirect to data:<mime>;charset=UTF-8;base64,…
+       no debugger, no consent; applyReport.applied
+  → overrideBody delivery inPlace:
+       planBody → Fetch urlPatterns
+       sync only when bodyEngineConsent is true and the browser permission is present:
+         Chrome: debugger.attach + Fetch.fulfillRequest
+         Firefox: filterResponseData
+       applyReport.bodies; body-permission-denied when consent/permission missing
 ```
 
-- DNR compile skips `overrideBody`. Global off and an empty plan detach and clear the filter.
-- Chrome `debugger` is an install-time permission. The session is created only after consent, because the API is missing until the permission exists. Firefox `webRequest`, `webRequestBlocking`, and `webRequestFilterResponse` stay optional and are requested from Allow response rewriting.
-- First matching enabled rule wins. Omitted resource types match everything except `main_frame`. A document whose frame is unknown matches only when the rule lists both `main_frame` and `sub_frame`, so a page is not replaced by accident.
-- Replaced responses drop `content-encoding`, `content-length`, and `transfer-encoding`. Status and other headers stay. Optional content type replaces `Content-Type`.
-- Cancelling Chrome’s debugging banner leaves that tab detached until the body-rule plan changes. DevTools on the tab detaches Detour.
-- RO `fileOverride` maps to `overrideBody` (the export holds file bytes). `fileInject` stays skipped. A file on disk is `serveLocal`, not this import.
-- While those rules are armed, Chrome also pauses `Document` responses and Firefox filters document streams. Matching script and stylesheet tags in UTF-8 HTML get `sha384-` of the bytes that rule will serve (ADR-014). A failed read leaves the published hash.
+- DNR compile emits redirect-delivery rules and skips in-place ones. Global off and an empty in-place plan detach and clear the filter.
+- MIME for redirect: `contentType` when set, else match URL extension (`.json` → `application/json`, also `.js` / `.css` / `.html` / `.svg`), else `text/plain`.
+- Chrome `debugger` is install-time. Attach waits for Allow debugger. Redirect-only workspaces never show that banner. Firefox optional webRequest* from Allow response rewriting for in-place only.
+- First matching enabled rule wins. Omitted resource types match everything except `main_frame`.
+- In-place responses drop `content-encoding`, `content-length`, and `transfer-encoding`. Optional content type replaces `Content-Type`.
+- Cancelling Chrome’s debugging banner / opening DevTools detaches in-place Detour. Redirect delivery is unaffected.
+- RO `fileOverride` maps to `overrideBody` with `delivery: 'redirect'` (RO 2.0 parity). `fileInject` stays skipped. Disk files are `serveLocal`.
+- While in-place rules are armed, HTML documents get SHA-384 `integrity` rewrites (ADR-014+). Redirect delivery does not rewrite the document.
 
 ## Local Bridge (as built, ADR-012)
 
@@ -110,15 +147,17 @@ enabled serveLocal { path }
 
 | Surface | Entry | Holds |
 |---------|-------|-------|
-| Popup | `src/entrypoints/popup/` | global switch, first 8 group switches (immediate save), import, applied/refused report, Badge switch (`storage.local.showBadge`, missing means on), "Match log…" → `options.html#log`, "Recipes…" → `options.html#recipes`, "Test a URL…" → `options.html#tester`, "Edit rules…" → `runtime.openOptionsPage()`, Light theme switch |
-| Editor | `src/entrypoints/options/` (`options_ui`, `open_in_tab`) | groups/rules CRUD + reorder, switches, site scoping, request types (collapsed Advanced), inject/mock fields, CodeMirror 6 (options chunk only), validation, preview, Save/Discard, Export, user-scripts banner, rule tester, recipe picker, Recent matches (`#log`), Light theme switch |
+| Popup | `src/entrypoints/popup/` | global switch, first 8 group switches (immediate save), import, applied/refused report, Match count switch (`storage.local.showBadge`, missing means on), quick tiles: Rules / API Tester / **DB** (`#db` → Databases) / Log; Recipes only via options tab; "Edit rules…" → `runtime.openOptionsPage()`, Light theme switch |
+| Editor | `src/entrypoints/options/` (`options_ui`, `open_in_tab`) | groups/rules CRUD + reorder, compact rule rows (action chip, inline When/target, status dot, overflow menu), per-rule expand for details, side drawer for body/code (CodeMirror 6), site scoping, request types (collapsed Advanced), validation, preview, Autosave (default on) / Save now / Discard, Export, user-scripts banner, **API Tester** (`#tester`), recipe picker, Recent matches (`#log`), Light theme switch |
 | DevTools | `src/entrypoints/devtools/` + `devtools-panel/` | `devtools_page` creates a Detour panel. The panel runs `inspectPage` (page-load `resolveProbe`) for the inspected tab |
-| Shared | `src/ui/` | `base.css` tokens (dark default, `data-theme="light"`), `Switch`, `Field`, `ThemeToggle`, `announcer` (one live region per page) |
+| Shared | `src/ui/` | `base.css` tokens (dark default, `data-theme="light"`), `Switch`, `Field`, `Drawer`, `Toast`, `ThemeToggle`, `announcer` (one live region per page) |
 | Logic | `src/workspace-ui/` | `import-flow`, `report-view`, `editor`, `popup`, `recipes`, `devtools`, `tester` (pure; all unit tested) |
 
-- Editor model: `draft` and `saved` are `$state.raw` workspaces, changed only through the immutable ops in `editor.ts`. Save = `saveWorkspace(draft)`. A rule's status is "Applying" until an `applyReport` with `appliedAt` ≥ the moment the save started arrives.
-- Validation has two levels. `errors` (schema) block Save. `warnings` (what the compiler would refuse, and Chrome's request-`append` allowlist) show at the field but don't block, so one refused rule never stops saving the rest.
-- If storage changes while the draft is dirty, the editor shows a banner instead of reloading; reloading is the user's choice. Popup group switches write the workspace immediately, so a dirty editor shows that banner.
+- Editor model: `draft` and `saved` are `$state.raw` workspaces, changed only through the immutable ops in `editor.ts`. Autosave (`storage.local.autosave`, missing = on) writes a validated draft ~1 s after the last edit via `autosaveDecision`; Save now / Ctrl/Cmd+S writes immediately with validation focus. A toast offers one-level Undo of the last autosave. A rule's status is "Applying" until an `applyReport` with `appliedAt` ≥ the moment the save started arrives.
+- Compact row (default): Switch, colored action chip (type popover), When pattern, target slot (redirect/local inline; Edit body/code → drawer; headers summary expands details), status dot, `⋯` menu (move/duplicate/delete), chevron for details. Not an RO From/To/Edit File clone — Detour identity via chips and tokens.
+- Rule drawer: Match / Action / Test tabs in drawer chrome; ActionChip (always in head) switches Redirect/Block/Headers/Body/Mock/Inject/Local; Action panel holds type-specific fields (CodeMirror for body/code, Delivery, etc.). Docked drawer sits below sticky options bar (`--options-sticky-offset`).
+- Validation has two levels. `errors` (schema) block Save now and pause autosave (no write, no forced focus). `warnings` (what the compiler would refuse, and Chrome's request-`append` allowlist) show at the field but don't block, so one refused rule never stops saving the rest.
+- If storage changes while the draft is dirty, the editor shows a banner and pauses autosave instead of reloading; reloading is the user's choice. Popup group switches write the workspace immediately, so a dirty editor shows that banner.
 - **Theme:** `storage.local.theme === 'light'` or anything else (including missing) is dark. `applyTheme` sets `data-theme` before the page mounts. CodeMirror follows the same attribute.
 - **Recipes** (`workspace-ui/recipes.ts`) append a normal group to the editor draft. `buildRecipe` refuses input `parseWorkspace` or `compileRule` would refuse, including a host redirected at itself. Save applies them. No separate recipe file.
 - **DevTools** does not attach `chrome.debugger`. Outside a DevTools window the panel has no inspected page. `chrome.devtools` is only available there.
@@ -158,3 +197,14 @@ DNR onRuleMatchedDebug (unpacked Chromium) or getMatchedRules (packed fallback)
 
 - `extension/` — WXT app (pnpm, standalone package)
 - `cli/` — `@detour/cli`, Node 24 type-stripping, no compile step. Root `pnpm-workspace.yaml` covers `extension/` and `cli/`
+
+## Brand flavors (ADR-026)
+
+- `DETOUR_BRAND` (default `detour`) loads `extension/brands/<slug>/` at build time
+- Detour zip: `corepack pnpm --filter @detour/extension zip` → `.output/detour/detour-<v>-chrome.zip`
+- Rogers zip: `corepack pnpm --filter @detour/extension zip:rogers` → `.output/rogers/rogers-<v>-chrome.zip` (requires local gitignored `brands/rogers/`)
+- Rogers (and other partner) flavors use **Detour** as the manifest/UI display name; partner identity is tokens, icons, and optional partner logo
+- **Default delivery:** both zips unless a single flavor is requested
+- UI tokens come from `brands/*/tokens.css` via `virtual:brand-tokens`; `ui/base.css` stays structural
+
+**Last verified:** 2026-10-09

@@ -2,7 +2,9 @@ import { compileRule } from '../engine-core/compile';
 import { hostOnDomains, testUrl } from '../page-inject/page-match';
 import { USER_SCRIPTS_UNAVAILABLE_MESSAGE, urlTest } from '../page-inject/plan';
 import { matchesUrl } from '../rule-model/match';
+import { bodyDataUrl } from '../engine-core/body-data-url';
 import { isDnrAction, type Group, type HeaderOp, type ResourceType, type Rule, type Workspace } from '../rule-model/schema';
+import { isDataUrl, summarizeDataUrl } from '../engine-core/body-data-url';
 import { previewMatch } from './editor';
 
 export interface Probe {
@@ -95,7 +97,7 @@ const summaryOf = (rule: Rule): string => {
     case 'mock':
       return `Mock ${rule.action.method ?? 'ANY'} ${pattern}`;
     case 'overrideBody':
-      return `Replace body ${pattern}`;
+      return (rule.action.delivery ?? 'redirect') === 'inPlace' ? `Replace body ${pattern}` : `Redirect body ${pattern}`;
     case 'serveLocal':
       return `Serve local file ${rule.action.path} for ${pattern}`;
   }
@@ -235,6 +237,16 @@ export function resolveProbe(workspace: Workspace, probe: Probe): Resolved {
         if (!resourceMatches(rule, ctx.resourceType) || !urlMatches(rule, ctx.url)) continue;
         const host = ctx.resourceType === 'main_frame' ? hostnameOf(ctx.url) : hostnameOf(ctx.pageUrl);
         if (!siteMatches(group, host)) continue;
+        if (action.delivery === 'redirect') {
+          if (request?.kind === 'overrideBody') overlap = true;
+          if (request) continue;
+          request = {
+            kind: 'redirect',
+            ref,
+            to: bodyDataUrl(action.body, rule.match.pattern, action.contentType),
+          };
+          continue;
+        }
         if (request?.kind === 'redirect' || request?.kind === 'block' || request?.kind === 'serveLocal') {
           overlap = true;
           continue;
@@ -288,7 +300,14 @@ export function describeResolution(result: Resolved): TesterView {
 
   const lines: TesterLine[] = [];
   if (result.request?.kind === 'redirect') {
-    lines.push({ ...result.request.ref, outcome: `Redirects to ${result.request.to}.` });
+    if (isDataUrl(result.request.to)) {
+      lines.push({
+        ...result.request.ref,
+        outcome: `Body replaced (redirect) → ${summarizeDataUrl(result.request.to)}.`,
+      });
+    } else {
+      lines.push({ ...result.request.ref, outcome: `Redirects to ${result.request.to}.` });
+    }
   } else if (result.request?.kind === 'block') {
     lines.push({ ...result.request.ref, outcome: 'Blocks the request.' });
   } else if (result.request?.kind === 'mock') {

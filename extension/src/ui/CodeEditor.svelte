@@ -66,8 +66,15 @@
 <div class="code" data-testid="code-editor" bind:this={host} hidden={!editor}></div>
 
 <style>
-  .fallback {
+  .fallback,
+  .code {
     width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: auto;
+  }
+
+  .fallback {
     min-height: 6rem;
     font: 0.8rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
   }

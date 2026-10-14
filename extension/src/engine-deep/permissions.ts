@@ -1,4 +1,4 @@
-import type { Workspace } from '../rule-model/schema';
+import { isInPlaceBody, type Workspace } from '../rule-model/schema';
 
 /**
  * Optional permissions for body override.
@@ -19,9 +19,9 @@ export const BODY_PERMISSION_MESSAGE = {
   firefox: 'Replacing a response body needs the webRequest permission. Choose Allow response rewriting on the rules page.',
 } as const;
 
-/** True when an enabled rule would attach the debugger or install the Firefox filter for inline text. */
+/** True when an enabled in-place overrideBody would attach the debugger or install the Firefox filter. Redirect delivery does not. */
 export function workspaceHasBodyRules(workspace: Workspace): boolean {
-  return workspace.groups.some((group) => group.enabled && group.rules.some((rule) => rule.enabled && rule.action.type === 'overrideBody'));
+  return workspace.groups.some((group) => group.enabled && group.rules.some((rule) => rule.enabled && isInPlaceBody(rule.action)));
 }
 
 /** True when an enabled rule can serve a disk file in place after the same consent. */

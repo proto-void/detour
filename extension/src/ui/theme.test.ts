@@ -12,13 +12,14 @@ function page() {
 describe('theme preference', () => {
   beforeEach(() => fakeBrowser.reset());
 
-  it('treats a missing or unknown value as dark', () => {
+  it('treats a missing or unknown value as the brand default (Detour: dark)', () => {
     expect(parseTheme(undefined)).toBe('dark');
     expect(parseTheme('sepia')).toBe('dark');
     expect(parseTheme('light')).toBe('light');
+    expect(parseTheme(undefined, 'light')).toBe('light');
   });
 
-  it('loads dark when nothing is stored', async () => {
+  it('loads the brand default when nothing is stored', async () => {
     expect(await loadTheme(area)).toBe('dark');
   });
 

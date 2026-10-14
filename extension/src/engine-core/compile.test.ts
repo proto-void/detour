@@ -227,7 +227,7 @@ describe('compileWorkspace', () => {
 });
 
 describe('page actions', () => {
-  it('are skipped by the DNR compiler (page and body rules use their own engines)', () => {
+  it('are skipped by the DNR compiler (page and in-place body rules use their own engines)', () => {
     const ws: Workspace = {
       groups: [
         {
@@ -237,7 +237,7 @@ describe('page actions', () => {
           rules: [
             { id: 'js', enabled: true, match: { kind: 'glob', pattern: '*' }, action: { type: 'injectJs', source: { kind: 'inline', code: 'x' }, runAt: 'document_start', allFrames: false, world: 'MAIN' } },
             { id: 'mock', enabled: true, match: { kind: 'glob', pattern: '*/api/*' }, action: { type: 'mock', method: 'ANY', status: 200, headers: [], body: '', delayMs: 0 } },
-            { id: 'body', enabled: true, match: { kind: 'glob', pattern: 'https://cdn.example.com/a.js' }, action: { type: 'overrideBody', body: 'x' }, resourceTypes: ['script'] },
+            { id: 'body', enabled: true, match: { kind: 'glob', pattern: 'https://cdn.example.com/a.js' }, action: { type: 'overrideBody', body: 'x', delivery: 'inPlace' }, resourceTypes: ['script'] },
             { id: 'b', enabled: true, match: { kind: 'glob', pattern: '*ads*' }, action: { type: 'block' } },
           ],
         },
@@ -247,6 +247,96 @@ describe('page actions', () => {
     expect(candidates.map((c) => c.ruleId)).toEqual(['b']);
     expect(refused).toEqual([]);
     expect(() => compileRule(ws.groups[0]!.rules[0]!)).toThrow(/not a network rule/);
+  });
+});
+
+describe('overrideBody redirect delivery', () => {
+  it('compiles switch.json to a data: URL with application/json', () => {
+    const ws: Workspace = {
+      groups: [
+        {
+          id: 'g',
+          name: 'g',
+          enabled: true,
+          rules: [
+            {
+              id: 'switch',
+              enabled: true,
+              match: { kind: 'glob', pattern: 'https://qa07.example.com/*/switch.json' },
+              action: { type: 'overrideBody', body: '{"route":"/cloud/serveflow"}', delivery: 'redirect' },
+              resourceTypes: ['xmlhttprequest'],
+            },
+          ],
+        },
+      ],
+    };
+    const { candidates, refused } = compileWorkspace(ws);
+    expect(refused).toEqual([]);
+    expect(candidates).toHaveLength(1);
+    const action = candidates[0]!.action;
+    expect(action.type).toBe('redirect');
+    if (action.type !== 'redirect' || !('url' in action.redirect)) throw new Error('expected static redirect');
+    const url = action.redirect.url;
+    expect(url.startsWith('data:application/json;charset=UTF-8;base64,')).toBe(true);
+    const b64 = url.slice('data:application/json;charset=UTF-8;base64,'.length);
+    expect(Buffer.from(b64, 'base64').toString('utf8')).toBe('{"route":"/cloud/serveflow"}');
+    expect(candidates[0]!.condition.urlFilter).toBeTruthy();
+    expect(candidates[0]!.condition.regexFilter).toBeUndefined();
+  });
+
+  it('round-trips a non-ASCII body and uses contentType when set', () => {
+    const body = 'console.log("café");';
+    const ws: Workspace = {
+      groups: [
+        {
+          id: 'g',
+          name: 'g',
+          enabled: true,
+          rules: [
+            {
+              id: 'js',
+              enabled: true,
+              match: { kind: 'glob', pattern: 'https://cdn.example.com/app.js' },
+              action: { type: 'overrideBody', body, contentType: 'text/javascript', delivery: 'redirect' },
+              resourceTypes: ['script'],
+            },
+          ],
+        },
+      ],
+    };
+    const { candidates } = compileWorkspace(ws);
+    const action = candidates[0]!.action;
+    expect(action.type).toBe('redirect');
+    if (action.type !== 'redirect' || !('url' in action.redirect)) throw new Error('expected static redirect');
+    expect(action.redirect.url.startsWith('data:text/javascript;charset=UTF-8;base64,')).toBe(true);
+    const b64 = action.redirect.url.slice('data:text/javascript;charset=UTF-8;base64,'.length);
+    expect(Buffer.from(b64, 'base64').toString('utf8')).toBe(body);
+  });
+
+  it('defaults missing delivery to redirect', () => {
+    const ws: Workspace = {
+      groups: [
+        {
+          id: 'g',
+          name: 'g',
+          enabled: true,
+          rules: [
+            {
+              id: 'css',
+              enabled: true,
+              match: { kind: 'glob', pattern: 'https://cdn.example.com/x.css' },
+              action: { type: 'overrideBody', body: 'x{}', delivery: 'redirect' },
+              resourceTypes: ['stylesheet'],
+            },
+          ],
+        },
+      ],
+    };
+    const { candidates } = compileWorkspace(ws);
+    const action = candidates[0]!.action;
+    expect(action.type).toBe('redirect');
+    if (action.type !== 'redirect' || !('url' in action.redirect)) throw new Error('expected static redirect');
+    expect(action.redirect.url.startsWith('data:text/css;charset=UTF-8;base64,')).toBe(true);
   });
 });
 

@@ -57,7 +57,7 @@
   <div class="row">
     <div>
       <h2 id="import-heading">Import</h2>
-      <p class="muted">Resource Override or Detour export (.json)</p>
+      <p class="muted">Detour or legacy export (.json)</p>
     </div>
     <button type="button" class="secondary" onclick={choose} disabled={busy} aria-busy={busy}>
       {busy ? 'Importing…' : pickInTab ? 'Open importer…' : 'Choose file…'}
@@ -92,7 +92,7 @@
     {#if summary?.ok}
       <p>
         Imported {plural(summary.rules, 'rule')} in {plural(summary.groups, 'group')}
-        <span class="muted">({summary.source === 'detour' ? 'Detour' : 'Resource Override'})</span>.
+        <span class="muted">({summary.source === 'detour' ? 'Detour' : 'legacy'})</span>.
         {#if summary.replaced > 0}
           Replaced {plural(summary.replaced, 'group')} from an earlier import of this file.
         {/if}

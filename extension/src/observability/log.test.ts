@@ -7,6 +7,7 @@ import {
   DYNAMIC_RULESET_ID,
   formatBadge,
   labelsFromWorkspace,
+  matchSourceLabel,
   MAX_MATCHES,
   type MatchEntry,
 } from './log';
@@ -77,6 +78,15 @@ describe('match log', () => {
     ];
     expect(countForTab(log, 1, 0)).toBe(1);
     expect(countForTab([entry({ key: 'dnr-poll:1:a:1' })], 1, 0)).toBe(1);
+  });
+});
+
+describe('matchSourceLabel', () => {
+  it('labels redirect-delivery body DNR hits distinctly', () => {
+    expect(matchSourceLabel('dnr', 'overrideBody', 'redirect')).toBe('Body replaced (redirect)');
+    expect(matchSourceLabel('dnr', 'overrideBody', undefined)).toBe('Body replaced (redirect)');
+    expect(matchSourceLabel('body', 'overrideBody', 'inPlace')).toBe('Body replaced');
+    expect(matchSourceLabel('dnr', 'redirect')).toBe('Network');
   });
 });
 

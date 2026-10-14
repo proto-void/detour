@@ -28,6 +28,15 @@ Implementation plans live **only** here. Numbered `NNN-short-name.md`.
 | [021-sri-named-item.md](021-sri-named-item.md) | Done |
 | [022-sri-document-write.md](022-sri-document-write.md) | Done |
 | [023-sri-iframe-srcdoc.md](023-sri-iframe-srcdoc.md) | Done |
+| [024-body-redirect-delivery.md](024-body-redirect-delivery.md) | Done |
+| [025-api-client.md](025-api-client.md) | Done — Slices A–C (2026-10-09) |
+| [026-db-client.md](026-db-client.md) | Done — A–D shipped; live docker e2e needs local Docker (Approved 2026-10-09) |
+| [027-db-connection-options.md](027-db-connection-options.md) | Done — Connection options (Hamza Approved 2026-10-09); live TLS compose needs Docker |
+| [028-os-packs.md](028-os-packs.md) | Done — Self-sufficient OS packs (Hamza Approved 2026-10-09); ADR-029 |
+| [029-closed-rogers-native-helper.md](029-closed-rogers-native-helper.md) | Public hooks Done (2026-10-09); ADR-030; private Go helper / packs still out of tree |
+| [030-ssl-tableplus-ux.md](030-ssl-tableplus-ux.md) | Done — always-visible SSL paths + encrypted-key passphrase modal (Hamza “Go” 2026-10-09) |
+| [031-faster-pickfile.md](031-faster-pickfile.md) | Done — native Win32 / compiled macOS pickFile (Hamza “Go” 2026-10-09) |
+| [032-cassandra-jks-tls.md](032-cassandra-jks-tls.md) | Done — optional JKS/PKCS12 truststore+keystore (general; Cassandra-first) |
 
 New plans only for **Approved** specs (`spec-workflow` gate).
 

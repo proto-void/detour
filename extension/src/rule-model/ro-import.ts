@@ -169,9 +169,9 @@ export function importResourceOverride(input: unknown, newId: () => string): { o
             rule,
           });
         }
-        // The export holds file bytes, not a disk path, so this stays an inline body.
+        // The export holds file bytes, not a disk path. RO 2.0 uses a DNR data: redirect.
         // On-disk files are a serveLocal rule plus Local Bridge, not this import.
-        return { match: { kind: 'glob', pattern: match }, action: { type: 'overrideBody', body: ro.file } };
+        return { match: { kind: 'glob', pattern: match }, action: { type: 'overrideBody', body: ro.file, delivery: 'redirect' } };
       }
       case 'fileInject':
         return skip('file-inject-unsupported', 'File injects belong to page-inject, not available yet');

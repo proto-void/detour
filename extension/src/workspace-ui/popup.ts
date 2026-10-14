@@ -8,6 +8,7 @@ export interface PopupGroup {
   id: string;
   name: string;
   enabled: boolean;
+  ruleCount: number;
 }
 
 export function popupGroupList(workspace: Workspace): { shown: PopupGroup[]; more: number } {
@@ -15,6 +16,7 @@ export function popupGroupList(workspace: Workspace): { shown: PopupGroup[]; mor
     id: group.id,
     name: group.name,
     enabled: group.enabled,
+    ruleCount: group.rules.length,
   }));
   return { shown, more: Math.max(0, workspace.groups.length - shown.length) };
 }

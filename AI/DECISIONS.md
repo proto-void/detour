@@ -1,6 +1,6 @@
 # Decisions (ADRs)
 
-**Last verified:** 2026-10-07
+**Last verified:** 2026-10-09 (ADR-028 Slice C amend; ADR-027 Databases native host)
 
 ## ADR-001 — Stack: WXT + TypeScript + Svelte 5 + CodeMirror 6 + valibot; Node CLI
 
@@ -69,16 +69,16 @@ Need a memorable name for a free resource-override successor. Checked availabili
 |---------|--------|
 | **npm** `detour` | **Taken** — legacy ISC/MIT router package `detour@1.3.4` (cainus, last publish ~2017). Unrelated to browser extensions. Prefer scoped packages e.g. `@detour/cli`, `@detour/extension` (`@detour/core` was 404). |
 | **Chrome Web Store** | Search for “Detour” returns a results page; no clear established resource-override extension branded Detour from automated HTML scrape. Exact listing slug still needs manual confirm before submit. |
-| **AMO** | **Partial conflict** — “Detour” (`detour-proxy`) is a Firefox **proxy switcher** (unrelated). Also “triglavis-detour”. Resource-override niche appears free; exact display name “Detour” may need disambiguation (e.g. “Detour — Resource Override”). |
+| **AMO** | **Partial conflict** — “Detour” (`detour-proxy`) is a Firefox **proxy switcher** (unrelated). Also “triglavis-detour”. Resource-override niche appears free; listing short description should clarify resource overriding vs the proxy. |
 | **Domains** | `detour.com`, `detour.dev`, `detour.app`, `getdetour.com` resolve (taken/parked). `usedetour.com` and `detou.dev` had no A records at check time (not a purchase confirmation). |
 
 ### Decision
 
-Keep product name **Detour**. Use scoped npm names and a store subtitle that clarifies resource override. Domain TBD — do not block development.
+Keep product name **Detour**. Use scoped npm names and a short description that clarifies resource overriding. Domain TBD — do not block development.
 
 ### Consequences
 
-- Document store subtitle early in `distribution` spec
+- Document store listing copy early in `distribution` spec
 - Re-check CWS/AMO at publish time
 
 ---
@@ -151,22 +151,24 @@ Resource Override gates groups by tab URL; DNR has no tab condition. The popup n
 
 ## ADR-007 — Import provenance and the editor save model
 
-**Status:** Accepted  
+**Status:** Accepted (Amended 2026-10-08)  
 **Date:** 2026-10-06 (Hamza's answers to plan 003 questions + workspace-ui slice 2)
 
 ### Decision
 
 - Imported groups carry `importedFrom { file, sha256 }`. A new import replaces every group whose file name **or** content hash matches, at the first such group's position. Otherwise it appends. Groups the user created never carry `importedFrom`, so imports never touch them
 - Editing a group by hand doesn't clear `importedFrom`: re-importing the file deliberately overwrites it, and the import summary says how many groups were replaced
-- The editor works on a draft and writes only on an explicit **Save** (validated with the same schemas as storage). Group and rule switches are part of the draft
+- The editor works on a draft. **Autosave** (on by default, `storage.local.autosave`; missing means on) writes a validated draft about 1 s after the last edit. Invalid drafts are not written and do not force field focus. Autosave pauses while the workspace changed elsewhere. Explicit **Save now** (and Ctrl/Cmd+S) still writes immediately with the existing validation-focus behavior. Discard reverts unsaved edits; a one-level Undo on the autosave toast restores the pre-autosave workspace
+- Group and rule switches in the editor are part of the draft (autosaved when valid)
 - CI will run `pnpm e2e:chrome` once the `distribution` spec is Approved
 
 ### Consequences
 
 - Two unrelated exports that share a file name (e.g. both `export.json`) replace each other. The summary makes this visible; matching by name is what makes "re-export after editing in RO" work
-- Switch flips in the editor need a Save; the editor makes unsaved state obvious
+- With autosave off, switch flips in the editor still need Save now; the editor makes unsaved state obvious
 - Amended 2026-10-06 (workspace-ui slice 4): popup group switches are the exception. They write that group's `enabled` flag immediately, the same way the global switch writes `enabled`. The editor treats the write as an external change
 - Amended 2026-10-06 (Hamza): re-import keeps each group's/rule's on/off state via `importKey`. A name-only match asks (Replace / Import as new / Cancel); identical content replaces silently
+- Amended 2026-10-08 (Hamza): autosave on by default after idle validation; explicit Save now remains
 
 ## ADR-008 — Page-world engines: userScripts for user code, packaged runtimes for the rest
 
@@ -268,7 +270,7 @@ Detour needs repeatable checks and store zips with **$0** recurring ops and no p
 - CI does nothing until the repo is on GitHub
 - Firefox UI smoke stays manual (BiDi cannot open extension pages)
 - `chrome@stable` moves. 2026-10-07 it was 155, and `CI=1` e2e was 62/62. A future stable can fail the smoke test without a product change
-- The installed manifest name stays `Detour`. The store listing doc uses `Detour — Resource Override`
+- The installed manifest name and store listing title are both `Detour`. The short description clarifies resource overriding vs the unrelated AMO proxy
 - Amended 2026-10-07: `@detour/cli` exists and CI runs its tests. The release job still attaches extension zips only. No npm publish
 
 ---
@@ -669,3 +671,232 @@ The hash list is already in the parent's `<meta name="detour-sri">`. This slice 
 - A `sandbox` without `allow-scripts` still blocks scripts in the frame. Without `allow-same-origin` the frame's origin is opaque. The rewrite still happens in the parent, before the child parses the string
 - A value that is not a string keeps the value the page passed
 - The substituted value is a publishable SHA-384. It cannot remove a hash the page set on a resource that does not match
+
+---
+
+## ADR-025 — overrideBody delivery: DNR data: redirect by default, in-place opt-in
+
+**Status:** Accepted  
+**Date:** 2026-10-08 (Hamza approved body redirect delivery)
+
+### Context
+
+Resource Override 2.0 (mv3) compiles `fileOverride` to a DNR redirect to a `data:` URL. That path does not use the debugger, so it works with DevTools open. Detour's ADR-009 `overrideBody` uses CDP Fetch via `chrome.debugger` (and Firefox `filterResponseData`). Only one debugger client can own a tab, so DevTools and Detour fight. Consent is also required before anything runs.
+
+ADR-009 correctly avoided `data:` as the only strategy (CSP `connect-src` / `script-src`, CORS, SRI). Same-origin JSON and other assets without SRI are the case `data:` handles well. Offering both modes matches RO when users need DevTools, and keeps the URL-preserving path for CSP/SRI pages.
+
+### Decision
+
+- `overrideBody` gains `delivery`: `redirect` (default) or `inPlace`
+- **`redirect`:** engine-core emits a DNR redirect to `data:<mime>;charset=UTF-8;base64,…` (UTF-8 body). MIME is `contentType` when set, else inferred from the match URL's extension (`.json` → `application/json`, also `.js`, `.css`, `.html`, `.svg`), else `text/plain`. No debugger, no consent banner. Rules saved without the field load as `redirect`
+- **`inPlace`:** ADR-009 engines (Chrome debugger Fetch / Firefox filterResponseData). Consent, SRI hash rewrite, and DevTools conflict stay as today
+- RO `fileOverride` imports with `delivery: 'redirect'`
+- `workspaceHasBodyRules` and `planBody` count only `inPlace` (plus in-place `serveLocal` as before)
+- Redirect delivery does not rewrite document `integrity` hashes
+
+### Consequences
+
+- Default body rules work with DevTools open and match RO 2.0 URL→File for JSON and similar assets
+- Pages whose CSP blocks `data:`, or that use SRI, need **Replace in place**
+- Network shows a `data:` response for redirect delivery
+- Existing workspaces without `delivery` behave like RO (redirect), not like the former debugger-only default
+
+---
+
+## ADR-026 — Build-time brand flavors; private brands stay out of git
+
+**Status:** Accepted  
+**Date:** 2026-10-09 (Hamza: Rogers white-label + dual-zip DoD)
+
+### Context
+
+Internal partners (e.g. Rogers) need a separately themed extension zip. The public MIT repository must remain Detour-branded and must never ship partner marks. Long partner product titles (e.g. “Rogers Dev Override”) are too long for the toolbar and lockup.
+
+### Decision
+
+- Brands live under `extension/brands/<slug>/` (`brand.ts`, `tokens.css`, `icon.svg`, optional `logo.svg` / `mark.svg` / `partner-logo.svg` / `fonts/`)
+- `DETOUR_BRAND` (default `detour`) selects the flavor in `wxt.config.ts`; missing brands fail the build clearly
+- Manifest name / short_name / description / action title, zip slug, outDir (`.output/<slug>`), icons (`@wxt-dev/auto-icons`), and CSS tokens (`virtual:brand-tokens`) come from the brand
+- **Display name is always Detour** for partner flavors (Rogers included). Partner identity is theme, tokens, icons, and optional partner logo — not a different product title. `DETOUR_BRAND_NAME` can still override when needed
+- Zip/outDir slug stays distinct (Rogers: `rogers`) so artifacts do not collide with Detour
+- Co-brand lockup: `Detour | [partner]` when `partner-logo.svg` is present
+- `import.meta.env.BRAND` exposes `{ name, shortName, slug, defaultTheme }` to the UI; user-facing copy uses `brandName`
+- **Committed:** `brands/detour/`, `brands/_template/`
+- **Gitignored:** `brands/rogers/` and any other private partner trees
+- Scripts: `zip` / `build` = Detour; `zip:rogers` / `build:rogers` = `DETOUR_BRAND=rogers`
+- **Delivery DoD:** produce both Detour and Rogers zips unless Hamza requests a single flavor
+- No change to rules, engine, or storage keys across flavors
+
+### Consequences
+
+- Public clones build Detour only; Rogers requires a local `brands/rogers/` tree
+- Storage and exports stay Detour-schema compatible across flavors
+- Official partner logos are optional drop-ins; agents must not recreate trademarked marks
+
+---
+
+## ADR-027 — Databases helper: native messaging (not loopback HTTP)
+
+**Status:** Accepted (architecture decision for Draft [db-client](specs/db-client.md); implementation waits for spec Approval)  
+**Date:** 2026-10-09
+
+### Context
+
+Browsers cannot open raw TCP sockets to database protocols (CQL 9042, Postgres 5432, TDS 1433, and the rest). A local helper running open-source Node drivers is the only no-server option. Hamza requires the helper to be **self-managing**: the extension starts it when needed and kills it when idle or when the tab closes, with no day-to-day terminal command.
+
+The existing Local Bridge ([local-bridge](specs/local-bridge.md), ADR-012) is a **loopback HTTP** file server. The page (or the extension) can see a token on redirected requests; the process stays up until the user stops it. That model fits serving files. It is a poor fit for a database client: an open port and a token are attack surface, and the browser does not own the process lifecycle.
+
+### Decision
+
+- The Databases tab talks to a native host named `com.detour.db` via **`browser.runtime.connectNative`**
+- The browser spawns the host and kills it when the native messaging port closes (tab close, **Stop helper**, or idle timeout). The host exits when stdin ends and closes every database connection and tunnel
+- Protocol is **JSON-RPC** over native messaging, with host→browser messages chunked under the **1 MB** native-messaging cap (~900 KB payloads) and explicit paging / cancel
+- Secrets (passwords, tokens, private keys, Astra bundles) live **only** in the host’s OS keychain (`@napi-rs/keyring`). Extension `storage.local` keeps connection metadata only
+- `nativeMessaging` is an **optional** permission, requested on first use of the Databases tab
+- Ship the host as Node **SEA** binaries (macOS arm64/x64, Windows x64, Linux x64) plus `npx @detour/cli db install` for users who already have Node. Browser stores cannot register native hosts; one-time install is unavoidable
+- Prefer pure-JS drivers and `node:sqlite` (Node 22+) so SEA stays viable; spike the SEA bundle before Slice A ends
+- **Local Bridge stays loopback HTTP.** This ADR does not change it. Slice D may optionally let the native host start/stop the file bridge later; that is optional and separate
+
+### Alternatives considered
+
+| Option | Why not |
+|--------|---------|
+| Loopback HTTP helper (like Local Bridge) | Open port + token; browser does not kill the process on tab close; pages can observe redirected traffic patterns |
+| WebSocket to a long-running daemon | Same lifecycle and port problems; more moving parts |
+| Detour-hosted proxy | Violates hard nos (backend, accounts, ops cost) |
+| In-extension WASM drivers | No raw TCP from the extension page for these protocols; incomplete coverage |
+
+### Consequences
+
+- One-time host registration per OS/browser (Chrome/Edge/Brave/Chromium manifests; Firefox; Windows registry)
+- Safari is out of Databases v1 (no compatible native messaging)
+- Databases UI must show helper status (Ready / Stopped / missing) and a guided setup card when `connectNative` fails
+- Docs and gotchas must cover the 1 MB message cap, SEA + native addons, and cloud Cassandra TLS quirks (Keyspaces CA, Cosmos port 10350)
+- Implementation of host, adapters, and UI requires **Approved** [db-client](specs/db-client.md) and plan `026` — not this ADR alone
+
+---
+
+## ADR-028 — API Tester: extension-page fetch, simulated rules, separate storage
+
+**Status:** Accepted  
+**Date:** 2026-10-09 (Hamza Approved api-client Slice A)
+
+### Context
+
+Detour’s options **Tester** only resolved which rule wins. Developers also need a Postman-class client (send real HTTP including localhost, collections, cURL/Postman, environments, scripts) with **no Detour backend**.
+
+### Decision
+
+- Product surface renamed **API Tester**; internal `#tester` hash stays
+- Pure logic under `extension/src/api-client/`; UI in options (`ApiTester.svelte`)
+- Storage keys `apiCollections`, `apiEnvironments`, `apiHistory`, `apiSettings` — never reuse rules `workspace`
+- Send via extension-page `fetch` (`host_permissions: <all_urls>` already granted)
+- **Apply Detour rules** is **dual-scope** (Hamza mid-flight, 2026-10-09):
+  - **Global** default in `apiSettings.applyDetourRules` (boolean, **on by default**) — API Tester–wide, not mixed into rules `workspace`
+  - **Per-request** `applyDetourRules`: `inherit` | `on` | `off` (default `inherit`) on each saved request and open tab
+  - Resolve with `resolveApplyDetourRules`: explicit per-request wins; else global
+  - When effective on: `resolveProbe` (`resourceType: xmlhttprequest`) as a **simulation** (redirect/block/headers/mock); UI label “Detour rules applied (simulated)”
+- Forbidden fetch headers (`Cookie`, `Origin`, `Referer`, `User-Agent`, `Host`) via short-lived DNR **session** rules (`urlFilter`), always cleaned up
+- Scripts: sandboxed page (`api-script-sandbox.html`) + `postMessage` + chai-compatible `expect`
+- UI copy never calls collections “workspace”
+
+### Slice B amend (Hamza “Continue B”, 2026-10-09)
+
+- Shared send path `executeApiRequest` for UI, runner, load test, and scheduled alarms (dual-scope Apply Detour)
+- Storage: `apiRuns` (cap 50) + schedules in `apiSettings`; `alarms` permission; `notifications` optional on first notify-on-fail
+- Background `alarms.onAlarm` runs collections with **scripts skipped** (SW has no sandbox iframe); options Runner runs scripts + `setNextRequest`
+- Detour synergy: save-as-mock / redirect-to-localhost insert rules and switch to Rules tab
+- Codegen, response diff, OpenAPI/HAR import, docs Markdown/HTML — pure modules under `api-client/`
+
+### Slice C amend (Hamza “Continue C”, 2026-10-09)
+
+- OAuth 2.0: auth-code + PKCE via optional `identity` + `chrome.identity.launchWebAuthFlow` (Chrome); Firefox opens authorize URL + manual code exchange; client-credentials / password + refresh in `prepareHttpAsync`
+- AWS SigV4 (Web Crypto) and Digest (401 challenge-response) in send path
+- Optional `cookies` permission for cookie jar (first use); never label UI “workspace”
+- GraphQL body mode + introspection docs; WebSocket / SSE clients; `pm.visualizer.set` → sandboxed Visualize tab
+- Folder sync: File System Access (pretty JSON, secrets excluded); Firefox → Export / Import
+- Capture: DevTools + match log **Send to API Tester** → `session` `apiCapturePending` → new API Tester tab
+
+### Consequences
+
+- Slices A+B+C ship (plan 025 Done)
+- Rule-match panel in the response pane is **Which rules apply**
+- Reload Rogers (and Detour) after installing the new zip
+
+---
+
+## ADR-029 — OS packs: self-install SEA helper, unsigned $0, stable extension id
+
+**Status:** Accepted  
+**Date:** 2026-10-09 (Hamza Approved plan “Go, approved”)
+
+### Context
+
+Databases needs a native messaging host (ADR-027). Store zips cannot register that host. Shipping only a Node/`pnpm` install path forces every user to install a toolchain. We want one download per OS that includes the extension and a self-contained helper, still at **$0** recurring and without a Detour backend.
+
+Browsers never allow an extension to register its own native host, so one local install step remains.
+
+### Decision
+
+- Ship **OS packs** on GitHub Releases (`windows-x64`, `macos-arm64`, `macos-x64`, `linux-x64`): unpacked Chromium extension + SEA `detour-db-host` + install/uninstall scripts + READMEs. Store zips stay **extension-only**.
+- The SEA binary is truly self-contained (esbuild-bundled CJS + postject). Platform `@napi-rs/keyring` packages live beside the binary and load via `module.createRequire` from `dirname(process.execPath)/node_modules/`.
+- The helper **installs itself** (`install` / `uninstall` / `doctor` / `--version`) into a stable per-user directory:
+  - macOS: `~/Library/Application Support/Detour/db-host/`
+  - Windows: `%LOCALAPPDATA%\Detour\db-host\`
+  - Linux: `${XDG_DATA_HOME:-~/.local/share}/detour/db-host/`
+  Manifest `path` points at the SEA binary (no Node launcher).
+- **Stable Chromium extension id** via a fixed public manifest `key` per brand (Detour in-repo; Rogers in gitignored brand files). Installer writes `allowed_origins` for the unpacked id and known store id(s). **Public key only** — private `.pem` never in the repo.
+- **Signing at $0:** no Apple notarization ($99/yr) and no Windows Authenticode while the hard no stands. After postject on macOS, ad-hoc `codesign --sign -`. Pack READMEs document Gatekeeper (right-click Open / clear quarantine) and SmartScreen (More info → Run anyway).
+
+### Alternatives considered
+
+| Option | Why not |
+|--------|---------|
+| Require Node + `detour db install` only | Too heavy for non-contributor users |
+| Paid notarization / code signing | Breaks $0 recurring ops |
+| Embed private key for id stability | Secret in repo — forbidden |
+| Loopback HTTP DB helper | Rejected in ADR-027 |
+
+### Consequences
+
+- Pack size ~90–130 MB (Node runtime) — acceptable for Releases, not for stores
+- First-run OS warnings are expected and documented
+- CI needs a four-target SEA matrix including an Intel macOS runner label
+- Developers keep the Node install path under a disclosure; pack path is the default UX
+- Specs: [distribution](specs/distribution.md), [db-client](specs/db-client.md); plan [028](plans/028-os-packs.md)
+
+---
+
+## ADR-030 — Partner native helpers may be closed and out of tree; public helper stays MIT
+
+**Status:** Accepted  
+**Date:** 2026-10-09 (Hamza Approved closed Rogers native helper plan — “Go and approved”)
+
+### Context
+
+Some partners need a **compiled, obfuscated** Databases helper (no Node, no readable JS) and an obfuscated sideload extension. Shipping that source in the public MIT repo would either force open-sourcing the partner helper or pollute the free Detour tree with closed assets. The public Detour SEA/Node helper (ADR-027 / ADR-029) must remain MIT and usable without any partner repo.
+
+### Decision
+
+- **Public MIT repo** keeps the Node/SEA `com.detour.db` helper and only adds **generic** hooks:
+  - `DETOUR_BRAND_DIR` for external brand trees
+  - brand `nativeHostName` (default `com.detour.db`)
+  - protocol `hello` + `capabilities[]` + protocol-version mismatch UX
+  - `DETOUR_DB_HOST_CMD` for portable contract tests against any conforming binary
+  - per-brand manifest `key` (already ADR-029)
+- **Partner helpers** (e.g. a Go native host) and partner brand assets live in a **private repo** (submodule pin of this public tree). Nothing Rogers-specific beyond ADR-026 notes goes into the public KB or source.
+- Accepted limit (record in the private partner spec): extension JS on the user’s machine can still be inspected after deobfuscation; the bar is casual/moderate reverse engineering, not impossibility.
+
+### Alternatives considered
+
+| Option | Why not |
+|--------|---------|
+| Closed helper inside public repo | Breaks MIT / free-forever posture for core |
+| Force all partners onto Node SEA only | Fails partner “no readable JS / no Node” requirement |
+| Fork the entire public tree privately | Duplicates maintenance; hooks + submodule are enough |
+
+### Consequences
+
+- Public dual-zip DoD unchanged; partner closed packs are private-repo artifacts
+- Distinct `nativeHostName` lets Detour and partner helpers install side by side
+- Specs: [db-client](specs/db-client.md), [distribution](specs/distribution.md); plan [029](plans/029-closed-rogers-native-helper.md)

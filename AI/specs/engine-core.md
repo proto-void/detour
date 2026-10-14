@@ -1,14 +1,14 @@
 # Spec: engine-core
 
-**Status:** Approved (by Hamza, 2026-10-06)  
-**Last updated:** 2026-10-06  
+**Status:** Approved (by Hamza, 2026-10-06); body redirect delivery (Hamza, 2026-10-08)  
+**Last updated:** 2026-10-08  
 **Build order:** 2  
 **Depends on:** rule-model  
-**Plan:** [002-rule-model-engine-core](../plans/002-rule-model-engine-core.md)
+**Plan:** [002-rule-model-engine-core](../plans/002-rule-model-engine-core.md), [024-body-redirect-delivery](../plans/024-body-redirect-delivery.md)
 
 ## Objective
 
-Compile and apply Core DNR rules (redirect, modifyHeaders, block) with **urlFilter-first** matching, batched updates, deterministic priority, and clear errors when Chrome's regex ceiling or invalid patterns block application.
+Compile and apply Core DNR rules (redirect, modifyHeaders, block, and `overrideBody` with `delivery: redirect`) with **urlFilter-first** matching, batched updates, deterministic priority, and clear errors when Chrome's regex ceiling or invalid patterns block application.
 
 ## User stories
 
@@ -19,12 +19,13 @@ Compile and apply Core DNR rules (redirect, modifyHeaders, block) with **urlFilt
 
 ## Acceptance criteria
 
-- [ ] RuleCompiler maps supported Core actions → `declarativeNetRequest` dynamic rules
-- [ ] Prefer `urlFilter` for glob/simple patterns; use `regexFilter` only when required
-- [ ] Single batched `updateDynamicRules` apply path; coalesce overlapping refreshes
-- [ ] Priority respects group + rule order
-- [ ] Over-ceiling regex sets apply what fits and surface failures (no silent zero-rules)
-- [ ] Disable group/rule removes corresponding DNR ids
+- [x] RuleCompiler maps supported Core actions → `declarativeNetRequest` dynamic rules
+- [x] Prefer `urlFilter` for glob/simple patterns; use `regexFilter` only when required
+- [x] Single batched `updateDynamicRules` apply path; coalesce overlapping refreshes
+- [x] Priority respects group + rule order
+- [x] Over-ceiling regex sets apply what fits and surface failures (no silent zero-rules)
+- [x] Disable group/rule removes corresponding DNR ids
+- [x] `overrideBody` with `delivery: redirect` (default) compiles to a DNR redirect to a `data:` URL (UTF-8 base64; MIME from `contentType` or match extension). `delivery: inPlace` is skipped here (engine-deep)
 
 ## Browser support table
 
@@ -37,15 +38,15 @@ Compile and apply Core DNR rules (redirect, modifyHeaders, block) with **urlFilt
 ## Limits and gotchas
 
 - ~1000 dynamic regex rules on Chrome — see `intelligence/gotchas.md`
-- `data:` redirects discouraged as primary file strategy
+- `data:` redirects can be blocked by CSP (`connect-src` / `script-src`) and do not satisfy SRI — use in-place delivery for those pages ([ADR-025](../DECISIONS.md))
 - CORS/preflight interactions on redirects
 - Resource types must be explicit where needed
 
 ## Out of scope
 
-- Response body rewrite (engine-deep / FF body)
+- In-place response body rewrite (engine-deep / FF body)
 - Page inject and fetch mocks
-- Local Bridge serving
+- Local Bridge serving (except compiling `serveLocal` redirect when the bridge is up and in-place is off)
 
 ## Verification
 

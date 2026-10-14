@@ -1,6 +1,7 @@
 import { bridgeDownMessage, bridgeFileUrl, BRIDGE_NOT_CONNECTED, serveLocalCompileMessage } from '../local-bridge/paths';
 import { countWildcards, globToRegexSource, matchesUrl } from '../rule-model/match';
-import { isDnrAction, type HeaderOp, type Rule, type Workspace } from '../rule-model/schema';
+import { isDnrAction, isRedirectBody, type HeaderOp, type Rule, type Workspace } from '../rule-model/schema';
+import { bodyDataUrl } from './body-data-url';
 import type { DnrAction, DnrCondition, DnrHeaderInfo } from './dnr';
 
 export type RefusalReason =
@@ -214,6 +215,15 @@ export function compileWorkspace(workspace: Workspace, options: CompileOptions =
           continue;
         }
         network = { ...rule, action: { type: 'redirect', to } };
+      } else if (isRedirectBody(rule.action)) {
+        // RO 2.0 fileOverride: DNR redirect to a data: URL. inPlace stays in engine-deep.
+        network = {
+          ...rule,
+          action: {
+            type: 'redirect',
+            to: bodyDataUrl(rule.action.body, rule.match.pattern, rule.action.contentType),
+          },
+        };
       } else if (!isDnrAction(rule.action)) {
         continue;
       }

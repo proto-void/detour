@@ -43,9 +43,22 @@ const highlightLight = HighlightStyle.define([
 const editorChrome = (light: boolean) =>
   EditorView.theme(
     {
-      '&': { backgroundColor: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--radius)' },
+      '&': {
+        backgroundColor: 'var(--bg)',
+        color: 'var(--text)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius)',
+        width: '100%',
+        maxWidth: '100%',
+        minWidth: '0',
+      },
       '&.cm-focused': { outline: '2px solid var(--focus)', outlineOffset: '2px' },
-      '.cm-scroller': { font: '0.8rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace', maxHeight: '24rem', minHeight: '6rem' },
+      '.cm-scroller': {
+        font: '0.8rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace',
+        maxHeight: '24rem',
+        minHeight: '6rem',
+        overflowX: 'auto',
+      },
       '.cm-gutters': { backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: 'none' },
       '.cm-content': { caretColor: 'var(--text)' },
       '.cm-cursor': { borderLeftColor: 'var(--text)' },

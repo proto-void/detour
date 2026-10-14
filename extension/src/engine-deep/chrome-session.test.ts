@@ -108,7 +108,7 @@ const workspace = (body: string): Workspace => ({
       id: 'g',
       name: 'g',
       enabled: true,
-      rules: [{ id: 'b', enabled: true, match: { kind: 'glob', pattern: 'https://cdn.example.com/app.js' }, action: { type: 'overrideBody', body }, resourceTypes: ['script'] }],
+      rules: [{ id: 'b', enabled: true, match: { kind: 'glob', pattern: 'https://cdn.example.com/app.js' }, action: { type: 'overrideBody', body, delivery: 'inPlace' }, resourceTypes: ['script'] }],
     },
   ],
 });

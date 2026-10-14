@@ -13,6 +13,12 @@
   const recipe = $derived(RECIPES.find((item) => item.id === selected));
 
   function select(id: string) {
+    if (selected === id) {
+      selected = undefined;
+      values = {};
+      errors = {};
+      return;
+    }
     const next = RECIPES.find((item) => item.id === id);
     if (!next) return;
     selected = id;

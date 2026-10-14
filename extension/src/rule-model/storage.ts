@@ -3,6 +3,8 @@ import { emptyWorkspace, parseEnvelope, SCHEMA_VERSION, type ParseResult, type W
 export const WORKSPACE_KEY = 'workspace';
 /** Global on/off switch; anything but `false` means on. */
 export const ENABLED_KEY = 'enabled';
+/** Options-page autosave; anything but `false` means on (missing defaults to on). */
+export const AUTOSAVE_KEY = 'autosave';
 
 /** The subset of `storage.StorageArea` Detour needs; `browser.storage.local` satisfies it. */
 export interface StorageAreaLike {
@@ -26,6 +28,14 @@ export async function loadEnabled(area: StorageAreaLike): Promise<boolean> {
 
 export async function saveEnabled(area: StorageAreaLike, enabled: boolean): Promise<void> {
   await area.set({ [ENABLED_KEY]: enabled });
+}
+
+export async function loadAutosave(area: StorageAreaLike): Promise<boolean> {
+  return (await area.get(AUTOSAVE_KEY))[AUTOSAVE_KEY] !== false;
+}
+
+export async function saveAutosave(area: StorageAreaLike, autosave: boolean): Promise<void> {
+  await area.set({ [AUTOSAVE_KEY]: autosave });
 }
 
 /** Validates before writing so storage never holds a workspace the engines can't read. */

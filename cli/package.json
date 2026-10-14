@@ -3,22 +3,49 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "description": "Detour Local Bridge — serve a folder on 127.0.0.1 for serve-local rules.",
+  "description": "Detour CLI — Local Bridge (loopback files) and Databases native messaging host.",
   "type": "module",
   "bin": {
     "detour": "./bin/detour.js"
   },
-  "files": ["bin", "src"],
+  "files": [
+    "bin",
+    "src"
+  ],
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --experimental-strip-types --test src/*.test.ts",
+    "test": "node --experimental-strip-types --test src/*.test.ts src/db/*.test.ts",
+    "test:db-e2e": "DETOUR_DB_E2E=1 node --experimental-strip-types --test src/db/contract.e2e.test.ts",
+    "sea:build": "node scripts/build-sea.mjs",
+    "pack:os": "node scripts/pack-os.mjs",
     "start": "node --experimental-strip-types src/cli.ts"
   },
   "devDependencies": {
+    "@types/cassandra-driver": "^4.2.4",
     "@types/node": "^24.10.1",
+    "@types/pg": "^8.23.1",
+    "esbuild": "^0.25.0",
+    "postject": "^1.0.0-alpha.6",
     "typescript": "~6.0.3"
   },
   "engines": {
     "node": ">=24"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1147.0",
+    "@aws-sdk/lib-dynamodb": "^3.1147.0",
+    "@clickhouse/client": "^1.24.0",
+    "@elastic/elasticsearch": "^9.5.1",
+    "@napi-rs/keyring": "^1.1.0",
+    "@opensearch-project/opensearch": "^3.9.0",
+    "cassandra-driver": "^4.10.0",
+    "ioredis": "^6.0.0",
+    "jks-js": "^1.1.7",
+    "mongodb": "^7.7.0",
+    "mysql2": "^3.24.5",
+    "oracledb": "^7.0.1",
+    "pg": "^8.23.1",
+    "ssh2": "^1.17.0",
+    "tedious": "^20.3.3"
   }
 }

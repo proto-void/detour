@@ -1,38 +1,13 @@
+@import 'virtual:brand-tokens';
+
 :root {
-  color-scheme: dark;
-  --bg: #15171a;
-  --surface: #1d2024;
-  --border: #2e3238;
-  --text: #e7e9ec;
-  --text-muted: #9aa1ab;
-  --accent: #3fb68b;
-  --accent-text: #0d1f18;
-  --danger: #f2777a;
-  --warning: #e5b567;
-  --focus: #7cc4ff;
-  --selection: #2f4a6b;
-  --radius: 6px;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
   --space-4: 1rem;
-  font: 13px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif;
-}
-
-/* Explicit choice only. A missing data-theme stays on the dark tokens above. */
-:root[data-theme='light'] {
-  color-scheme: light;
-  --bg: #f4f6f8;
-  --surface: #ffffff;
-  --border: #d0d5dc;
-  --text: #1c2128;
-  --text-muted: #4a5562;
-  --accent: #0d6e4e;
-  --accent-text: #ffffff;
-  --danger: #b42318;
-  --warning: #7a4e00;
-  --focus: #0b57d0;
-  --selection: #c5daf2;
+  --space-5: 1.25rem;
+  font-size: 14px;
+  line-height: 1.45;
 }
 
 * {
@@ -70,8 +45,9 @@ button {
   outline-offset: 2px;
 }
 
-code {
-  font: 0.75rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+code,
+.mono {
+  font: 0.75rem/1.4 var(--mono);
   overflow-wrap: anywhere;
 }
 
@@ -96,8 +72,10 @@ details > summary {
 
 input[type='text'],
 input[type='url'],
+input[type='search'],
 input:not([type]),
-select {
+select,
+textarea {
   width: 100%;
   min-height: 2rem;
   padding: var(--space-1) var(--space-2);
@@ -106,6 +84,28 @@ select {
   background: var(--bg);
   color: var(--text);
   font: inherit;
+}
+
+/* Native arrow sits flush; custom chevron inset from the right edge. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: calc(var(--space-2) + 1.1rem);
+  background-color: var(--bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' viewBox='0 0 12 12'%3E%3Cpath stroke='%238b939d' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M3 4.5 6 7.5l3-3'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-2) center;
+  background-size: 0.75rem;
+}
+
+:root[data-theme='light'] select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' viewBox='0 0 12 12'%3E%3Cpath stroke='%234a5562' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M3 4.5 6 7.5l3-3'/%3E%3C/svg%3E");
+}
+
+input.mono,
+textarea.mono {
+  font-family: var(--mono);
+  font-size: 0.8rem;
 }
 
 input[aria-invalid='true'] {
@@ -146,6 +146,24 @@ input::placeholder {
   font-weight: 600;
 }
 
+.btn.accent-tint {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: var(--accent-tint);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.btn.text {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.btn.text:hover:not(:disabled) {
+  color: var(--text);
+  border-color: transparent;
+}
+
 .btn.danger:hover:not(:disabled) {
   border-color: var(--danger);
   color: var(--danger);
@@ -155,6 +173,68 @@ input::placeholder {
   min-width: 2rem;
   justify-content: center;
   padding: var(--space-1);
+}
+
+.btn.pill {
+  border-radius: var(--radius-btn-pill);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 1.35rem;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 1.35rem;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--status-off-bg);
+  color: var(--status-off);
+}
+
+.status-pill .dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.status-pill.applied {
+  background: var(--status-applied-bg);
+  color: var(--status-applied);
+}
+
+.status-pill.refused,
+.status-pill.failing {
+  background: var(--status-refused-bg);
+  color: var(--status-refused);
+}
+
+.status-pill.unsaved,
+.status-pill.pending {
+  background: var(--status-unsaved-bg);
+  color: var(--status-unsaved);
+}
+
+.status-pill.off,
+.status-pill.detour-off,
+.status-pill.not-applied {
+  background: var(--status-off-bg);
+  color: var(--status-off);
 }
 
 @media (prefers-reduced-motion: reduce) {

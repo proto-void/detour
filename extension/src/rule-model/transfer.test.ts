@@ -55,7 +55,7 @@ describe('Resource Override import', () => {
               id: 'id2',
               enabled: true,
               match: { kind: 'glob', pattern: 'https://cdn.example.com/app.css' },
-              action: { type: 'overrideBody', body: 'body { color: red }' },
+              action: { type: 'overrideBody', body: 'body { color: red }', delivery: 'redirect' },
               resourceTypes: ALL_TYPES,
               importKey: 'r2',
             },
@@ -113,7 +113,7 @@ describe('Resource Override import', () => {
     const notices = JSON.stringify(result.skipped) + JSON.stringify(result.warnings);
     expect(notices).not.toContain('color: red');
     expect(notices).not.toContain('console.log');
-    expect(result.workspace.groups[0]?.rules[1]?.action).toEqual({ type: 'overrideBody', body: 'body { color: red }' });
+    expect(result.workspace.groups[0]?.rules[1]?.action).toEqual({ type: 'overrideBody', body: 'body { color: red }', delivery: 'redirect' });
   });
 
   it('maps v2 { ruleGroups } exports with legacy matchUrl names and /regex/ mode', () => {
@@ -138,7 +138,7 @@ describe('Resource Override import', () => {
       ['*', 2],
       ['Imported group 2', 0],
     ]);
-    expect(result.workspace.groups[0]?.rules[1]?.action).toEqual({ type: 'overrideBody', body: '{}' });
+    expect(result.workspace.groups[0]?.rules[1]?.action).toEqual({ type: 'overrideBody', body: '{}', delivery: 'redirect' });
     expect(result.skipped.map((s) => s.code)).toEqual(['unknown-rule-type', 'invalid-after-mapping']);
     expect(result.skipped[1]?.message).toContain('action.request.0.name');
   });

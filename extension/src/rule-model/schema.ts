@@ -81,13 +81,18 @@ export const ActionSchema = v.variant('type', [
   }),
   v.object({
     type: v.literal('overrideBody'),
-    /** UTF-8 text swapped in for the response body. The URL does not change. */
+    /** UTF-8 text swapped in for the response body. */
     body: v.pipe(
       v.string(),
       v.check((s) => s.trim() !== '', 'Enter the replacement body'),
       v.maxLength(1_000_000, 'Body is too large (1 MB max)'),
     ),
-    /** Replaces the response Content-Type. Omitted = keep the server's. */
+    /**
+     * `redirect` (default): DNR redirect to a data: URL (works with DevTools; RO 2.0 parity).
+     * `inPlace`: keep the URL via debugger / filterResponseData (CSP/SRI-safe).
+     */
+    delivery: v.optional(v.picklist(['redirect', 'inPlace']), 'redirect'),
+    /** Replaces the response Content-Type. Omitted = keep the server's (inPlace) or infer MIME (redirect). */
     contentType: v.optional(
       v.pipe(v.string(), v.trim(), v.minLength(1, 'Content-Type is empty'), v.maxLength(200, 'Content-Type is too long'), v.check((s) => !/[\r\n]/.test(s), 'Content-Type must be a single line')),
     ),
@@ -208,6 +213,17 @@ export type PageActionType = 'injectJs' | 'injectCss' | 'mock';
 /** Redirect/block/headers run in declarativeNetRequest; inject and mock run in the page. */
 export const isDnrAction = (action: Action): action is Extract<Action, { type: DnrActionType }> =>
   action.type === 'redirect' || action.type === 'block' || action.type === 'modifyHeaders';
+
+type OverrideBodyAction = Extract<Action, { type: 'overrideBody' }>;
+
+/** True when overrideBody uses the debugger / filter path (not a DNR data: redirect). */
+export const isInPlaceBody = (action: Action): action is OverrideBodyAction =>
+  action.type === 'overrideBody' && action.delivery === 'inPlace';
+
+/** True when overrideBody compiles to a DNR data: redirect (default). */
+export const isRedirectBody = (action: Action): action is OverrideBodyAction =>
+  action.type === 'overrideBody' && action.delivery === 'redirect';
+
 export type ResourceType = (typeof RESOURCE_TYPES)[number];
 export type Rule = v.InferOutput<typeof RuleSchema>;
 export type ImportSource = v.InferOutput<typeof ImportSourceSchema>;

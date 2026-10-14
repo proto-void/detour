@@ -102,7 +102,7 @@ export function importWorkspace(input: unknown, { newId = () => crypto.randomUUI
   if (Object.keys(value).length === 0) {
     return {
       ok: false,
-      errors: ['The file is an empty object ({}). Resource Override MV3 builds before PR #73 exported empty files; re-export from a fixed build.'],
+      errors: ['The file is an empty object ({}). Some legacy MV3 exporters wrote empty files; re-export from a fixed build.'],
     };
   }
 

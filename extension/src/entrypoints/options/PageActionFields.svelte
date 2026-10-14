@@ -218,7 +218,7 @@
       <CodeEditor id="{id}-body" label="Response body" value={action.body} {language} {describedby} onchange={(body) => setMock({ body })} />
     {/snippet}
   </Field>
-  <p class="note">Answered inside the page for <code>fetch</code> and <code>XMLHttpRequest</code>; the request never reaches the network, so redirect and header rules don’t apply to it. Service workers and <code>sendBeacon</code> aren’t mocked.</p>
+  <p class="note">Answered inside the page for <code>fetch</code> and <code>XMLHttpRequest</code>; the request never reaches the network, so redirect and header rules don’t apply to it. Service workers and <code>sendBeacon</code> aren’t mocked. Chrome’s Network tab often omits the mocked call — use Recent matches and what the page received to confirm.</p>
 {/if}
 
 <style>

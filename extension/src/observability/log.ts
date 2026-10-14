@@ -81,6 +81,18 @@ export function sourceLabel(source: MatchSource): string {
   return 'Page';
 }
 
+/**
+ * Display label for a match row. Redirect-delivery body rules log as DNR but should read
+ * as a body replace, not a bare network redirect.
+ */
+export function matchSourceLabel(source: MatchSource, actionType?: string, delivery?: string): string {
+  if (actionType === 'overrideBody' && (delivery ?? 'redirect') === 'redirect' && source === 'dnr') {
+    return 'Body replaced (redirect)';
+  }
+  if (source === 'body') return 'Body replaced';
+  return sourceLabel(source);
+}
+
 /** Group name plus the match pattern. Action fields are not read. */
 export function labelsFromWorkspace(workspace: Workspace): Map<string, string> {
   const labels = new Map<string, string>();

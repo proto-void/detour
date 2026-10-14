@@ -1,6 +1,6 @@
 # Gotchas
 
-**Last verified:** 2026-10-08
+**Last verified:** 2026-10-09 (Windows Browse hang: sibling pickfile + UI timeout/Cancel)
 
 ## DNR limits (verified against Chrome + MDN reference, 2026-10-06)
 
@@ -44,6 +44,7 @@
 - Firefox gecko id is `detour@protovoid.com` (Hamza, 2026-10-06), with `data_collection_permissions: { required: ['none'] }`; the Firefox build is warning-free
 - Never call `browser.*` at module top level in entrypoints; WXT imports them in Node with a fake browser
 - Svelte 5: a `const` derived from a prop captures only its initial value (`state_referenced_locally`); use `$derived`. `typecheck` runs `svelte-check --fail-on-warnings`
+- Toolbar icons: `@wxt-dev/auto-icons` rasters `brands/<slug>/icon.svg` into `icons/{16,32,48,128}.png` and sets `manifest.icons`. Also set `action.default_icon` to those paths — without icons Chrome shows a grey letter glyph. Brand `outDir` is `.output/<slug>/`; an old `.output/chrome-mv3-dev` load (pre-brand) had no icon files and produced the letter "D"
 
 ## Page scoping (`pageDomains`)
 
@@ -66,7 +67,14 @@
 - Chrome accepts `append` on **request** headers only for a case-sensitive allowlist (accept, accept-encoding, accept-language, access-control-request-headers, cache-control, connection, content-language, cookie, forwarded, if-match, if-none-match, keep-alive, range, te, trailer, transfer-encoding, upgrade, user-agent, via, want-digest, x-forwarded-for). Any other name makes Chrome reject the rule. The editor warns but doesn't block. Firefox 157 delivered a DNR `set` of a custom request header (`x-detour`) to the server. `append` on Firefox is still unverified (DNR reference, 2026-10-06)
 - A DNR `regexSubstitution` replaces only the **first match** within the URL, not the whole URL. Glob rules are anchored `^…$`, so for them it's the whole URL anyway. A regex rule with `\1` keeps the unmatched prefix and suffix; the preview copies this
 - Save timing: take the timestamp **before** `storage.set`. The background can apply and write `applyReport` before the write promise resolves, and a later timestamp would leave status stuck on "Applying"
+- Autosave (`storage.local.autosave`, missing = on) waits ~1 s after the last valid edit. Invalid drafts are not written and must not call `showAll`/focus. Own `workspace` writes echo through `storage.onChanged`; after `saved` is updated, `isDirty(loaded, saved)` is false so the editor must not set `changedElsewhere`. Pause autosave while that banner is up
 - Imported rules with a custom `resourceTypes` list show under Advanced as "Custom…". The collapsed Advanced section has a checkbox per type. An empty list is a field error. Inject and mock ignore `resourceTypes`
+- Compact rows hide body/code editors in a side drawer. E2E and focus helpers must open Edit body/code before touching `.cm-content` or Delivery. The drawer is a sibling of `article.rule`, not inside it
+- Options sticky `.bar` is `z-index: 50`. Docked drawer is `fixed` at `z-index: 30` and must use `top: var(--options-sticky-offset)` (measured from the bar via ResizeObserver; CSS fallback `3.5rem`) or Match tabs clip under the header. Overlay drawers use `z-index: 55` (above the bar, below toast at 60)
+- Drawer `.body` is `display: grid` with `flex: 1`. Default `align-content: stretch` grows auto rows to fill the panel height, so Match/Action/Test pills stretch vertically — set `align-content: start`
+- Rule drawer sections are **Match / Action / Test** only. The middle tab used to relabel as Redirect/Headers/… which looked like missing action types; label stays **Action**. All engine actions switch via a single **ActionChip** in the drawer head (always visible while editing) — do not duplicate chips inside the Action panel. Redirect destination and other action fields live only on the Action tab
+- Drawer `.body` is a tall CSS grid with `align-content: start` — without that, short Action/Test panels stretched auto rows and tab pills grew full-height between horizontal rules. Keep section tabs in the drawer `.head` chrome, not as stretching body rows
+- Redirect-delivery `overrideBody` shows in Network as **307 Internal Redirect** on the original URL, then a `data:` request with the body. Filters that hide data URLs or only match the original path hide the second entry. Match log labels those DNR hits "Body replaced (redirect)"; the tester truncates `data:` targets to `data:<mime> (N bytes)`
 
 ## Theme and DevTools
 
@@ -80,13 +88,28 @@
 - SPA fallback is one regex rule, `main_frame` only, and skips any path that contains a dot (so `/index.html` and files do not loop)
 - CORS adds response headers only. It does not answer an OPTIONS preflight
 
-## Rule tester
+## Rule tester / API Tester
 
-- The default probe is a **page load**. A rule that omits `resourceTypes` does not match it (DNR's "everything except main_frame"). Pick Script or Fetch / XHR in Request context to test those rules
+- Options tab is **API Tester** (`#tester`). **Which rules apply** uses `resolveProbe` with `resourceType: xmlhttprequest` (send path). DevTools panel still probes page loads
+- Apply Detour rules is **dual-scope**: global `apiSettings.applyDetourRules` (default on) + per-request `inherit` | `on` | `off` (default inherit). `resolveApplyDetourRules` — explicit per-request wins, else global. Do not use a single toggle that is only global or only request-local
+- When effective on, Apply Detour is a **simulation** via `resolveProbe` — not a guarantee of identical DNR outcomes for every edge case
+- Forbidden request headers on `fetch` need short-lived DNR **session** rules; cleanup must run on abort/error
+- API storage keys (`apiCollections`, `apiEnvironments`, `apiHistory`, `apiSettings`) must never collide with rules `workspace`
+- Never call API Tester collections a “workspace” in UI copy
+- A rule that omits `resourceTypes` does not match page loads (DNR's "everything except main_frame")
 - Mocks win only for Fetch / XHR. A script or page load still follows DNR even when a mock pattern matches the URL
-- A page-load redirect or block suppresses injects for that URL. A subresource redirect does not
-- The tester does not model the initiatorDomains cross-site iframe gap. It scopes by the page URL's host
+- The probe does not model the initiatorDomains cross-site iframe gap. It scopes by the page URL's host
 - It resolves the draft on screen. "Detour is off" and "Includes unsaved edits" mean the live engines may differ
+- Sandboxed scripts: CSP + timeout; not a security boundary against malicious collections the user chose to run
+- Slice B `chrome.alarms` schedules only fire while the browser is open — UI must say so (`SCHEDULE_BROWSER_OPEN_COPY`)
+- Load test soft cap is 200 (warn); hard cap 1000. Runner/load/scheduled sends use `executeApiRequest` (dual-scope Apply Detour)
+- Scheduled background runs skip scripts (no sandbox iframe in the service worker); options Runner runs scripts
+- `apiRuns` / schedules live under api-client storage keys — never rules `workspace`
+- OpenAPI YAML uses a lite parser; prefer JSON when available
+- Slice C OAuth uses optional `identity`; Chrome `launchWebAuthFlow`, Firefox manual code + PKCE verifier stored in-page until Exchange
+- Cookie jar requests optional `cookies` on first use — Cookie header still needs DNR session rules when sending via fetch
+- Folder sync File System Access is Chromium-first; Firefox UI copy points to Export / Import (`FOLDER_SYNC_COPY`)
+- Capture handoff uses `session` key `apiCapturePending` (`queueCapture` / `takeCapture`); DevTools / Log navigate to `#tester`
 
 ## Resource Override import
 
@@ -102,8 +125,9 @@
 
 ## `data:` redirects
 
-- RO mv3 file overrides use `data:` URLs, which hit **CSP**, opaque responses, and CORS mode limits (`no-cors` quirks; see RO #32)
-- Body override (`overrideBody`, ADR-009) keeps the original URL. Files on disk use `serveLocal` and the Local Bridge. Do not emit giant `data:` bodies
+- RO mv3 file overrides use `data:` URLs. Detour’s default `overrideBody.delivery: redirect` does the same (ADR-025): works with DevTools open, no debugger
+- `data:` can be blocked by CSP (`connect-src` / `script-src`), does not satisfy SRI, and Network shows a `data:` response. Use `delivery: inPlace` for those pages
+- Opaque responses and CORS `no-cors` quirks still apply (see RO #32). Files on disk use `serveLocal` and the Local Bridge
 
 ## CORS / preflight
 
@@ -147,15 +171,16 @@
 
 ## Body override
 
-- Do not use a `data:` redirect. CSP, CORS, and opaque responses break it. `overrideBody` keeps the URL and replaces the bytes
-- CDP `Fetch.fulfillRequest` body is base64. `continueResponse` with only `requestId` leaves a non-document response alone. HTML documents are the exception: `Fetch.getResponseBody` then fulfill, so a matching `integrity` hash can be rewritten. Do not call `Fetch.getResponseBody` for the script or stylesheet being replaced
-- Drop `content-encoding`, `content-length`, and `transfer-encoding` on the replacement or Chrome tries to gunzip the new bytes
-- A regex or bare `*` Fetch pattern pauses every response in the tab. Specific globs stay narrow. The editor warns
-- Matching script and stylesheet tags in the HTML get a SHA-384 hash of the replacement. The same list is embedded for page JavaScript that sets `integrity` later, including a tag passed to `innerHTML` or `insertAdjacentHTML`, and markup passed to `createContextualFragment` or `setHTMLUnsafe`, including when `setHTMLUnsafe` does not run scripts, and markup passed to `Document.parseHTMLUnsafe` or `DOMParser` with type `text/html`, and an HTML `integrity` Attr moved with `setAttributeNode` or `setAttributeNodeNS`, adopted with `setNamedItem` or `setNamedItemNS`, or written through `Attr.value` after it is on the element, or passed to `document.write` or `document.writeln` (string arguments concatenated first), or set as an iframe's `srcdoc`. Nodes moved from that document into the page carry the hash. See SRI above
+- Default `delivery: redirect` is a DNR `data:` URL (RO 2.0). Opt-in `inPlace` keeps the URL via debugger / filterResponseData (ADR-009, ADR-025)
+- Only one debugger client owns a tab. DevTools and in-place Detour fight; redirect delivery does not. That is why a `switch.json` override failed with the old debugger-only path when DevTools was open
+- CDP `Fetch.fulfillRequest` body is base64 (in-place). `continueResponse` with only `requestId` leaves a non-document response alone. HTML documents are the exception for SRI rewrite. Do not call `Fetch.getResponseBody` for the script or stylesheet being replaced
+- Drop `content-encoding`, `content-length`, and `transfer-encoding` on an in-place replacement or Chrome tries to gunzip the new bytes
+- A regex or bare `*` Fetch pattern pauses every response in the tab (in-place only). The editor warns for in-place broad patterns
+- Matching script and stylesheet tags get a SHA-384 hash only while in-place body rules are armed. See SRI above. Redirect delivery does not rewrite `integrity`
 - A DNR redirect for the same URL can move the request before Fetch sees the response. The tester notes the overlap; the compiler does not suppress either rule
 - Mocks still win for `xmlhttprequest` (the page answers first)
 - Out-of-process iframes are not auto-attached. Firefox does not filter service-worker script streams
-- `applyReport` lists armed body rules by id. It never stores the body. Import notices must not echo file contents either
+- `applyReport.bodies` lists armed in-place rules by id. Redirect delivery shows under `applied`. Import notices must not echo file contents either
 
 ## Firefox vs Chromium
 
@@ -186,6 +211,55 @@
 - `tabs.onUpdated` often includes the URL again when `status` is `complete`. Reset the per-tab count on `loading` or a real URL change, not on complete, or the matches from that navigation fall outside the count. Match timestamps can precede `onUpdated` by a short time (`NAV_SLACK_MS` is 2s). The clock is in the service worker and resets when the worker restarts
 - The session log can hold request URLs, including tokens in a query string. It stays in `storage.session` on the device. Labels are the group name and match pattern. Never store or ship action bodies
 - Inline JS runs in the MAIN world and cannot message the extension, so those injections are not log rows. Options `h2` text is uppercased in `innerText` (`text-transform`); assert `textContent` for "Recent matches"
+
+## Databases native host (Slices A–D + Connection options + partner hooks — ADR-027/029/030)
+
+- Native messaging host→browser messages are capped at **1 MB**. Result sets must chunk (~900 KB) and page (Cassandra `pageState`, SQL OFFSET/FETCH)
+- Browser stores cannot install native hosts — one-time OS-pack **Install Detour Helper** or `detour db install`; day-to-day start/stop is `connectNative` / port close (ADR-027/029)
+- **`hello` first:** host returns `{ protocolVersion, hostVersion, capabilities[] }`. Extension shows Helper too old/new on protocol mismatch; engines and SSH/proxy sections are gated from `capabilities` (`engine:<id>`, `ssh`, `proxy`, …)
+- **Brand host name:** `nativeHostName` (default `com.detour.db`) from brand config / `import.meta.env.BRAND` — partners may use a distinct name so helpers coexist (ADR-030)
+- **`DETOUR_BRAND_DIR`:** absolute external brand tree for private builds; in-tree `brands/<slug>` still works. Do not commit closed partner helper source into the public MIT repo
+- **Portable contract:** `DETOUR_DB_HOST_CMD=/path/to/binary` runs the framing/`hello` suite against any conforming host (for private Go helpers)
+- **Preferred path:** OS packs (`detour-<ver>-<os>-<arch>`) ship a self-contained SEA; store zips stay extension-only. Gatekeeper / SmartScreen warnings are expected at $0 unsigned (no notarization)
+- **Stable Chromium id:** public manifest `key` per brand (Detour in-repo; Rogers gitignored). Installer `allowed_origins` = brand unpacked id (+ store ids when known) + optional `--extension-id`. Never commit private `.pem`
+- **SEA base binary:** Homebrew Node is a thin stub + `libnode.dylib` and cannot be postject-injected. `sea:build` downloads the official nodejs.org binary into `cli/.cache/node-official/` when `process.execPath` is too small / links `libnode`. CI `setup-node` already uses official builds. Detect fuse at inject time (`NODE_SEA_FUSE_…df1996b2` on Node 24+; older docs show `…df481702`)
+- **SEA natives:** `@napi-rs/keyring` (+ `keyring-<platform>`) must be real copies beside the binary (`createRequire(dirname(execPath)/package.json)`). Copy via pnpm store realpaths — do not zip pnpm symlinks
+- **Intel Mac CI:** use an Intel runner label (e.g. `macos-15-intel`); `macos-latest` is arm64 only
+- **GUI browser PATH (Node launcher only):** Chrome/Edge/Firefox from a GUI often inherit a minimal PATH without Node. Dev `db install` embeds the **absolute** Node path. OS-pack SEA installs need no Node. Symptom if using the Node launcher: **Native host disconnected** (exit 127)
+- **Launcher shape:** darwin/linux → bash `cli/bin/detour-db-host`; win32 → `cli/bin/detour-db-host.cmd` (Chrome requires `.exe` or `.bat`/`.cmd`, not a shebang). Paths with spaces are quoted on every OS
+- **Windows registry:** Chromium browsers read `HKCU\Software\…\NativeMessagingHosts\com.detour.db` (default value = JSON under `%LOCALAPPDATA%\Detour\NativeMessagingHosts`). Firefox uses a separate JSON (`allowed_extensions`) under `%APPDATA%\Mozilla\NativeMessagingHosts` and its own HKCU Mozilla key — do not point Mozilla at the Chromium manifest. `db uninstall` deletes all registered keys
+- **No sole-OS install paths:** Homebrew `/opt/homebrew/…` probes are optional same-binary aliases only; install always falls back to `process.execPath`. Do not hardcode `/Users/…` or `C:\Program Files` as the only Node path
+- mkdir into Edge/Brave Application Support dirs can **EPERM** if that browser was never installed — install skips and notes; Chromium Chrome dir + Windows registry are enough for day-to-day
+- Paths with spaces (e.g. `Resource Override`) must stay **quoted** in the launcher; the Chrome JSON `path` field is fine as a single string
+- WXT `browser` (webextension-polyfill) often lacks `runtime.connectNative` on Chromium — Databases must call `chrome.runtime.connectNative` via `connectNativePort` (`extension/src/db-client/protocol.ts`), not `browser.runtime.connectNative`
+- **Optional `nativeMessaging` first grant:** after `permissions.request` succeeds, Chrome often leaves `chrome.runtime.connectNative` undefined until the extension reloads. Probe with `isConnectNativeAvailable()`; UI uses `helperStatus: 'needs_reload'` + Reload panel — never surface raw `connectNative missing` to users. Keep permission optional (Approved db-client spec)
+- **macOS `pickFile`:** Prefer clang-built Cocoa sibling `detour-pickfile` (`nsopen.m`, Regular NSApp + `makeKeyAndOrderFront`) — `osascript` **Accessory** panels stay non-key under Chrome (dimmed list, clicks dismiss). Install also `osacompile`s `pickfile-nsopen.scpt` as fallback (Regular policy). Order: native binary → compiled `.scpt` → inline `-e` → Finder `choose file`. AppleScript cancel **-128** → `null`. iCloud badges unrelated. Stale install: missing `detour-pickfile` Mach-O beside host / old Accessory-only script
+- **Stale installed helper after pack rebuild:** Reload alone does **not** replace `~/Library/Application Support/Detour/db-host/detour-db-host`. After every new OS pack / `dist/staging` rebuild, re-run **Install Detour Helper**. Symptom: `hello` lacks `pickFile` → `unknown method "pickFile"`. Databases UI now warns explicitly when the capability is missing
+- **Rogers local Mac verification (Hamza standing DoD):** after any change that ships in the closed OS helper/pack and should affect this Mac’s live host, agents must finish from `rogers-detour` with `export DETOUR_PUBLIC_DIR="<public Detour checkout>"` then `pnpm install:helper:local` (packs macos-arm64 + runs `install.sh`). Reload extension alone never updates Application Support. Details: `rogers-detour/AGENTS.md` OS packs + `rogers-detour/AI/intelligence/gotchas.md`
+- **Rogers Windows handoff DoD (Hamza standing):** for Windows / simple helper+extension fixes, from `rogers-detour` run `export DETOUR_PUBLIC_DIR="<public Detour>"` then `pnpm extract-windows-helper-scripts` (rebuilds Rogers extension, packs windows-x64, refreshes `dist/extract-windows-helper-scripts/`). Not ad-hoc unzip/cp. Mac `install:helper:local` is not Windows coverage. Full Install Helper on Windows still runs from the OS pack. Details: `rogers-detour/AGENTS.md` + `rogers-detour/AI/intelligence/gotchas.md`
+- **Windows `pickFile`:** Host prefers sibling `detour-pickfile.exe` (fresh process, 120s kill) so `GetOpenFileNameW` never blocks native-messaging `Handle()` when the dialog is behind Chrome. In-process fallback uses `LockOSThread` + `CoInitializeEx(STA)` + TopMost owner raise + a pick mutex (second concurrent common dialog hangs). Install Helper builds/copies the sibling beside the host. Node SEA same sibling preference; PowerShell `-STA` is **dev/fallback only**. Extension: shared `browsing` lock + 90s timeout + Cancel… clears the lock — without that, a hung RPC leaves every Browse button stuck on “Browsing…”
+- **Windows second Browse stuck (2026-10-09):** Symptom — all SSL Browse buttons show “Browsing…”; truststore may show a partial `C:\Users\…`. Cause — in-process `GetOpenFileNameW` on the host thread (dialog lost / never returned) so `finally` never cleared `browsing`. Fix — sibling spawn + UI timeout/Cancel + STA/mutex hardening. Immediate recovery before new pack: click **Cancel…** (or Reload options tab), **Stop helper** then **Start**, Alt+Tab for a leftover dialog; paste paths if needed
+- **Linux `pickFile`:** Probe `zenity` then `kdialog` once and cache; avoid a failed spawn on every Browse when zenity is absent
+- **Rogers `pack:all`:** always rebuilds the extension from public Detour before zipping. Re-packing a stale `.output/extension` shipped an old options bundle without `needs_reload` while Hamza still saw `connectNative missing`
+- **Rogers `dist/` must stay current (Hamza standing rule):** after `helper-go/` or packed-extension fixes, refresh **both** `rogers-detour/dist/detour-*.zip` (windows-x64 + macos-arm64 at minimum) **and** `dist/staging/` via `pnpm pack:all && pnpm pack:verify` in the private repo — public Chrome zips alone are not enough. Bare `pnpm pack` only updates the host OS. Never run concurrent `pack.mjs` (staging `ENOTEMPTY` / mixed trees). Details: `rogers-detour/AI/intelligence/gotchas.md`
+- **Closed Go helper `pickFile`:** Rogers packs ship Go source (not Node SEA). The Go host must implement RPC `pickFile` + advertise capability `pickFile`; without it Browse fails with `unknown method "pickFile"` even when the extension UI is correct
+- **`pickFile` contract (Go ↔ Node):** method `pickFile`; params `title` + optional `filters: [{name, extensions[]}]`; cancel → `{path: null}`; failures → RPC error. macOS: Cocoa `detour-pickfile` (+ compiled `.scpt` / inline Regular / Finder); Windows: native Win32 / `detour-pickfile` (PowerShell fallback); Linux: cached zenity|kdialog. After every `pack:all` / staging rebuild Hamza must re-run **Install Detour Helper** from the new pack root
+
+- SEA + native addons: `esbuild` / `ssh2` / `oracledb` may need `pnpm approve-builds` (`allowBuilds` in `pnpm-workspace.yaml`). Optional `kerberos` / `@azure/identity` are external / dynamic — fail cleanly when missing
+- **Driver-gated auth:** `pg` has no GSSAPI (UI disables); `mysql2` has no Kerberos plugin (UI disables); Oracle Kerberos needs thick + Instant Client; Entra interactive is host→system browser
+- **TLS files by path:** host expands `~`, reads CA/cert/key at connect; missing file → clear RPC error. Never store cert bytes in `chrome.storage`. Mode `disable` early-returns without reading path contents (paths may still be filled in the UI)
+- **SSL path fields always visible:** CA / client cert / client key show under SSL for every mode (including Disable). Mode controls host **application**, not field visibility (TablePlus-style)
+- **TLS client-key passphrase (encrypted keys only):** No inline Key passphrase field. After Browse/blur on **client key** only, host RPC `inspectPemKey` `{ path }` → `{ encrypted }` (cap ~64KiB; capability `inspectPemKey`). Encrypted = PEM type `ENCRYPTED PRIVATE KEY` or legacy `Proc-Type`/`DEK-Info`. Modal “Private key password” → draft → keychain `${secretAccount}:sslKeyPass`; host hydrates `tls.keyPassphrase`. Unencrypted keys never prompt. CA/client cert Browse never inspects for passphrase. Optional “Update key passphrase…”. **No IncompletePair gate:** key-only or cert-only with TLS on passes host validation; material present is passed to the driver (TablePlus docs silent; Hamza wants key-only)
+- **Go helper Cassandra TLS (Rogers packs):** `BuildCassandraOptions` uses shared `SSLFromConfig` (passphrase + SNI + CA/cert/key). Client identity loads via `tlsutil.X509KeyPair` only when **both** cert and key are present (decrypts traditional PEM-encrypted keys; PKCS#8 `ENCRYPTED PRIVATE KEY` not yet). `inspectPemKey` + `PemKeyEncrypted` mirror Node. Key-only / cert-only is not IncompletePair-rejected — Go crypto/tls simply omits `Certificates` until both sides exist; server/driver may still fail. Verify-full to an IP still needs **Server name (SNI)**; add CA/cert/key as the server requires. After pack rebuild: re-run **Install Detour Helper** (Reload alone is not enough)
+- **Cassandra local DC:** Do **not** invent `datacenter1` when Local datacenter is blank (Go + Node + new-connection UI). Real clusters often use `DC1` (case-sensitive). Blank → no DCAware policy in Go; user must set the real DC. Host field accepts comma-separated contact points
+- **Java truststore/keystore (plan 032):** Optional `tls.trustStorePath` / `tls.keyStorePath` (JKS or PKCS12) + keychain `:trustStorePass` / `:keyStorePass`. Host hydrates into PEM CA / client cert+key when SSL mode ≠ Disable. Precedence: truststore overrides `caPath`; keystore overrides `certPath`/`keyPath`. PEM-only still works when store paths are empty. No hardcoded Spring hosts/DC/secrets — each connection configures its own. Go: `tlsutil.LoadJava*` tries JKS (`0xFEEDFEED`) and PKCS12 (ASN.1 `0x30`) both ways; PKCS12 via `software.sslmate.com/src/go-pkcs12` (modern Java SHA-256/PBES2). Node: `jks-js` (+ PKCS12 bags without `friendlyName` fallback). Passwords are not swapped (`:trustStorePass` → truststore, `:keyStorePass` → keystore). Friendlier errors distinguish wrong password vs unsupported format; empty password hints to re-enter. Spring `.keystore` may be JKS **or** PKCS12 (Java 9+ default). JCEKS rejected with a clear message. **Last verified:** 2026-10-09
+- AWS Keyspaces: TLS with Amazon Root CA1 at `cli/src/db/certs/starfield-keyspaces.pem`; typical port **9142**
+- Azure Cosmos DB Cassandra API: port **10350**
+- Live contract tests: `docker compose -f docker-compose.db.yml up -d …` then `DETOUR_DB_E2E=1 pnpm --filter @detour/cli test:db-e2e`; TLS extras need `node cli/src/db/certs/generate-test-certs.mjs` then `--profile tls`
+- **After any Docker/compose work** (e.g. `docker-compose.db.yml` / `DETOUR_DB_E2E`): always `docker compose -f docker-compose.db.yml down`, then quit Docker Desktop on macOS (`osascript -e 'quit app "Docker"'` or equivalent). Do not leave the daemon running. Hamza standing rule (2026-10-09)
+- Do not reuse Local Bridge loopback HTTP for DB traffic (open port + token; wrong lifecycle). Slice D may only start/stop that process
+- Safari has no compatible native messaging — out of Databases v1
+- Secrets stay in the OS keychain on the host; never in extension storage or collection exports
 
 ## Local Bridge
 

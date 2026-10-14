@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import type { Workspace } from './schema';
-import { loadWorkspace, saveWorkspace, WORKSPACE_KEY } from './storage';
+import { AUTOSAVE_KEY, loadAutosave, loadWorkspace, saveAutosave, saveWorkspace, WORKSPACE_KEY } from './storage';
 
 const area = fakeBrowser.storage.local;
 
@@ -50,5 +50,21 @@ describe('workspace storage', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.errors[0]).toMatch(/^Stored workspace is invalid: data\.groups/);
     expect(await area.get(WORKSPACE_KEY)).toEqual({ [WORKSPACE_KEY]: { v: 1, data: { groups: 'nope' } } });
+  });
+});
+
+describe('autosave preference', () => {
+  beforeEach(() => fakeBrowser.reset());
+
+  it('defaults to on when missing', async () => {
+    expect(await loadAutosave(area)).toBe(true);
+  });
+
+  it('round-trips false and treats only false as off', async () => {
+    await saveAutosave(area, false);
+    expect(await area.get(AUTOSAVE_KEY)).toEqual({ [AUTOSAVE_KEY]: false });
+    expect(await loadAutosave(area)).toBe(false);
+    await saveAutosave(area, true);
+    expect(await loadAutosave(area)).toBe(true);
   });
 });

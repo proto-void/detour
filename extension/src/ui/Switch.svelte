@@ -32,6 +32,15 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .switch-wrap > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .switch {

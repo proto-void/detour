@@ -11,6 +11,10 @@ import { RESYNC_MESSAGE, type PageApi } from '../page-inject/sync';
 import { BRIDGE_SESSION_KEY } from '../local-bridge/session';
 import { ENABLED_KEY, WORKSPACE_KEY } from '../rule-model/storage';
 import { startMatchLog, type ActionBadgeApi, type MatchLogDeps } from '../observability/install';
+import { loadApiClientState, saveApiClientState } from '../api-client/storage';
+import { runCollection, toStoredReport } from '../api-client/runner';
+import { scheduleIdFromAlarm } from '../api-client/schedule';
+import { loadWorkspace } from '../rule-model/storage';
 
 export default defineBackground(() => {
   const dnr = browser.declarativeNetRequest as unknown as DnrApi;
@@ -93,5 +97,55 @@ export default defineBackground(() => {
         void matches.note(match);
       },
     }).catch((e) => console.error('Detour: page message failed', e));
+  });
+
+  // API Tester scheduled runs (Slice B) — only while the browser is open.
+  browser.alarms.onAlarm.addListener((alarm) => {
+    const scheduleId = scheduleIdFromAlarm(alarm.name);
+    if (!scheduleId) return;
+    void (async () => {
+      const loaded = await loadApiClientState(area);
+      if (!loaded.ok) return;
+      const schedule = (loaded.value.schedules ?? []).find((s) => s.id === scheduleId && s.enabled !== false);
+      if (!schedule) return;
+      const collection = loaded.value.collections.find((c) => c.id === schedule.collectionId);
+      if (!collection) return;
+      const ws = await loadWorkspace(area);
+      const workspace = ws.ok ? ws.value : { groups: [] };
+      const env = loaded.value.environments.find((e) => e.id === loaded.value.activeEnvironmentId);
+      try {
+        const report = await runCollection({
+          collection,
+          folderId: schedule.folderId,
+          iterations: 1,
+          globalApplyDetour: loaded.value.applyDetourRules !== false,
+          workspace,
+          scopes: {
+            environment: env?.variables ?? [],
+            collection: collection.variables ?? [],
+            globals: loaded.value.globals ?? [],
+          },
+          skipScripts: true,
+        });
+        await saveApiClientState(area, {
+          ...loaded.value,
+          runs: [toStoredReport(report), ...(loaded.value.runs ?? [])].slice(0, 50),
+        });
+        if (schedule.notifyOnFail && report.summary.failed > 0) {
+          try {
+            await browser.notifications?.create(`detour-api-run-${report.id}`, {
+              type: 'basic',
+              iconUrl: 'icons/128.png',
+              title: 'Detour API Tester',
+              message: `Scheduled “${schedule.name}”: ${report.summary.failed} failed of ${report.summary.total}`,
+            });
+          } catch {
+            /* notifications optional */
+          }
+        }
+      } catch (e) {
+        console.error('Detour: scheduled API run failed', e);
+      }
+    })();
   });
 });

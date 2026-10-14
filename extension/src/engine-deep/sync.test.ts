@@ -50,7 +50,7 @@ const workspace: Workspace = {
       enabled: true,
       rules: [
         { id: 'r', enabled: true, match: { kind: 'glob', pattern: 'https://cdn.example.com/a.js' }, action: { type: 'redirect', to: 'http://127.0.0.1:9/a.js' }, resourceTypes: ['script'] },
-        { id: 'b', enabled: true, match: { kind: 'glob', pattern: 'https://cdn.example.com/b.js' }, action: { type: 'overrideBody', body: secret }, resourceTypes: ['script'] },
+        { id: 'b', enabled: true, match: { kind: 'glob', pattern: 'https://cdn.example.com/b.js' }, action: { type: 'overrideBody', body: secret, delivery: 'inPlace' }, resourceTypes: ['script'] },
       ],
     },
   ],

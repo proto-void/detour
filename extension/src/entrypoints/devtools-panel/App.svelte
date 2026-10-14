@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { browser } from 'wxt/browser';
+  import { queueCapture } from '../../api-client/capture';
   import type { Workspace } from '../../rule-model/schema';
   import { loadEnabled, loadWorkspace } from '../../rule-model/storage';
   import ThemeToggle from '../../ui/ThemeToggle.svelte';
@@ -48,6 +49,17 @@
     }
   }
 
+  async function sendPageToApiTester() {
+    if (!pageUrl) return;
+    await queueCapture(browser.storage.session, {
+      method: 'GET',
+      url: pageUrl,
+      source: 'devtools',
+    });
+    const url = browser.runtime.getURL('/options.html#tester');
+    await browser.tabs.create({ url });
+  }
+
   onMount(() => {
     if (!devtools) return;
     void load();
@@ -74,7 +86,7 @@
   {#if !devtools}
     <p>Open this panel from the browser's DevTools.</p>
   {:else}
-    <p class="muted">Page load of the inspected page. For a script or a fetch, use Test a URL on the rules page.</p>
+    <p class="muted">Page load of the inspected page. For a script or a fetch, use API Tester on the rules page.</p>
     {#if pageUrl}<p><code>{pageUrl}</code></p>{/if}
     <p data-testid="inspect-result" aria-live="polite"><strong>{view.headline}</strong></p>
     {#if view.lines.length > 0}
@@ -87,7 +99,12 @@
     {#each view.notes as note, i (i)}
       <p>{note}</p>
     {/each}
-    <p><button type="button" class="btn" onclick={() => browser.runtime.openOptionsPage()}>Open rules…</button></p>
+    <p class="actions">
+      <button type="button" class="btn" onclick={() => browser.runtime.openOptionsPage()}>Open rules…</button>
+      {#if pageUrl}
+        <button type="button" class="btn primary" onclick={() => void sendPageToApiTester()}>Send to API Tester</button>
+      {/if}
+    </p>
   {/if}
 </main>
 
@@ -126,5 +143,11 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: var(--surface);
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
   }
 </style>
