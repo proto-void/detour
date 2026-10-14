@@ -2,30 +2,59 @@
 
 Manual submission only. CI does not call the Chrome, Edge, or Firefox publish APIs.
 
-**Listing title:** Detour  
-**Short description:** Point production at your code.  
-**Installed name** (manifest): Detour
+**Listing title (≤45):** Detour - Redirect & Override Requests  
+**Short description (≤132):** Redirect requests, modify headers, mock fetch/XHR, inject JS/CSS, and replace bodies locally. Free open-source Chrome extension.  
+**Installed name** (manifest): Detour  
+**Category:** Developer Tools  
+**Language:** English  
+**Homepage:** https://detour.protovoid.com/  
+**Privacy policy URL:** https://detour.protovoid.com/privacy/  
+**Source:** https://github.com/proto-void/detour
 
-Use the short description (and the longer description below) so reviewers do not treat this as the unrelated “Detour” proxy add-on (`detour-proxy` on AMO). Confirm the final URL slug in the dashboard (ADR-003).
+Character counts (verify before paste): title **37**; short description **128**.
+
+Use this copy so reviewers do not treat this as the unrelated “Detour” proxy add-on (`detour-proxy` on AMO). Confirm the final URL slug in the dashboard (ADR-003).
 
 ## Description (paste)
 
-Detour is a free, open-source way to point production at your own code. Redirect requests, change headers, block URLs, inject JS or CSS, mock fetch/XHR, and replace a response body. Rules stay in the browser. There is no account and no Detour server.
+Detour is a free, open-source Chrome extension to redirect requests, modify headers, mock fetch and XHR, inject JS or CSS, and replace response bodies — so you can point production URLs at localhost or mock code while you debug.
 
-You choose when body override is allowed. On Chrome that uses the debugger API, and only after you click Allow debugger. On Firefox it uses response filtering, and only after you allow that permission.
+Everything runs in your browser. Rules stay on your device. There is no account, no Detour cloud, and no Detour server in the middle.
 
-Source and license: MIT. See the project README for the privacy policy.
+### What it does
+
+- **Redirect requests** — map production scripts, APIs, or hosts to localhost or another origin
+- **Modify request and response headers** — add, rewrite, or strip headers on matched URLs
+- **Block URLs** — stop selected requests from loading
+- **Inject JS or CSS** — drop in debug scripts or styles on matched pages
+- **Mock fetch / XHR** — stub API responses without a proxy appliance
+- **Replace response bodies** — swap response content locally after you allow it
+
+### Privacy
+
+Detour is local-only. Your rules, mocks, and match log do not leave the browser via Detour. There is no telemetry product and no SaaS sync.
+
+On Chrome, body override uses the debugger API only after you click **Allow debugger**. On Firefox it uses response filtering, only after you allow that permission.
+
+### Open source
+
+MIT license. Source and docs: https://github.com/proto-void/detour  
+Product site: https://detour.protovoid.com/
+
+### Not a proxy or SaaS
+
+Detour is a developer tools extension for rewriting requests and page resources in-browser. It is **not** a VPN, traffic proxy, or hosted “Detour” cloud service, and it is unrelated to the “Detour” proxy add-on on other stores.
 
 ## Chrome Web Store
 
 1. `cd extension && corepack pnpm zip`
 2. Upload `extension/.output/detour-<version>-chrome.zip` in the [developer dashboard](https://chrome.google.com/webstore/devconsole).
-3. Paste the title, summary, and description above.
-4. Privacy policy URL: **https://detour.protovoid.com/privacy/** (HTML on the product site; source: [privacy.md](privacy.md)).
+3. Paste the **title**, **short description**, and **detailed description** above.
+4. Category: **Developer Tools**. Privacy policy URL: **https://detour.protovoid.com/privacy/** (HTML on the product site; source: [privacy.md](privacy.md)).
 5. Permission justifications: copy from [permissions.md](permissions.md).
-6. Single purpose: help developers rewrite requests and page resources while they debug.
-7. Homepage / support: **https://detour.protovoid.com** · source **https://github.com/proto-void/detour**
-8. Store screenshots and promo tiles: follow [store-assets/README.md](store-assets/README.md).
+6. Single purpose: help developers redirect and override requests and page resources while they debug (local rules only).
+7. Homepage / support: **https://detour.protovoid.com/** · source **https://github.com/proto-void/detour**
+8. Store screenshots and promo tiles: follow [store-assets/README.md](store-assets/README.md). Prefer captions that name the UI (“Redirect rules”, “Mock fetch”, “Applied strip”).
 
 Host permission `<all_urls>` and the `debugger` permission will get extra review. The justifications are written for that.
 

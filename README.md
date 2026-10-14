@@ -1,12 +1,16 @@
 # Detour
 
-**Point production at your code.**
+**Redirect and override production requests in Chrome** — point production at your code.
 
 Free · MIT · No account · No Detour server
 
-Product site: [detour.protovoid.com](https://detour.protovoid.com) · Source: [github.com/proto-void/detour](https://github.com/proto-void/detour) · Privacy: [detour.protovoid.com/privacy/](https://detour.protovoid.com/privacy/)
+[![Product site](https://img.shields.io/badge/site-detour.protovoid.com-7b1398)](https://detour.protovoid.com/)
+[![MIT](https://img.shields.io/badge/license-MIT-0f0c1b)](LICENSE)
+[![GitHub](https://img.shields.io/badge/github-proto--void%2Fdetour-4a1f9a)](https://github.com/proto-void/detour)
 
-Detour is a browser extension that redirects, blocks, rewrites headers, injects JS/CSS, mocks fetch/XHR, and replaces response bodies so you can aim production URLs at your local or mock code — without a proxy appliance or paid SaaS.
+Product site: [detour.protovoid.com](https://detour.protovoid.com/) · Source: [github.com/proto-void/detour](https://github.com/proto-void/detour) · Privacy: [detour.protovoid.com/privacy/](https://detour.protovoid.com/privacy/)
+
+Detour is a free, open-source browser extension to redirect requests, modify headers, mock fetch/XHR, inject JS/CSS, and replace response bodies so you can aim production URLs at localhost or mock code — locally, without a proxy appliance or paid SaaS.
 
 <details>
 <summary><strong>Install</strong></summary>

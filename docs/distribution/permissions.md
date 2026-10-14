@@ -1,6 +1,8 @@
 # Permission justification
 
-For Chrome Web Store, Edge, and AMO reviewers. Nothing here is sent to a Detour server. There is no account.
+For Chrome Web Store, Edge, and AMO reviewers. Detour redirects and overrides requests locally in the browser. Nothing here is sent to a Detour server. There is no account.
+
+**Single-purpose (paste):** Help developers redirect and override requests and page resources while they debug — rules stay on the device.
 
 | Permission | Why it is in the package | When it runs |
 |------------|--------------------------|--------------|

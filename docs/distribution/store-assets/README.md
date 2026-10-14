@@ -13,12 +13,13 @@ Manual upload only. Build the zip first (`cd extension && corepack pnpm zip`), t
 
 ## Screenshot capture notes
 
-Load the unpacked Detour build (or release zip), then capture:
+Load the unpacked Detour build (or release zip), then capture. Order matters for CTR: put the highest-intent shot first.
 
-1. **Popup** — toolbar popup with Detour enabled, Applied/Refused strip visible, dark theme.
-2. **Rules** — options Rules tab with at least one group and one redirect rule open or listed.
-3. **Recipes** (optional) — one recipe tile visible to show guided setup.
-4. **API Tester** or **Log** (optional) — second “power” surface for reviewers.
+1. **Popup + Applied strip** (first screenshot) — toolbar popup with Detour enabled, Applied/Refused strip visible, dark theme. Caption idea: `Popup with Applied strip`.
+2. **Redirect rules** — options Rules tab with at least one group and one redirect rule open or listed. Caption idea: `Redirect rules`.
+3. **Mock fetch** (optional) — mock / API tester surface if it clearly shows stubbing. Caption idea: `Mock fetch / XHR`.
+4. **Recipes** (optional) — one recipe tile visible to show guided setup. Caption idea: `Recipes for localhost redirects`.
+5. **Log** (optional) — match log for reviewers. Caption idea: `On-device match log`.
 
 Tips:
 
@@ -26,6 +27,7 @@ Tips:
 - Crop chrome browser UI if the store prefers the extension surface only; keep window large enough for store min size.
 - Do not include partner/Rogers branding, internal hostnames, or customer data in screenshots.
 - Prefer `localhost` / `example.com` URLs in any visible rules.
+- File names and CWS captions should describe the UI (“Redirect rules”, “Mock fetch”), not generic “screenshot1”.
 
 ## Listing copy pointers
 
