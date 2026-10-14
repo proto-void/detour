@@ -22,13 +22,22 @@ Paste-ready dashboard packet: [CWS-SUBMIT.md](../CWS-SUBMIT.md).
 
 ## Screenshot capture notes
 
-Load the unpacked Detour build (or release zip), then capture. Order matters for CTR: put the highest-intent shot first.
+Regen dark-theme product shots (demo rules on `example.com` / `localhost` only):
 
-1. **Popup + Applied strip** (first screenshot) — toolbar popup with Detour enabled, Applied/Refused strip visible, dark theme. Caption idea: `Popup with Applied strip`. Prefer ≥1280×800 for CWS (current `popup.png` is 800×1280 — re-capture if the dashboard rejects it).
-2. **Redirect rules** — options Rules tab with at least one group and one redirect rule open or listed. Caption idea: `Redirect rules`.
-3. **Mock fetch** (optional) — mock / API tester surface if it clearly shows stubbing. Caption idea: `Mock fetch / XHR`.
-4. **Recipes** (optional) — one recipe tile visible to show guided setup. Caption idea: `Recipes for localhost redirects`.
-5. **Log** (optional) — match log for reviewers. Caption idea: `On-device match log`.
+```bash
+cd extension
+CHROME=$(node scripts/install-chrome.mjs) node scripts/capture-web-screenshots.mjs
+```
+
+That writes WebP+PNG to `Project/detour-web/public/screenshots/` and copies PNGs here.
+
+CWS upload order (highest intent first):
+
+1. `popup.png` — Applied strip (portrait; if dashboard rejects, use a padded ≥1280×800 crop or `popup-portrait-800x1280.png` as reference)
+2. `redirect.png` — Rules + redirect drawer
+3. `mock.png` or `inject.png` — stub / inject surface
+4. `body.png` — replace body
+5. `log.png` — on-device match log
 
 Tips:
 
