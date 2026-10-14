@@ -155,27 +155,43 @@ Source: [permissions.md](permissions.md).
 
 ## Screenshots (Phase 1)
 
-Product PNGs now live under `docs/distribution/store-assets/` (demo-safe `example.com` / `localhost` rules, dark UI). Promo tiles do **not** replace screenshots.
+Product PNGs live under `docs/distribution/store-assets/` (demo-safe `example.com` / `localhost` rules, dark UI). Promo tiles do **not** replace screenshots.
+
+### CWS media rules (dashboard)
+
+- **Screenshots:** exactly **1280×800** or **640×400**; JPEG or **24-bit PNG (no alpha)**; max 5; at least 1 required.
+- **Small promo:** exactly **440×280** (same format rules).
+- **Marquee promo:** exactly **1400×560** (same format rules).
+- Wrong pixel size → **Error: The image size is incorrect.** Alpha PNG → reject. Do **not** upload “≥1280×800” sources.
 
 ### Ready files (upload order = CTR)
 
 | Order | File | Size | Caption |
 |------:|------|------|---------|
-| 1 | `popup.png` | 2560×1800 | `Popup with Applied strip` |
-| 2 | `redirect.png` | 2560×1800 | `Redirect rules` |
-| 3 | `mock.png` | 2560×1800 | `Mock fetch / XHR` |
-| 4 | `log.png` | 2560×1800 | `On-device match log` |
-| — | `headers.png` | 2560×1800 | `Modify headers` (optional extra) |
-| — | `inject.png` | 2560×1800 | `Inject JS / CSS` (optional extra) |
-| — | `body.png` | 2560×1800 | `Replace response body` (optional extra) |
+| 1 | `popup.png` | **1280×800** RGB PNG (no alpha) | `Popup with Applied strip` |
+| 2 | `redirect.png` | **1280×800** RGB PNG (no alpha) | `Redirect rules` |
+| 3 | `mock.png` | **1280×800** RGB PNG (no alpha) | `Mock fetch / XHR` |
+| 4 | `log.png` | **1280×800** RGB PNG (no alpha) | `On-device match log` |
+| — | `headers.png` | **1280×800** RGB PNG (no alpha) | `Modify headers` (optional 5th) |
+| — | `inject.png` | **1280×800** RGB PNG (no alpha) | `Inject JS / CSS` (optional 5th) |
+| — | `body.png` | **1280×800** RGB PNG (no alpha) | `Replace response body` (optional 5th) |
 
-`popup.png` is the portrait capture padded onto a 2560×1800 Protovoid dark canvas (`popup-portrait-800x1280.png` is the original). Re-capture a true landscape popup later if you want a sharper first shot.
+Absolute paths (primary four):
+
+1. `/Users/hamzakhan/Resource Override/docs/distribution/store-assets/popup.png`
+2. `/Users/hamzakhan/Resource Override/docs/distribution/store-assets/redirect.png`
+3. `/Users/hamzakhan/Resource Override/docs/distribution/store-assets/mock.png`
+4. `/Users/hamzakhan/Resource Override/docs/distribution/store-assets/log.png`
+
+High-res backups: `*-source-2560x1800.png`. Portrait reference: `popup-portrait-800x1280.png` (not for CWS upload).
+
+**If `popup.png` already failed in the dashboard:** replace it with the new 1280×800 file first, then upload up to four more in the order above.
 
 ### If you need to re-capture manually
 
 1. Load unpacked: `extension/.output/detour/chrome-mv3/` (or unpack the release zip).
-2. Capture **≥1280×800**. Dark theme. `localhost` / `example.com` only — no Rogers / customer data.
-3. Save under `docs/distribution/store-assets/`.
+2. Capture, then export exactly **1280×800** (or **640×400**) as **24-bit PNG with no alpha** (flatten on `#07060d` if needed). Dark theme. `localhost` / `example.com` only — no Rogers / customer data.
+3. Save under `docs/distribution/store-assets/` (keep a `*-source-*` high-res backup).
 
 Details: [store-assets/README.md](store-assets/README.md).
 
@@ -185,8 +201,8 @@ If the dashboard asks separately: upload `icons/128.png` from the zip / `extensi
 
 ### Promo tiles (optional — skip for first submit)
 
-- `promo-small-440x280.png` (440×280)
-- `promo-marquee-1400x560.png` (1400×560)
+- `promo-small-440x280.png` (exactly 440×280, 24-bit PNG no alpha)
+- `promo-marquee-1400x560.png` (exactly 1400×560, 24-bit PNG no alpha)
 
 **Skip promo tiles for this first submission** unless you want them.
 
@@ -200,7 +216,7 @@ If the dashboard asks separately: upload `icons/128.png` from the zip / `extensi
 3. **Store listing:** Paste title, short description, detailed description from this file.
 4. Set **Category** = Developer Tools, **Language** = English.
 5. Set **Homepage**, **Privacy policy**, **Support email** (`detour@protovoid.com`).
-6. **Media:** Upload ≥3 screenshots (order above). Store icon 128 if prompted. **Skip promo tiles** for first submit.
+6. **Media:** Replace/upload screenshots in order above (exactly 1280×800, 24-bit PNG no alpha; max 5). Store icon 128 if prompted. **Skip promo tiles** for first submit. Draft item id (do not set site `chromeStoreUrl` yet): `jfgbokgdgpjhkciooicmbdgabigkklmn`.
 7. **Privacy / permissions:** Paste single-purpose + each permission justification from this file.
 8. **Distribution:** Public (or Unlisted only if you intentionally soft-launch).
 9. **Submit for review.**
