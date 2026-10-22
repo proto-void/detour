@@ -1,6 +1,6 @@
 # Tech baseline
 
-**Last verified:** 2026-10-08
+**Last verified:** 2026-10-23
 
 ## Locked (ADR-001)
 
@@ -32,7 +32,7 @@
 
 - **pnpm 12** via `packageManager` field; run with `corepack pnpm …` (no global pnpm needed)
 - Root `pnpm-workspace.yaml` includes `extension/` and `cli/`. One lockfile: `pnpm-lock.yaml`. Install from the repo root
-- Scripts: `test`, `typecheck` (`wxt prepare && tsc --noEmit && svelte-check --fail-on-warnings`), `build`, `build:firefox`, `dev`, `dev:firefox`, `zip`, `zip:firefox`, `e2e:chrome`, `chrome:install`, `ci`
+- Scripts: `test`, `typecheck` (`wxt prepare && tsc --noEmit && svelte-check --fail-on-warnings`; prepare runs via typecheck only, no `postinstall`), `build`, `build:firefox`, `dev`, `dev:firefox`, `zip`, `zip:firefox`, `e2e:chrome`, `chrome:install`, `ci`
 - Node **24** (`.node-version`). CI installs pnpm 12.9.1 with `pnpm/action-setup` so it matches `packageManager` without Corepack’s signature check
 - Output: `extension/.output/{chrome-mv3,firefox-mv3}/` (gitignored, as are `.wxt/` and `node_modules/`)
 - Zips (also gitignored): `detour-<version>-chrome.zip`, `detour-<version>-firefox.zip`, `detour-<version>-sources.zip`. `zip.name` is `detour` so the scoped package name is not collapsed to `detourextension`

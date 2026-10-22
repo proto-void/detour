@@ -18,8 +18,7 @@
     "e2e:chrome": "node e2e/chrome-smoke.mjs",
     "chrome:install": "node scripts/install-chrome.mjs",
     "ci": "pnpm test && pnpm typecheck && pnpm build && pnpm build:firefox && pnpm e2e:chrome && pnpm zip && pnpm zip:firefox",
-    "test:watch": "vitest",
-    "postinstall": "wxt prepare"
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@puppeteer/browsers": "3.2.3",
