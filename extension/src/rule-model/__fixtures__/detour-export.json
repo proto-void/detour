@@ -1,0 +1,82 @@
+{
+  "v": 1,
+  "data": {
+    "groups": [
+      {
+        "id": "g-local",
+        "name": "Local dev",
+        "enabled": true,
+        "pageDomains": [
+          "example.com",
+          "localhost"
+        ],
+        "rules": [
+          {
+            "id": "r-bundle",
+            "enabled": true,
+            "match": {
+              "kind": "glob",
+              "pattern": "https://cdn.example.com/assets/*.js"
+            },
+            "action": {
+              "type": "redirect",
+              "to": "http://localhost:5173/assets/*.js"
+            },
+            "resourceTypes": [
+              "script"
+            ],
+            "note": "Vite dev server"
+          },
+          {
+            "id": "r-cors",
+            "enabled": false,
+            "match": {
+              "kind": "regex",
+              "pattern": "^https://api\\.example\\.com/"
+            },
+            "action": {
+              "type": "modifyHeaders",
+              "request": [
+                {
+                  "op": "remove",
+                  "name": "cookie"
+                }
+              ],
+              "response": [
+                {
+                  "op": "set",
+                  "name": "access-control-allow-origin",
+                  "value": "*"
+                },
+                {
+                  "op": "append",
+                  "name": "vary",
+                  "value": "Origin"
+                }
+              ]
+            },
+            "caseSensitive": true
+          }
+        ]
+      },
+      {
+        "id": "g-off",
+        "name": "Disabled group",
+        "enabled": false,
+        "rules": [
+          {
+            "id": "r-ads",
+            "enabled": true,
+            "match": {
+              "kind": "glob",
+              "pattern": "*://ads.example.com/*"
+            },
+            "action": {
+              "type": "block"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

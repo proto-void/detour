@@ -1,0 +1,29 @@
+# Large / generated — keep agents focused on source + AI/
+**/node_modules/
+**/.output/
+**/.wxt/
+**/dist/
+**/.turbo/
+**/.cache/
+**/*.lock
+**/coverage/
+**/pnpm-lock.yaml
+**/package-lock.json
+
+# Binary / media noise
+**/*.png
+**/*.jpg
+**/*.jpeg
+**/*.gif
+**/*.webp
+**/*.ico
+**/*.pdf
+**/*.zip
+**/*.xpi
+**/*.crx
+
+# Secrets never in context
+.env
+.env.*
+**/secrets/
+**/credentials/

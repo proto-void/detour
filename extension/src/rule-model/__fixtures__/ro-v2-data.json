@@ -1,0 +1,20 @@
+{
+  "v": 2,
+  "data": [
+    {
+      "id": 1,
+      "name": "*",
+      "on": true,
+      "rules": [
+        { "id": 1, "type": "normalOverride", "match": "https://example.com/main.js", "replace": "http://127.0.0.1:3000/main.js", "on": true },
+        { "id": 2, "type": "fileOverride", "match": "https://example.com/data.json", "file": "{}", "on": true },
+        { "id": 3, "type": "mysteryRule", "match": "*", "on": true }
+      ]
+    },
+    {
+      "id": 2,
+      "on": true,
+      "rules": [{ "id": 4, "type": "headerRule", "match": "*", "requestRules": "set Bad Name: x", "responseRules": "", "on": true }]
+    }
+  ]
+}

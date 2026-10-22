@@ -1,0 +1,71 @@
+# {{brandName}} {{version}} — {{osLabel}} ({{arch}})
+
+**Start here.** This pack has everything you need for {{brandName}} on {{osLabel}} {{arch}}, including the Databases helper. You do **not** need Node, pnpm, or a git checkout.
+
+## What's inside
+
+| Path | Purpose |
+|------|---------|
+| `extension/` | **Chrome Load unpacked root** — this subdirectory contains `manifest.json` |
+| `helper/` | Self-contained Databases helper (`{{helperBinary}}`) |
+| `{{installScript}}` | One-time helper install (run from **pack root**) |
+| `{{uninstallScript}}` | Remove the helper and native-messaging registration |
+| `helper/README.md` | Helper details, first-run warnings, troubleshooting |
+
+**Do not** Load unpacked the pack root (the folder with this README / Install Helper). That folder has no `manifest.json` — Chrome will say the manifest is missing. Always pick `extension/`.
+
+## 1. Load the extension (Developer mode)
+
+Keep the `extension/` folder where it is. Moving or deleting it removes the extension. To update later, replace the folder and click **Reload** on the extension card.
+
+### Chrome
+
+**First:** Unzip the OS pack (if you only have the `.zip`) so you have a folder like `detour-0.1.0-macos-arm64/`. Do **not** Load unpacked the `.zip` itself.
+
+![Chrome: open chrome://extensions, enable Developer mode, click Load unpacked](extension/load-unpacked-steps.jpg)
+
+1. Open `chrome://extensions`
+2. Turn on **Developer mode** (top right)
+3. Click **Load unpacked**
+4. Select **`extension/` inside the pack** — the folder that contains `manifest.json`  
+   Example: `…/detour-0.1.0-macos-arm64/extension`  
+   **Wrong:** `…/detour-0.1.0-macos-arm64` (pack root — Install Helper lives here, not the extension)
+
+
+Chrome may show a “Disable developer mode extensions” banner on startup — click **Keep** (or close it).
+
+### Edge
+
+Same steps at `edge://extensions` (Developer mode toggle is in the left sidebar).
+
+### Brave
+
+Same steps at `brave://extensions`.
+
+### Firefox
+
+This unsigned pack is **not** for normal Firefox installs. Use the AMO listing, or for a session-only test: `about:debugging` → **This Firefox** → **Load Temporary Add-on** → pick `manifest.json` inside `extension/`.
+
+## 2. Install the database helper (Databases tab only)
+
+Only needed if you use **Databases**. Do this from the **pack root** (sibling of `extension/`), not from inside `extension/`.
+
+1. Double-click **{{installScript}}** in the pack root
+2. Handle the first-run OS warning if shown (see below)
+3. Open {{brandName}} → **Databases** → **Start**
+4. You should see **Helper: Ready**
+
+{{firstRunNotes}}
+
+## 3. Uninstall
+
+- **Extension:** remove it from the browser’s extensions page, or delete the `extension/` folder after removing it.
+- **Helper:** double-click **{{uninstallScript}}**, or run `helper/{{helperBinary}} uninstall`.
+
+## Privacy
+
+The helper runs only on your machine. There is no {{brandName}} account and it never phones home. Database secrets stay in your OS keychain.
+
+## Releases
+
+More OS packs and store zips: [GitHub Releases]({{releasesUrl}})

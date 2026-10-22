@@ -1,0 +1,1731 @@
+// Real-browser check for Detour: load the unpacked build, import an RO export through the popup's
+// file input, confirm DNR redirects fire, edit rules in the options page, and prove page-inject +
+// api-mock rules run in real pages.
+// Usage: pnpm build && CHROME=/path/to/chrome pnpm e2e:chrome
+// Needs Chrome for Testing or Chromium; branded Chrome 137+ ignores unpacked-extension loading flags.
+import { createHash } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import http from 'node:http';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import puppeteer from 'puppeteer-core';
+
+const EXT = path.resolve(import.meta.dirname, '../.output/detour/chrome-mv3');
+const CHROME = process.env.CHROME;
+if (!CHROME) {
+  console.error('Set CHROME to a Chrome for Testing binary (npx @puppeteer/browsers install chrome@stable).');
+  process.exit(2);
+}
+const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'detour-e2e-'));
+
+const serve = (port, routes) =>
+  new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      const body = routes[new URL(req.url, 'http://x').pathname];
+      if (!body) return res.writeHead(404).end('nope');
+      res.writeHead(200, { 'content-type': body.type, 'access-control-allow-origin': '*', ...(body.headers ?? {}) }).end(body.text);
+    });
+    server.listen(port, '127.0.0.1', () => resolve(server));
+  });
+
+const js = (text) => ({ type: 'text/javascript', text });
+const css = (text) => ({ type: 'text/css', text });
+const html = (text) => ({ type: 'text/html', text });
+const sha384 = (text) => `sha384-${createHash('sha384').update(text).digest('base64')}`;
+const sriProd = 'window.SRI = "PROD";';
+const sriKept = 'window.SRI_KEPT = "OK";';
+const sriBad = 'window.SRI_BAD = "NO";';
+const sriJsProd = 'window.SRI_JS = "PROD";';
+const sriJsBad = 'window.SRI_JS_BAD = "NO";';
+const sriHtmlProd = 'window.SRI_HTML = "PROD";';
+const sriHtmlBad = 'window.SRI_HTML_BAD = "NO";';
+const sriExecProd = 'window.SRI_EXEC = "PROD";';
+const sriExecBad = 'window.SRI_EXEC_BAD = "NO";';
+const sriUnsafeProd = 'window.SRI_UNSAFE = "PROD";';
+const sriUnsafeBad = 'window.SRI_UNSAFE_BAD = "NO";';
+const sriNsProd = 'window.SRI_NS = "PROD";';
+const sriNsBad = 'window.SRI_NS_BAD = "NO";';
+const sriOuterProd = 'html{--sri-outer:prod}';
+const sriOuterBadCss = 'html{--sri-outer-bad:no}';
+const sriShadowProd = 'span{--sri-shadow:prod}';
+const sriShadowBadCss = 'span{--sri-shadow-bad:no}';
+const sriUnsafeCssProd = 'html{--sri-unsafe-css:prod}';
+const sriUnsafeCssBad = 'html{--sri-unsafe-css-bad:no}';
+const sriUnsafeShadowProd = 'span{--sri-unsafe-shadow:prod}';
+const sriUnsafeShadowBad = 'span{--sri-unsafe-shadow-bad:no}';
+const sriParseProd = 'html{--sri-parse:prod}';
+const sriParseBad = 'html{--sri-parse-bad:no}';
+const sriParseJs = 'window.SRI_PARSE = "PROD";';
+const sriNodeProd = 'window.SRI_NODE = "PROD";';
+const sriNodeBad = 'window.SRI_NODE_BAD = "NO";';
+const sriNamedProd = 'window.SRI_NAMED = "PROD";';
+const sriNamedBad = 'window.SRI_NAMED_BAD = "NO";';
+const sriWriteProd = 'window.SRI_WRITE = "PROD";';
+const sriWriteBad = 'window.SRI_WRITE_BAD = "NO";';
+const sriSrcdocProd = 'window.SRI_SRCDOC = "PROD";';
+const sriSrcdocBad = 'window.SRI_SRCDOC_BAD = "NO";';
+const page = html('<!doctype html><title>t</title><script src="/a.js"></script><script src="/b.js"></script><script src="/c.js"></script>');
+
+const prod = await serve(8001, {
+  '/page.html': page,
+  '/a.js': js('window.A = "PROD";'),
+  '/b.js': js('window.B = "PROD";'),
+  '/c.js': js('window.C = "PROD";'),
+  '/old.html': html('<title>OLD</title>'),
+  // The page script records whether injected JS ran first (document_start).
+  '/inject.html': html('<!doctype html><title>inject</title><h1>hi</h1><script>window.SEEN = window.EARLY ?? "none";</script>'),
+  '/other.html': html('<!doctype html><title>other</title><h1>hi</h1><script>window.SEEN = window.EARLY ?? "none";</script>'),
+  '/api/real': { type: 'text/plain', text: 'REAL' },
+  '/body.html': html('<!doctype html><title>body</title><script src="/replaced.js"></script><script src="/kept.js"></script>'),
+  '/replaced.js': js('window.BODY = "PROD";'),
+  '/kept.js': js('window.KEPT = "PROD";'),
+  '/switch.json': { type: 'application/json', text: '{"route":"PROD"}' },
+  '/json-page.html': html('<!doctype html><title>json</title><body></body>'),
+  '/bridge.html': html('<!doctype html><title>bridge</title><script src="/bridge.js"></script>'),
+  '/bridge.js': js('window.BRIDGE = "PROD";'),
+  // script-src 'self' allows this origin (port 8001) and blocks the bridge on another port.
+  '/csp-bridge.html': {
+    type: 'text/html',
+    text: '<!doctype html><title>csp</title><script src="/csp-bridge.js"></script>',
+    headers: { 'content-security-policy': "script-src 'self'" },
+  },
+  '/csp-bridge.js': js('window.CSP_BRIDGE = "PROD";'),
+  '/sri.html': html(
+    `<!doctype html><title>sri</title><script src="/sri.js" integrity="${sha384(sriProd)}" crossorigin="anonymous"></script><script src="/sri-kept.js" integrity="${sha384(sriKept)}" crossorigin="anonymous"></script><script src="/sri-bad.js" integrity="sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" crossorigin="anonymous"></script>`,
+  ),
+  '/sri.js': js(sriProd),
+  '/sri-kept.js': js(sriKept),
+  '/sri-bad.js': js(sriBad),
+  '/sri-disk.html': html(`<!doctype html><title>sri-disk</title><script src="/sri-disk.js" integrity="${sha384('window.SRI_DISK = "PROD";')}" crossorigin="anonymous"></script>`),
+  '/sri-disk.js': js('window.SRI_DISK = "PROD";'),
+  // Integrity is assigned after parse, the way a bundler sets script.integrity.
+  '/sri-js.html': html(
+    `<!doctype html><title>sri-js</title><script>var s=document.createElement('script');s.src='/sri-js.js';s.integrity='${sha384(sriJsProd)}';s.crossOrigin='anonymous';document.head.appendChild(s);var b=document.createElement('script');b.src='/sri-js-bad.js';b.integrity='sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';b.crossOrigin='anonymous';document.head.appendChild(b);</script>`,
+  ),
+  '/sri-js.js': js(sriJsProd),
+  '/sri-js-bad.js': js(sriJsBad),
+  // The hash lives in a markup string. Fragment parsing does not run the scripts, so the page
+  // copies the parsed attributes with setAttributeNS, which Detour does not hook.
+  '/sri-html.html': html(`<!doctype html><title>sri-html</title><div id="slot"></div><script>
+var slot = document.getElementById('slot');
+var bad = 'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+slot.insertAdjacentHTML('beforeend', '<script src="/sri-html.js" integrity="${sha384(sriHtmlProd)}" crossorigin="anonymous"><' + '/script><script src="/sri-html-bad.js" integrity="' + bad + '" crossorigin="anonymous"><' + '/script>');
+slot.querySelectorAll('script').forEach(function (old) {
+  var next = document.createElement('script');
+  for (var i = 0; i < old.attributes.length; i++) {
+    var attr = old.attributes[i];
+    next.setAttributeNS(null, attr.name, attr.value);
+  }
+  old.replaceWith(next);
+});
+</script>`),
+  '/sri-html.js': js(sriHtmlProd),
+  '/sri-html-bad.js': js(sriHtmlBad),
+  // These two APIs execute scripts. The production hash is in the markup string.
+  '/sri-exec.html': html(`<!doctype html><title>sri-exec</title><div id="unsafe"></div><script>
+var bad = 'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+var range = document.createRange();
+range.selectNode(document.documentElement);
+document.body.append(range.createContextualFragment('<script src="/sri-exec.js" integrity="${sha384(sriExecProd)}" crossorigin="anonymous"><' + '/script><script src="/sri-exec-bad.js" integrity="' + bad + '" crossorigin="anonymous"><' + '/script>'));
+document.getElementById('unsafe').setHTMLUnsafe('<script src="/sri-unsafe.js" integrity="${sha384(sriUnsafeProd)}" crossorigin="anonymous"><' + '/script><script src="/sri-unsafe-bad.js" integrity="' + bad + '" crossorigin="anonymous"><' + '/script>', { runScripts: true });
+</script>`),
+  '/sri-exec.js': js(sriExecProd),
+  '/sri-exec-bad.js': js(sriExecBad),
+  '/sri-unsafe.js': js(sriUnsafeProd),
+  '/sri-unsafe-bad.js': js(sriUnsafeBad),
+  // outerHTML and a shadow root's innerHTML do not run scripts. A stylesheet is still checked.
+  // setAttributeNS copies a parser attribute and does not go through setAttribute. Integrity is set before src.
+  '/sri-inert.html': html(`<!doctype html><title>sri-inert</title><div id="outer"></div><div id="shadow-host"></div><script>
+var bad = 'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+document.getElementById('outer').outerHTML = '<link rel="stylesheet" href="/sri-outer.css" integrity="${sha384(sriOuterProd)}" crossorigin="anonymous"><link rel="stylesheet" href="/sri-outer-bad.css" integrity="' + bad + '" crossorigin="anonymous">';
+var root = document.getElementById('shadow-host').attachShadow({ mode: 'open' });
+root.innerHTML = '<link rel="stylesheet" href="/sri-shadow.css" integrity="${sha384(sriShadowProd)}" crossorigin="anonymous"><link rel="stylesheet" href="/sri-shadow-bad.css" integrity="' + bad + '" crossorigin="anonymous"><span id="probe">x</span>';
+var matched = document.createElement('script');
+matched.setAttributeNS(null, 'integrity', '${sha384(sriNsProd)}');
+matched.setAttributeNS(null, 'src', '/sri-ns.js');
+matched.setAttributeNS(null, 'crossorigin', 'anonymous');
+document.head.appendChild(matched);
+var sibling = document.createElement('script');
+sibling.setAttributeNS(null, 'integrity', bad);
+sibling.setAttributeNS(null, 'src', '/sri-ns-bad.js');
+sibling.setAttributeNS(null, 'crossorigin', 'anonymous');
+document.head.appendChild(sibling);
+</script>`),
+  '/sri-ns.js': js(sriNsProd),
+  '/sri-ns-bad.js': js(sriNsBad),
+  '/sri-outer.css': css(sriOuterProd),
+  '/sri-outer-bad.css': css(sriOuterBadCss),
+  '/sri-shadow.css': css(sriShadowProd),
+  '/sri-shadow-bad.css': css(sriShadowBadCss),
+  // setHTMLUnsafe with scripts off still fetches stylesheets and checks integrity.
+  '/sri-unsafe-css.html': html(`<!doctype html><title>sri-unsafe-css</title><div id="host"></div><div id="shadow-host"></div><script>
+var bad = 'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+document.getElementById('host').setHTMLUnsafe('<link rel="stylesheet" href="/sri-unsafe-css.css" integrity="${sha384(sriUnsafeCssProd)}" crossorigin="anonymous"><link rel="stylesheet" href="/sri-unsafe-css-bad.css" integrity="' + bad + '" crossorigin="anonymous">');
+var root = document.getElementById('shadow-host').attachShadow({ mode: 'open' });
+root.setHTMLUnsafe('<link rel="stylesheet" href="/sri-unsafe-shadow.css" integrity="${sha384(sriUnsafeShadowProd)}" crossorigin="anonymous"><link rel="stylesheet" href="/sri-unsafe-shadow-bad.css" integrity="' + bad + '" crossorigin="anonymous"><span id="probe">x</span>', { runScripts: false });
+</script>`),
+  '/sri-unsafe-css.css': css(sriUnsafeCssProd),
+  '/sri-unsafe-css-bad.css': css(sriUnsafeCssBad),
+  '/sri-unsafe-shadow.css': css(sriUnsafeShadowProd),
+  '/sri-unsafe-shadow-bad.css': css(sriUnsafeShadowBad),
+  // parseHTMLUnsafe disables scripting. The tags are split so the document rewrite
+  // does not see them; the page hook must rewrite the string. Adopted nodes keep that hash.
+  '/sri-parse.html': html(`<!doctype html><title>sri-parse</title><div id="host"></div><script>
+var bad = 'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+var markup = '<' + 'link rel="stylesheet" href="/sri-parse.css" integrity="${sha384(sriParseProd)}" crossorigin="anonymous">'
+  + '<' + 'link rel="stylesheet" href="/sri-parse-bad.css" integrity="' + bad + '" crossorigin="anonymous">'
+  + '<' + 'script src="/sri-parse.js" integrity="${sha384(sriParseJs)}" crossorigin="anonymous"><' + '/script>';
+var parsed = Document.parseHTMLUnsafe(markup);
+var host = document.getElementById('host');
+parsed.querySelectorAll('link, script').forEach(function (node) { host.appendChild(document.adoptNode(node)); });
+var viaParser = new DOMParser().parseFromString(markup, 'text/html');
+window.DETOUR_PARSER = viaParser.querySelector('link[href="/sri-parse.css"]').getAttribute('integrity');
+var xhtml = '<' + 'html xmlns="http://www.w3.org/1999/xhtml"><' + 'head><' + 'link rel="stylesheet" href="/sri-parse.css" integrity="' + bad + '"/></' + 'head></' + 'html>';
+var viaXml = new DOMParser().parseFromString(xhtml, 'application/xhtml+xml');
+var xmlLink = viaXml.getElementsByTagNameNS('http://www.w3.org/1999/xhtml', 'link')[0];
+window.DETOUR_XML = xmlLink ? xmlLink.getAttribute('integrity') : '';
+</script>`),
+  '/sri-parse.css': css(sriParseProd),
+  '/sri-parse-bad.css': css(sriParseBad),
+  '/sri-parse.js': js(sriParseJs),
+  // setAttributeNode adopts an Attr and does not go through setAttribute. Integrity is set before src.
+  '/sri-node.html': html(`<!doctype html><title>sri-node</title><script>
+var bad = 'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+var matched = document.createElement('script');
+var integrity = document.createAttribute('integrity');
+integrity.value = '${sha384(sriNodeProd)}';
+matched.setAttributeNode(integrity);
+var src = document.createAttribute('src');
+src.value = '/sri-node.js';
+matched.setAttributeNode(src);
+var cross = document.createAttribute('crossorigin');
+cross.value = 'anonymous';
+matched.setAttributeNode(cross);
+document.head.appendChild(matched);
+var sibling = document.createElement('script');
+var badIntegrity = document.createAttributeNS(null, 'integrity');
+badIntegrity.value = bad;
+sibling.setAttributeNodeNS(badIntegrity);
+var badSrc = document.createAttributeNS(null, 'src');
+badSrc.value = '/sri-node-bad.js';
+sibling.setAttributeNodeNS(badSrc);
+var badCross = document.createAttributeNS(null, 'crossorigin');
+badCross.value = 'anonymous';
+sibling.setAttributeNodeNS(badCross);
+document.head.appendChild(sibling);
+</script>`),
+  '/sri-node.js': js(sriNodeProd),
+  '/sri-node-bad.js': js(sriNodeBad),
+  // setNamedItem adopts an Attr and does not go through setAttributeNode.
+  // Attr.value after that node is attached does not go through setNamedItem either.
+  '/sri-named.html': html(`<!doctype html><title>sri-named</title><script>
+var bad = 'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+var prod = '${sha384(sriNamedProd)}';
+var matched = document.createElement('script');
+var integrity = document.createAttribute('integrity');
+integrity.value = prod;
+matched.attributes.setNamedItem(integrity);
+var src = document.createAttribute('src');
+src.value = '/sri-named.js';
+matched.attributes.setNamedItem(src);
+window.DETOUR_AFTER_NAMED = integrity.value;
+integrity.value = prod;
+integrity.nodeValue = prod;
+integrity.textContent = prod;
+window.DETOUR_AFTER_VALUE = integrity.value;
+matched.setAttribute('crossorigin', 'anonymous');
+document.head.appendChild(matched);
+var sibling = document.createElement('script');
+var badSrc = document.createAttributeNS(null, 'src');
+badSrc.value = '/sri-named-bad.js';
+sibling.attributes.setNamedItemNS(badSrc);
+var badIntegrity = document.createAttributeNS(null, 'integrity');
+badIntegrity.value = bad;
+sibling.attributes.setNamedItemNS(badIntegrity);
+badIntegrity.value = bad;
+sibling.setAttribute('crossorigin', 'anonymous');
+document.head.appendChild(sibling);
+</script>`),
+  '/sri-named.js': js(sriNamedProd),
+  '/sri-named-bad.js': js(sriNamedBad),
+  // document.write during parsing inserts a script that runs. The hash is split across
+  // arguments so the hook must concatenate before it rewrites. writeln covers the sibling.
+  '/sri-write.html': html(`<!doctype html><title>sri-write</title><script>
+var bad = 'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+document.write('<script src="/sri-write.js" integrity="', '${sha384(sriWriteProd)}', '" crossorigin="anonymous"><' + '/script>');
+document.writeln('<script src="/sri-write-bad.js" integrity="' + bad + '" crossorigin="anonymous"><' + '/script>');
+</script>`),
+  '/sri-write.js': js(sriWriteProd),
+  '/sri-write-bad.js': js(sriWriteBad),
+  // srcdoc is parsed inside the frame, so the parent markup hooks never see that string.
+  '/sri-srcdoc.html': html(`<!doctype html><title>sri-srcdoc</title><body><script>
+var bad = 'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+var frame = document.createElement('iframe');
+frame.srcdoc = '<script src="/sri-srcdoc.js" integrity="${sha384(sriSrcdocProd)}" crossorigin="anonymous"><' + '/script><script src="/sri-srcdoc-bad.js" integrity="' + bad + '" crossorigin="anonymous"><' + '/script>';
+document.body.appendChild(frame);
+</script>`),
+  '/sri-srcdoc.js': js(sriSrcdocProd),
+  '/sri-srcdoc-bad.js': js(sriSrcdocBad),
+});
+const local = await serve(8002, {
+  '/a.js': js('window.A = "LOCAL";'),
+  '/b.js': js('window.B = "LOCAL";'),
+  '/c.js': js('window.C = "LOCAL";'),
+  '/new.html': html('<title>NEW</title>'),
+});
+
+const roExport = {
+  v: 1,
+  data: [
+    {
+      id: 'global',
+      matchUrl: '*',
+      on: true,
+      rules: [
+        { id: 'a', type: 'normalOverride', match: '*:8001/a.js', replace: 'http://127.0.0.1:8002/a.js', on: true },
+        { id: 'nav', type: 'normalOverride', match: '*/old.html', replace: 'http://127.0.0.1:8002/new.html', on: true },
+        { id: 'loop', type: 'normalOverride', match: '*/loop.js', replace: 'http://127.0.0.1:8002/loop.js', on: true },
+        { id: 'f', type: 'fileOverride', match: '*/x.css', file: 'x', fileId: 'f', on: true },
+      ],
+    },
+    {
+      id: 'scoped',
+      matchUrl: 'http://localhost:8001/*',
+      on: true,
+      rules: [{ id: 'b', type: 'normalOverride', match: '*:8001/b.js', replace: 'http://127.0.0.1:8002/b.js', on: true }],
+    },
+  ],
+};
+const exportPath = path.join(outDir, 'ro-export.json');
+fs.writeFileSync(exportPath, JSON.stringify(roExport));
+
+const results = [];
+const check = (name, actual, expected) => {
+  const ok = JSON.stringify(actual) === JSON.stringify(expected);
+  results.push(ok);
+  console.log(`${ok ? 'PASS' : 'FAIL'} ${name}: ${JSON.stringify(actual)}${ok ? '' : ` (expected ${JSON.stringify(expected)})`}`);
+};
+
+// While a body-override tab is open, Puppeteer must not attach to it: Chrome allows one debugger per tab.
+const shieldPaths = [];
+let bridgeProc;
+const browser = await puppeteer.launch({
+  executablePath: CHROME,
+  headless: true,
+  pipe: true,
+  enableExtensions: true,
+  // Headless cannot click the debugging infobar. The permission itself is still requested from the page.
+  // GitHub-hosted runners need the sandbox off. Local runs keep the default sandbox.
+  args: [
+    '--no-first-run',
+    '--silent-debugger-extension-api',
+    ...(process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] : []),
+  ],
+  targetFilter: (target) => {
+    if (shieldPaths.length === 0) return true;
+    const url = target.url();
+    if (shieldPaths.some((part) => url.includes(part))) return false;
+    if (url === 'about:blank' || url === '') return false;
+    return true;
+  },
+});
+try {
+  const id = await browser.installExtension(EXT);
+  console.log('extension id', id);
+
+  const popup = await browser.newPage();
+  await popup.goto(`chrome-extension://${id}/popup.html`);
+  await popup.waitForFunction(() => document.body.innerText.includes('Point production at your code.'), { timeout: 10000 });
+  check('empty state shown before import', true, true);
+
+  await popup.click('details.import > summary');
+  const input = await popup.$('input[type=file]');
+  await input.uploadFile(exportPath);
+  await popup.waitForFunction(() => document.body.innerText.includes('Imported'), { timeout: 10000 });
+  await popup.waitForFunction(() => /\d+ applied/.test(document.body.innerText), { timeout: 10000 });
+  const text = await popup.evaluate(() => document.body.innerText);
+  console.log('--- popup after import ---\n' + text + '\n---');
+  check('import summary', /Imported 5 rules in 2 groups/.test(text), true);
+  check('file override is imported, not skipped', /rule skipped/.test(text), false);
+  check('port-scope warning shown', /port part .* can't be enforced/.test(text), true);
+  check('report counts', /4 applied/.test(text) && /1 refused/.test(text), true);
+  check('file override needs no debugger consent', !/Allow debugger/.test(text) && !/Permission needed/.test(text), true);
+  check('loop refusal has a reason', /loop\.js[\s\S]*Redirect loop/.test(text), true);
+
+  const run = async (url) => {
+    const p = await browser.newPage();
+    await p.goto(url, { waitUntil: 'load' });
+    const r = await p.evaluate(() => ({ A: window.A, B: window.B, C: window.C, title: document.title, url: location.href }));
+    await p.close();
+    return r;
+  };
+
+  const onLocalhost = await run('http://localhost:8001/page.html');
+  check('global rule redirects script', onLocalhost.A, 'LOCAL');
+  check('scoped rule fires on its site', onLocalhost.B, 'LOCAL');
+
+  const onIp = await run('http://127.0.0.1:8001/page.html');
+  check('global rule fires on other site', onIp.A, 'LOCAL');
+  check('scoped rule stays off other sites', onIp.B, 'PROD');
+
+  const watched = await browser.newPage();
+  await watched.goto('http://localhost:8001/page.html', { waitUntil: 'load' });
+  const readBadge = () =>
+    popup.evaluate(async () => {
+      const tabs = await chrome.tabs.query({ url: 'http://localhost:8001/page.html' });
+      const tabId = tabs.find((tab) => tab.url === 'http://localhost:8001/page.html')?.id;
+      return tabId == null ? 'missing' : await chrome.action.getBadgeText({ tabId });
+    });
+  let badge = '';
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    badge = await readBadge();
+    if (Number(badge) >= 2) break;
+  }
+  check('badge counts matches on the tab', Number(badge) >= 2, true);
+  const logJson = await popup.evaluate(async () => JSON.stringify((await chrome.storage.session.get('matchLog')).matchLog ?? []));
+  check('match log records the script url', logJson.includes('http://localhost:8001/a.js'), true);
+  check('match log does not store an action body', logJson.includes('"body"'), false);
+  await popup.$eval('#show-badge', (el) => el.click());
+  await popup.waitForFunction(() => document.querySelector('#show-badge')?.getAttribute('aria-checked') === 'false', { timeout: 5000 });
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  const cleared = await popup.evaluate(async () => {
+    const tabs = await chrome.tabs.query({ url: 'http://localhost:8001/page.html' });
+    const tabId = tabs.find((tab) => tab.url === 'http://localhost:8001/page.html')?.id;
+    return tabId == null ? 'missing' : await chrome.action.getBadgeText({ tabId });
+  });
+  check('badge switch clears the count', cleared, '');
+  await popup.$eval('#show-badge', (el) => el.click());
+  await watched.close();
+
+  const nav = await run('http://127.0.0.1:8001/old.html');
+  check('main_frame page load redirected', [nav.title, nav.url], ['NEW', 'http://127.0.0.1:8002/new.html']);
+
+  await popup.click('#detour-enabled');
+  await popup.waitForFunction(() => document.body.innerText.includes('Detour is off'), { timeout: 10000 });
+  check('switch reports off', await popup.$eval('#detour-enabled', (b) => b.getAttribute('aria-checked')), 'false');
+  const off = await run('http://localhost:8001/page.html');
+  check('switch off stops redirects', [off.A, off.B], ['PROD', 'PROD']);
+
+  await popup.click('#detour-enabled');
+  await popup.waitForFunction(() => /\d+ applied/.test(document.body.innerText), { timeout: 10000 });
+  const on = await run('http://localhost:8001/page.html');
+  check('switch on restores redirects', [on.A, on.B], ['LOCAL', 'LOCAL']);
+
+  // Re-importing the same file replaces its groups instead of duplicating them.
+  await popup.evaluate(() => {
+    const details = document.querySelector('details.import');
+    if (details) details.open = true;
+  });
+  await (await popup.$('input[type=file]')).uploadFile(exportPath);
+  await popup.waitForFunction(() => document.body.innerText.includes('Replaced 2 groups'), { timeout: 10000 }).catch(async (e) => {
+    console.log('--- popup at re-import ---\n' + (await popup.evaluate(() => document.body.innerText)));
+    throw e;
+  });
+  check('re-import reports replacement', true, true);
+
+  const editor = await browser.newPage();
+  await editor.goto(`chrome-extension://${id}/options.html`);
+  await editor.waitForSelector('.group');
+  const editorText = () => editor.evaluate(() => document.body.innerText);
+  const clickTab = async (name) => {
+    await editor.$$eval('nav.tabs button', (tabs, label) => tabs.find((el) => el.textContent.includes(label))?.click(), name);
+  };
+  check('re-import kept 2 groups (no duplicates)', (await editor.$$('section.group')).length, 2);
+  check('no iframe warning where topDomains is supported', /cross-site iframes/.test(await editorText()), false);
+  await clickTab('Log');
+  await editor.waitForFunction(() => /8001\/a\.js/.test(document.getElementById('log')?.textContent ?? ''), { timeout: 8000 });
+  const logText = await editor.$eval('#log', (el) => el.textContent);
+  check('match log is on the rules page', /Recent matches/.test(logText) && /8001\/a\.js/.test(logText), true);
+  check('popup links to API Tester', /API Tester/.test(await popup.evaluate(() => document.body.innerText)), true);
+
+  // API Tester — Which rules apply: the imported redirect for a.js should win; a loop must not.
+  await clickTab('API Tester');
+  await editor.$$eval('.api-tester .response .subtabs button', (tabs) =>
+    tabs.find((el) => /Which rules apply/i.test(el.textContent ?? ''))?.click(),
+  );
+  await editor.waitForSelector('#tester-url');
+  const setTesterUrl = async (url) => {
+    // Controlled Svelte input: set value + dispatch input (avoid puppeteer type races).
+    await editor.$eval(
+      '#tester-url',
+      (el, next) => {
+        const input = el;
+        input.focus();
+        input.value = next;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      },
+      url,
+    );
+  };
+  const testerText = () => editor.$eval('[data-testid=tester-result]', (el) => el.textContent.replace(/\s+/g, ' ').trim());
+
+  await setTesterUrl('http://127.0.0.1:8001/a.js');
+  await editor.waitForFunction(() => document.querySelector('[data-testid=tester-result]')?.textContent.includes('http://127.0.0.1:8002/a.js'), { timeout: 5000 });
+  check('API Tester shows the winning redirect', /This rule wins/.test(await testerText()) && (await testerText()).includes('http://127.0.0.1:8002/a.js'), true);
+
+  await setTesterUrl('http://127.0.0.1:9/none');
+  await editor.waitForFunction(() => document.querySelector('[data-testid=tester-result]')?.textContent.includes('No rule matches'), { timeout: 5000 });
+  check('API Tester says when nothing matches', /No rule matches/.test(await testerText()), true);
+
+  await setTesterUrl('http://127.0.0.1:8001/loop.js');
+  await editor.waitForFunction(() => /not applied|No rule is applied/i.test(document.querySelector('[data-testid=tester-result]')?.textContent ?? ''), { timeout: 5000 });
+  const loopText = await testerText();
+  check('API Tester does not let a redirect loop win', /No rule is applied/.test(loopText) && /not applied/i.test(loopText) && !/Redirects to/.test(loopText), true);
+
+  // Slice B — power tools surface + save-as-mock synergy
+  check('API Tester power tools include Runner', await editor.$eval('.power', (el) => /Runner/.test(el.textContent ?? '')), true);
+  await editor.$$eval('.power .tabs button', (tabs) => tabs.find((el) => /Code/i.test(el.textContent ?? ''))?.click());
+  check('API Tester codegen panel shows fetch', await editor.$eval('.power .code', (el) => /fetch/i.test(el.textContent ?? '')), true);
+  await setTesterUrl('http://127.0.0.1:8002/a.js');
+  await editor.$eval('.power .synergy button', (btn) => {
+    const match = [...document.querySelectorAll('.power .synergy button')].find((el) => /Save response as Detour mock/i.test(el.textContent ?? ''));
+    // Without a live response body, still exercise Redirect this to localhost
+    void btn;
+    void match;
+  });
+  await editor.$$eval('.power .synergy button', (buttons) =>
+    buttons.find((el) => /Redirect this to localhost/i.test(el.textContent ?? ''))?.click(),
+  );
+  await editor.waitForFunction(() => document.querySelector('nav.tabs button.active')?.textContent?.includes('Rules'), { timeout: 5000 });
+  check('Redirect to localhost opens Rules tab', await editor.$eval('nav.tabs button.active', (el) => /Rules/.test(el.textContent ?? '')), true);
+  check('Redirect to localhost added a rule group', (await editor.$$('section.group')).length >= 3, true);
+  // Discard synergy draft so later e2e group/rule indexing stays on the imported 2 groups.
+  await editor.$$eval('button', (buttons) => buttons.find((el) => el.textContent?.trim() === 'Discard' && !el.disabled)?.click());
+  await editor.waitForFunction(() => document.querySelectorAll('section.group').length === 2, { timeout: 8000 });
+
+  const setAutosave = async (on) => {
+    await editor.$eval(
+      '#autosave',
+      (button, next) => {
+        if ((button.getAttribute('aria-checked') === 'true') !== next) button.click();
+      },
+      on,
+    );
+    await editor.waitForFunction((next) => document.querySelector('#autosave')?.getAttribute('aria-checked') === String(next), { timeout: 5000 }, on);
+  };
+  const drawerPattern = () => editor.waitForSelector('[data-testid=drawer] input[id$="-pattern"]', { timeout: 5000 });
+  const openDrawerTab = async (label) => {
+    await editor.waitForSelector('[data-testid=drawer]', { timeout: 5000 });
+    await editor.$$eval('[data-testid=drawer] [role=tab]', (tabs, name) => {
+      const tab = tabs.find((el) => el.textContent.trim() === name);
+      if (tab) tab.click();
+    }, label);
+  };
+  const chooseAction = async (type) => {
+    await editor.waitForSelector('[data-testid=drawer] [data-testid=action-chip]', { timeout: 5000 });
+    await editor.$eval(`[data-testid=drawer] [data-action-type="${type}"]`, (el) => el.click());
+  };
+  const drawerTo = async () => {
+    await chooseAction('redirect');
+    await openDrawerTab('Action');
+    return editor.waitForSelector('[data-testid=drawer] input[id$="-to"]', { timeout: 5000 });
+  };
+  // Manual Save now (autosave off): empty target is blocked; a filled rule applies.
+  await clickTab('Rules');
+  await setAutosave(false);
+  await editor.click('#add-group');
+  await editor.waitForSelector('section.group:last-of-type input[id$="-name"]', { timeout: 5000 });
+  await editor.$eval('section.group:last-of-type input[id$="-name"]', (el) => {
+    el.focus();
+    el.select();
+  });
+  await editor.keyboard.type('E2E group');
+  const groups = await editor.$$('section.group');
+  const mine = groups[groups.length - 1];
+  await (await mine.$('button[id$="-add-rule"]')).click();
+  await openDrawerTab('Match');
+  const patternInput = await drawerPattern();
+  await patternInput.click({ clickCount: 3 });
+  await patternInput.type('*:8001/c.js');
+  await chooseAction('redirect');
+  await openDrawerTab('Action');
+  await editor.waitForSelector('[data-testid=drawer] input[id$="-to"]', { timeout: 5000 });
+  const beforeSave = await editor.evaluate(() => {
+    const to = document.querySelector('[data-testid=drawer] input[id$="-to"]');
+    const save = document.querySelector('[data-testid=save-now]');
+    return {
+      toValue: to?.value ?? null,
+      saveDisabled: save?.hasAttribute('disabled') ?? null,
+      chip: document.querySelector('[data-testid=action-chip] [aria-checked=true]')?.getAttribute('data-action-type') ?? null,
+    };
+  });
+  if (beforeSave.chip !== 'redirect' || beforeSave.toValue !== '' || beforeSave.saveDisabled) {
+    throw new Error(`pre-save state unexpected: ${JSON.stringify(beforeSave)}`);
+  }
+  await editor.$eval('[data-testid=save-now]', (el) => {
+    if (el.hasAttribute('disabled')) throw new Error('save-now disabled');
+    el.click();
+  });
+  await editor.waitForFunction(
+    () =>
+      [...document.querySelectorAll('.message.error')].some((el) => /where matching/i.test(el.textContent ?? '')) ||
+      document.activeElement?.id?.endsWith('-to') ||
+      document.querySelector('[data-testid=drawer] input[id$="-to"][aria-invalid=true]'),
+    { timeout: 8000 },
+  );
+  check(
+    'save blocked with a field error for the empty target',
+    await editor.evaluate(
+      () =>
+        document.activeElement?.id?.endsWith('-to') ||
+        document.querySelector('[data-testid=drawer] input[id$="-to"]')?.getAttribute('aria-invalid') === 'true',
+    ),
+    true,
+  );
+
+  await (await drawerTo()).type('http://127.0.0.1:8002/c.js');
+  await openDrawerTab('Test');
+  await (await editor.waitForSelector('[data-testid=drawer] input[id$="-sample"]', { timeout: 5000 })).type('http://localhost:8001/c.js');
+  const preview = await editor.$eval('[data-testid=drawer] [data-testid=preview]', (el) => el.textContent.replace(/\s+/g, ' ').trim());
+  check('live preview shows the redirect target', preview, 'Matches. It would go to http://127.0.0.1:8002/c.js'.replace(/^/, '✓ '));
+
+  const clickSaveNow = async () => {
+    await editor.$eval('[data-testid=save-now]', (el) => {
+      if (el.hasAttribute('disabled')) throw new Error('save-now disabled');
+      el.click();
+    });
+  };
+  await clickSaveNow();
+  const lastStatus = () => mine.$$eval('[data-testid=rule-status]', (els) => els[els.length - 1].textContent.trim());
+  await editor.waitForFunction(
+    () => [...document.querySelectorAll('[data-testid=rule-status]')].at(-1)?.textContent.includes('Applied'),
+    { timeout: 10000 },
+  );
+  check('editor shows the new rule as applied', await lastStatus(), 'Applied');
+  check('save state settles', /^Autosave/.test(await editor.$eval('[data-testid=save-state]', (el) => el.textContent.trim())), true);
+  check('rule created in the editor fires', (await run('http://localhost:8001/page.html')).C, 'LOCAL');
+
+  // Per-rule switch: off + Save now stops the redirect.
+  const closeIfOpen = async () => {
+    const done = await editor.$('[data-testid=drawer-done]');
+    if (done) {
+      await done.click();
+      await editor.waitForFunction(() => !document.querySelector('[data-testid=drawer]'), { timeout: 5000 });
+    }
+  };
+  await closeIfOpen();
+  await (await mine.$('article.rule button[role=switch]')).click();
+  await clickSaveNow();
+  await editor.waitForFunction(() => [...document.querySelectorAll('[data-testid=rule-status]')].at(-1)?.textContent.includes('Off'), { timeout: 10000 });
+  await editor.waitForFunction(() => /Autosave/.test(document.querySelector('[data-testid=save-state]')?.textContent ?? ''), { timeout: 10000 });
+  check('rule switched off in the editor stops firing', (await run('http://localhost:8001/page.html')).C, 'PROD');
+
+  // Autosave: valid rule writes without Save now; invalid stays out of storage; Undo restores.
+  await setAutosave(true);
+  const beforeAutosave = await editor.evaluate(async () => (await chrome.storage.local.get('workspace')).workspace.data);
+  await (await mine.$('button[id$="-add-rule"]')).click();
+  const lastRule = async () => (await mine.$$('article.rule')).at(-1);
+  await (await drawerPattern()).type('*:8001/autosave.js');
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  const midInvalid = await editor.evaluate(async () => (await chrome.storage.local.get('workspace')).workspace.data);
+  check(
+    'autosave does not write an invalid rule',
+    JSON.stringify(midInvalid) === JSON.stringify(beforeAutosave) && /Not saved:/.test(await editor.$eval('[data-testid=save-state]', (el) => el.textContent)),
+    true,
+  );
+
+  await chooseAction('redirect');
+  await openDrawerTab('Action');
+  await editor.waitForSelector('[data-testid=drawer] input[id$="-to"]', { timeout: 5000 });
+  await editor.$eval('[data-testid=drawer] input[id$="-to"]', (el, value) => {
+    el.focus();
+    el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, 'http://127.0.0.1:8002/autosave.js');
+  await editor.waitForFunction(() => document.querySelector('[data-testid=toast]')?.textContent.includes('Saved'), { timeout: 8000 }).catch(async (e) => {
+    console.log('--- autosave toast missing ---\n' + (await editorText()) + '\nstate=' + (await editor.$eval('[data-testid=save-state]', (el) => el.textContent)) + '\nautosave=' + (await editor.$eval('#autosave', (el) => el.getAttribute('aria-checked'))));
+    throw e;
+  });
+  await editor.waitForFunction(() => /Autosave/.test(document.querySelector('[data-testid=save-state]')?.textContent ?? ''), { timeout: 5000 });
+  const afterAutosave = await editor.evaluate(async () => (await chrome.storage.local.get('workspace')).workspace.data);
+  const autosavedPatterns = afterAutosave.groups.flatMap((g) => g.rules.map((r) => r.match.pattern));
+  check('autosave writes a valid rule without Save now', autosavedPatterns.includes('*:8001/autosave.js'), true);
+  // Toast starts as "Saved…" then becomes "Rules applied" when apply finishes.
+  check(
+    'autosave toast announces Saved or Applied',
+    /Saved|Rules applied/.test(await editor.$eval('[data-testid=toast]', (el) => el.textContent)),
+    true,
+  );
+
+  await editor.click('[data-testid=toast-undo]');
+  await editor.waitForFunction(async () => {
+    const data = (await chrome.storage.local.get('workspace')).workspace.data;
+    return !data.groups.flatMap((g) => g.rules.map((r) => r.match.pattern)).includes('*:8001/autosave.js');
+  }, { timeout: 10000 });
+  check(
+    'autosave Undo restores the previous workspace',
+    !(
+      await editor.evaluate(async () =>
+        (await chrome.storage.local.get('workspace')).workspace.data.groups.flatMap((g) => g.rules.map((r) => r.match.pattern)),
+      )
+    ).includes('*:8001/autosave.js'),
+    true,
+  );
+  await setAutosave(false);
+
+  // ---- page-inject + api-mock ----------------------------------------------------------------
+  const ruleIn = async (group) => (await group.$$('article.rule')).at(-1);
+  const statusOf = (article) => article.$eval('[data-testid=rule-status]', (el) => el.textContent.trim());
+  const waitStatus = (article, text) =>
+    editor.waitForFunction((el, t) => el.querySelector('[data-testid=rule-status]')?.textContent.includes(t), { timeout: 10000 }, article, text).catch(async (e) => {
+      console.log(`--- waiting for "${text}", status is "${await statusOf(article)}" ---`);
+      throw e;
+    });
+  const openDrawer = async (article) => {
+    const already = await editor.$('[data-testid=drawer]');
+    if (!already) {
+      const row = await article.$('[data-testid=rule-row]');
+      if (!row) throw new Error('rule has no row');
+      await row.click();
+      await editor.waitForSelector('[data-testid=drawer]', { timeout: 5000 });
+    }
+    // Second tab is always the action panel (label varies by type).
+    await editor.$$eval('[data-testid=drawer] [role=tab]', (tabs) => tabs[1]?.click());
+  };
+  const closeDrawer = async () => {
+    const done = await editor.$('[data-testid=drawer-done]');
+    if (done) await done.click();
+    await editor.waitForFunction(() => !document.querySelector('[data-testid=drawer]'), { timeout: 5000 });
+  };
+  const typeCode = async (article, code) => {
+    await openDrawer(article);
+    const content = await editor.waitForSelector('[data-testid=drawer] .cm-content', { timeout: 10000 }).catch(async (e) => {
+      console.log('--- drawer without a code editor ---\n' + (await editor.evaluate(() => document.querySelector('[data-testid=drawer]')?.innerHTML.slice(0, 2000))));
+      throw e;
+    });
+    await content.click();
+    await editor.keyboard.type(code);
+    await closeDrawer();
+  };
+  const setDelivery = async (article, value) => {
+    await openDrawer(article);
+    await editor.$eval(
+      '[data-testid=drawer] select[id$="-delivery"]',
+      (el, next) => {
+        el.value = next;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      },
+      value,
+    );
+    await closeDrawer();
+  };
+  const setActionType = async (_article, actionType) => {
+    await editor.waitForSelector('[data-testid=drawer]', { timeout: 5000 });
+    await editor.$$eval('[data-testid=drawer] [role=tab]', (tabs) => tabs[1]?.click());
+    await editor.waitForSelector('[data-testid=drawer] [data-testid=action-chip]', { timeout: 5000 });
+    const item = await editor.waitForSelector(`[data-testid=drawer] [data-action-type="${actionType}"]`, { timeout: 5000 });
+    await item.click();
+  };
+  const addPageRule = async (group, pattern, actionType, delivery) => {
+    await (await group.$('button[id$="-add-rule"]')).click();
+    const article = await ruleIn(group);
+    await (await drawerPattern()).type(pattern);
+    if (actionType !== 'redirect') await setActionType(article, actionType);
+    if (actionType === 'overrideBody' && delivery) await setDelivery(article, delivery);
+    return article;
+  };
+  const saveAndSettle = async () => {
+    await editor.bringToFront();
+    await editor.click('[data-testid=save-now]');
+    await editor.waitForFunction(() => /Autosave/.test(document.querySelector('[data-testid=save-state]')?.textContent ?? ''), { timeout: 10000 }).catch(async (e) => {
+      console.log('--- editor when save did not settle ---\n' + (await editorText()));
+      throw e;
+    });
+  };
+  const inPage = async (url, fn) => {
+    const p = await browser.newPage();
+    await p.goto(url, { waitUntil: 'load' });
+    const value = await p.evaluate(fn);
+    return { page: p, value };
+  };
+  const pageState = () => ({ seen: window.SEEN, color: getComputedStyle(document.querySelector('h1')).color });
+  // insertCSS goes bridge → background → tab, so it can land just after `load`.
+  const cssColor = (p, expected) =>
+    p.waitForFunction((c) => getComputedStyle(document.querySelector('h1')).color === c, { timeout: 3000, polling: 100 }, expected).then(
+      () => expected,
+      () => p.evaluate(() => getComputedStyle(document.querySelector('h1')).color),
+    );
+  const callApis = async () => {
+    const f = await fetch('/api/mocked');
+    const xhr = await new Promise((resolve) => {
+      const x = new XMLHttpRequest();
+      x.open('GET', '/api/mocked');
+      x.onload = () => resolve([x.status, x.responseText, x.getResponseHeader('content-type')]);
+      x.send();
+    });
+    const post = await fetch('/api/mocked', { method: 'POST' });
+    const real = await fetch('/api/real');
+    return { fetch: [f.status, await f.text()], xhr, post: post.status, real: [real.status, await real.text()] };
+  };
+
+  await editor.click('#add-group');
+  await editor.keyboard.type('Page rules');
+  const pageGroup = (await editor.$$('section.group')).at(-1);
+  const jsRule = await addPageRule(pageGroup, 'http://localhost:8001/inject.html', 'injectJs');
+  await typeCode(jsRule, 'window.EARLY = "injected";');
+  const cssRule = await addPageRule(pageGroup, 'http://localhost:8001/*', 'injectCss');
+  await typeCode(cssRule, 'h1 { color: rgb(1, 2, 3) }');
+  const mockRule = await addPageRule(pageGroup, '*/api/mocked', 'mock');
+  await openDrawer(mockRule);
+  await editor.$eval('[data-testid=drawer] input[id$="-status"]', (el) => {
+    el.value = '201';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await closeDrawer();
+  await saveAndSettle();
+
+  await waitStatus(cssRule, 'Applied');
+  await waitStatus(mockRule, 'Applied');
+  await waitStatus(jsRule, 'Refused');
+  check('inline JS refused while user scripts are off', await statusOf(jsRule), 'Refused: User scripts off');
+  check('user-scripts banner explains the toggle', /Allow User Scripts/.test(await editorText()) && (await editor.$('[data-testid=user-scripts-banner]')) !== null, true);
+
+  // What a user does on chrome://extensions/?id=…: flip "Allow User Scripts".
+  const manager = await browser.newPage();
+  await manager.goto(`chrome://extensions/?id=${id}`);
+  await manager.evaluate((extensionId) => chrome.developerPrivate.updateExtensionConfiguration({ extensionId, userScriptsAccess: true }), id);
+  await manager.close();
+  await editor.bringToFront();
+  await editor.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await waitStatus(jsRule, 'Applied');
+  check('inline JS applies once user scripts are allowed', await statusOf(jsRule), 'Applied');
+  check('banner gone after allowing', (await editor.$('[data-testid=user-scripts-banner]')) === null, true);
+
+  const matching = await inPage('http://localhost:8001/inject.html', pageState);
+  check('inline JS ran at document_start, before page scripts', matching.value.seen, 'injected');
+  check('inline CSS applies (computed style)', await cssColor(matching.page, 'rgb(1, 2, 3)'), 'rgb(1, 2, 3)');
+  const apis = await matching.page.evaluate(callApis);
+  check('fetch mock returns mocked status + body', apis.fetch, [201, '{}']);
+  check('XHR mock returns mocked status, body + headers', apis.xhr, [201, '{}', 'application/json']);
+  check('method mismatch passes through to the server', apis.post, 404);
+  check('non-matching fetch passes through', apis.real, [200, 'REAL']);
+
+  const other = await inPage('http://localhost:8001/other.html', pageState);
+  check('inline JS not injected on a non-matching page', other.value.seen, 'none');
+  await other.page.close();
+
+  // Mock switched off: the open page passes through without a reload.
+  await editor.bringToFront();
+  await (await mockRule.$('button[role=switch]')).click();
+  await saveAndSettle();
+  await waitStatus(mockRule, 'Off');
+  await matching.page.bringToFront();
+  await matching.page.waitForFunction(async () => (await fetch('/api/mocked')).status === 404, { timeout: 5000, polling: 200 }).catch(() => {});
+  check('mock off takes effect without reload', await matching.page.evaluate(async () => (await fetch('/api/mocked')).status), 404);
+  await matching.page.close();
+
+  // Group switched off: nothing injected on the next load.
+  await editor.bringToFront();
+  await (await pageGroup.$('button[role=switch]')).click();
+  await saveAndSettle();
+  await waitStatus(jsRule, 'Off');
+  const groupOff = await inPage('http://localhost:8001/inject.html', pageState);
+  await new Promise((r) => setTimeout(r, 500));
+  const offColor = await groupOff.page.evaluate(() => getComputedStyle(document.querySelector('h1')).color);
+  check('group off stops JS + CSS injection', [groupOff.value.seen, offColor === 'rgb(1, 2, 3)'], ['none', false]);
+  await groupOff.page.close();
+
+  // ---- re-import keeps switches; name-only match asks first ------------------------------------
+  await editor.bringToFront();
+  const firstGroup = (await editor.$$('section.group'))[0];
+  await (await firstGroup.$('article.rule button[role=switch]')).click();
+  await saveAndSettle();
+  check('imported rule a switched off before re-import', (await run('http://localhost:8001/page.html')).A, 'PROD');
+
+  const changedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'detour-e2e-changed-'));
+  const changedPath = path.join(changedDir, 'ro-export.json');
+  const changed = structuredClone(roExport);
+  changed.data[0].rules.push({ id: 'c', type: 'normalOverride', match: '*:8001/c.js', replace: 'http://127.0.0.1:8002/c.js', on: true });
+  fs.writeFileSync(changedPath, JSON.stringify(changed));
+  await popup.bringToFront();
+  await popup.evaluate(() => {
+    const details = document.querySelector('details.import');
+    if (details) details.open = true;
+  });
+  await (await popup.$('input[type=file]')).uploadFile(changedPath);
+  const confirm = await popup.waitForSelector('[role=alertdialog]', { timeout: 10000 });
+  check('name-only match asks before replacing', /Replace the earlier import of ro-export\.json\?/.test(await confirm.evaluate((el) => el.textContent)), true);
+  await popup.click('#confirm-replace');
+  await popup.waitForFunction(() => document.body.innerText.includes('Replaced 2 groups'), { timeout: 10000 });
+  const stored = await popup.evaluate(async () => (await chrome.storage.local.get('workspace')).workspace.data);
+  const global = stored.groups.find((g) => g.importKey === 'global');
+  check(
+    're-import keeps the off switch, adds the new rule',
+    [global.rules.find((r) => r.importKey === 'a')?.enabled, global.rules.some((r) => r.importKey === 'c'), stored.groups.filter((g) => g.importKey === 'global').length],
+    [false, true, 1],
+  );
+  check('page-rule group untouched by re-import', stored.groups.some((g) => g.name === 'Page rules'), true);
+  const afterReimport = await run('http://localhost:8001/page.html');
+  check('kept-off rule stays off; new rule fires', [afterReimport.A, afterReimport.C], ['PROD', 'LOCAL']);
+
+  await editor.bringToFront();
+
+  // Light theme persists, a popup group switch gates that group's rules, and a recipe redirects.
+  await popup.bringToFront();
+  await popup.click('#theme-light');
+  await popup.waitForFunction(() => document.documentElement.dataset.theme === 'light');
+  check('light theme background', await popup.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(244, 246, 248)');
+  // tokens: --bg light remains #f4f6f8
+  await popup.reload();
+  await popup.waitForFunction(() => document.documentElement.dataset.theme === 'light', { timeout: 10000 });
+  check('light theme persists across reload', await popup.$eval('#theme-light', (b) => b.getAttribute('aria-checked')), 'true');
+  await popup.click('#theme-light');
+  await popup.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
+
+  const setPopupGroup = async (name, enabled) => {
+    await popup.bringToFront();
+    await popup.evaluate(
+      (label, on) => {
+        const button = [...document.querySelectorAll('button[role="switch"]')].find((el) => el.getAttribute('aria-label') === label);
+        if (!button) throw new Error(`missing switch ${label}`);
+        if ((button.getAttribute('aria-checked') === 'true') !== on) button.click();
+      },
+      `Enable ${name}`,
+      enabled,
+    );
+    await popup.waitForFunction(
+      (label, on) => {
+        const button = [...document.querySelectorAll('button[role="switch"]')].find((el) => el.getAttribute('aria-label') === label);
+        return button?.getAttribute('aria-checked') === String(on);
+      },
+      { timeout: 10000 },
+      `Enable ${name}`,
+      enabled,
+    );
+    // The switch flips before the background finishes applying.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  };
+
+  await setPopupGroup('*', false);
+  const grouped = await browser.newPage();
+  await grouped.goto('http://127.0.0.1:8001/c.js', { waitUntil: 'load' });
+  check('popup group off stops that group', grouped.url(), 'http://127.0.0.1:8001/c.js');
+  await setPopupGroup('*', true);
+  await grouped.goto('http://127.0.0.1:8001/c.js', { waitUntil: 'load' });
+  check('popup group on restores that group', grouped.url(), 'http://127.0.0.1:8002/c.js');
+  await grouped.close();
+
+  await editor.bringToFront();
+  await editor.reload();
+  await editor.waitForSelector('nav.tabs');
+  await editor.$$eval('nav.tabs button', (tabs) => tabs.find((el) => el.textContent.includes('Recipes'))?.click());
+  await editor.waitForSelector('#recipes');
+  await (await editor.waitForSelector('#recipes button')).click();
+  const host = await editor.waitForSelector('#recipe-host');
+  await host.click();
+  await host.type('127.0.0.1:9');
+  const origin = await editor.waitForSelector('#recipe-origin');
+  await origin.evaluate((el, value) => {
+    el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, 'http://127.0.0.1:8002');
+  await editor.click('#recipe-add');
+  // The group name lives in an input and a clipped heading, so innerText misses it.
+  await editor.waitForFunction(() => document.body.textContent.includes('127.0.0.1:9 → 127.0.0.1:8002'), { timeout: 5000 });
+  await editor.click('[data-testid=save-now]');
+  await editor.waitForFunction(() => /Autosave/.test(document.querySelector('[data-testid=save-state]')?.textContent ?? ''), { timeout: 10000 });
+  const recipeHit = await browser.newPage();
+  await recipeHit.goto('http://127.0.0.1:9/a.js', { waitUntil: 'load' });
+  check('localhost recipe redirects the host', recipeHit.url(), 'http://127.0.0.1:8002/a.js');
+  await recipeHit.close();
+
+  const manifest = JSON.parse(fs.readFileSync(path.join(EXT, 'manifest.json'), 'utf8'));
+  check('devtools page declared', manifest.devtools_page, 'devtools.html');
+  const panel = await browser.newPage();
+  const panelErrors = [];
+  panel.on('pageerror', (err) => panelErrors.push(String(err)));
+  await panel.goto(`chrome-extension://${id}/devtools-panel.html`);
+  await panel.waitForFunction(() => document.body.innerText.includes('Open this panel from the browser'), { timeout: 10000 });
+  check('devtools panel explains itself outside DevTools', panelErrors, []);
+  await panel.close();
+
+  await editor.bringToFront();
+  await editor.setViewport({ width: 1100, height: 900 });
+  await editor.screenshot({ path: path.join(outDir, 'editor.png'), fullPage: true });
+  console.log('screenshot', path.join(outDir, 'editor.png'));
+  const pageShot = await editor.evaluateHandle(() => {
+    const groups = [...document.querySelectorAll('section.group')];
+    return groups.find((group) => group.querySelector('input')?.value === 'Page rules') ?? groups.at(-1);
+  });
+  await pageShot.asElement().screenshot({ path: path.join(outDir, 'page-rules.png') });
+  console.log('screenshot', path.join(outDir, 'page-rules.png'));
+
+  await popup.setViewport({ width: 400, height: 600 });
+  await popup.screenshot({ path: path.join(outDir, 'popup.png'), fullPage: true });
+  console.log('screenshot', path.join(outDir, 'popup.png'));
+
+  // Redirect-delivery JSON override: DNR data: URL, no Allow debugger.
+  await editor.bringToFront();
+  await editor.click('#add-group');
+  await editor.keyboard.type('JSON redirect');
+  const jsonGroup = (await editor.$$('section.group')).at(-1);
+  const jsonRule = await addPageRule(jsonGroup, '*:8001/switch.json', 'overrideBody');
+  await openDrawer(jsonRule);
+  check('body drawer opens for redirect rule', (await editor.$('[data-testid=drawer]')) !== null, true);
+  const drawerCode = await editor.waitForSelector('[data-testid=drawer] .cm-content', { timeout: 10000 });
+  await drawerCode.click();
+  await editor.keyboard.type('{"route":"LOCAL"}');
+  check('preview data: URL control is present', (await editor.$('[data-testid=preview-data-url]')) !== null, true);
+  check('redirect body note mentions 307', /307 Internal Redirect/.test(await editor.$eval('[data-testid=drawer]', (el) => el.textContent)), true);
+  await closeDrawer();
+  await saveAndSettle();
+  await waitStatus(jsonRule, 'Applied');
+  check('redirect body rule shows applied', await statusOf(jsonRule), 'Applied');
+  check('no debugger banner for redirect-only body', (await editor.$('#allow-body')) === null, true);
+  const jsonHit = await browser.newPage();
+  await jsonHit.goto('http://127.0.0.1:8001/json-page.html', { waitUntil: 'load' });
+  const jsonBody = await jsonHit.evaluate(async () => {
+    const response = await fetch('/switch.json');
+    return response.text();
+  });
+  await jsonHit.close();
+  check('redirect-delivery JSON override without consent', jsonBody, '{"route":"LOCAL"}');
+  check('drawer-edited redirect body is fetched replaced', jsonBody, '{"route":"LOCAL"}');
+
+  // Default redirect delivery for a script (works with DevTools / Puppeteer attached).
+  await editor.bringToFront();
+  await editor.click('#add-group');
+  await editor.keyboard.type('Body override');
+  const bodyGroup = (await editor.$$('section.group')).at(-1);
+  const bodyRule = await addPageRule(bodyGroup, '*:8001/replaced.js', 'overrideBody');
+  await typeCode(bodyRule, 'window.BODY = "LOCAL";');
+  await saveAndSettle();
+  await waitStatus(bodyRule, 'Applied');
+  check('body rule shows applied', await statusOf(bodyRule), 'Applied');
+  check('redirect body does not show in-place integrity copy', (await editorText()).includes('insertAdjacentHTML'), false);
+  const bodyPage = await browser.newPage();
+  await bodyPage.goto('http://127.0.0.1:8001/body.html', { waitUntil: 'load' });
+  const replaced = await bodyPage.evaluate(() => ({ BODY: window.BODY, KEPT: window.KEPT }));
+  await bodyPage.close();
+  check('replaced script body runs', replaced.BODY, 'LOCAL');
+  check('unmatched script is untouched', replaced.KEPT, 'PROD');
+
+  // In-place delivery needs Allow debugger; SRI series uses that path.
+  shieldPaths.push('/sri.html');
+  await editor.bringToFront();
+  await editor.click('#add-group');
+  await editor.keyboard.type('SRI');
+  const sriGroup = (await editor.$$('section.group')).at(-1);
+  const sriRule = await addPageRule(sriGroup, '*:8001/sri.js', 'overrideBody', 'inPlace');
+  await typeCode(sriRule, 'window.SRI = "LOCAL";');
+  await saveAndSettle();
+  await editor.waitForSelector('#allow-body', { timeout: 10000 });
+  await editor.click('#allow-body');
+  await editor.waitForFunction(() => !document.querySelector('[data-testid=body-permission-banner]'), { timeout: 10000 }).catch(async (e) => {
+    console.log('--- body banner still up ---\n' + (await editorText()));
+    throw e;
+  });
+  check('debugger permission granted from the editor', true, true);
+  await openDrawer(sriRule);
+  const inPlaceNote = await editor.$eval('[data-testid=drawer]', (el) => el.textContent);
+  check('body editor says page JavaScript integrity is updated', inPlaceNote.includes('page JavaScript'), true);
+  check('body editor says markup integrity is updated', inPlaceNote.includes('insertAdjacentHTML'), true);
+  check('body editor says script-running markup integrity is updated', inPlaceNote.includes('createContextualFragment'), true);
+  check('body editor says inert markup integrity is updated', inPlaceNote.includes('setAttributeNS'), true);
+  check('body editor says parseHTMLUnsafe integrity is updated', inPlaceNote.includes('parseHTMLUnsafe'), true);
+  check('body editor says setAttributeNode integrity is updated', inPlaceNote.includes('setAttributeNode'), true);
+  check('body editor says setNamedItem integrity is updated', inPlaceNote.includes('setNamedItem'), true);
+  check('body editor says document.write integrity is updated', inPlaceNote.includes('document.write'), true);
+  check('body editor says iframe srcdoc integrity is updated', inPlaceNote.includes('srcdoc'), true);
+  await closeDrawer();
+  await waitStatus(sriRule, 'Applied');
+  const sriWorkerTarget = await browser.waitForTarget((t) => t.type() === 'service_worker' && t.url().includes(id), { timeout: 10000 });
+  const sriWorker = await sriWorkerTarget.worker();
+  const sriPage = await sriWorker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () => ({ SRI: window.SRI, SRI_KEPT: window.SRI_KEPT, SRI_BAD: window.SRI_BAD }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/sri.html');
+  check('integrity-protected script runs the override', sriPage.SRI, 'LOCAL');
+  check('sibling with a valid integrity hash still runs', sriPage.SRI_KEPT, 'OK');
+  check('sibling with a bad integrity hash stays blocked', sriPage.SRI_BAD, undefined);
+
+  const sriJsRule = await addPageRule(sriGroup, '*:8001/sri-js.js', 'overrideBody', 'inPlace');
+  await typeCode(sriJsRule, 'window.SRI_JS = "LOCAL";');
+  await saveAndSettle();
+  await waitStatus(sriJsRule, 'Applied');
+  shieldPaths.push('/sri-js.html');
+  const sriJsPage = await sriWorker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () => ({
+        SRI_JS: window.SRI_JS,
+        SRI_JS_BAD: window.SRI_JS_BAD,
+        meta: document.querySelector('meta[name="detour-sri"]')?.getAttribute('content') ?? '',
+      }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/sri-js.html');
+  check('page script that sets integrity after parse runs the override', sriJsPage.SRI_JS, 'LOCAL');
+  check('sibling whose JavaScript integrity does not match stays blocked', sriJsPage.SRI_JS_BAD, undefined);
+  check('integrity list is on the page', sriJsPage.meta.length > 0, true);
+  check('integrity list does not include the override source', sriJsPage.meta.includes('window.SRI_JS = "LOCAL"'), false);
+
+  const sriHtmlRule = await addPageRule(sriGroup, '*:8001/sri-html.js', 'overrideBody', 'inPlace');
+  await typeCode(sriHtmlRule, 'window.SRI_HTML = "LOCAL";');
+  await saveAndSettle();
+  await waitStatus(sriHtmlRule, 'Applied');
+  shieldPaths.push('/sri-html.html');
+  const sriHtmlPage = await sriWorker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () =>
+        new Promise((resolve) => {
+          const started = Date.now();
+          const tick = () => {
+            const value = { SRI_HTML: window.SRI_HTML, SRI_HTML_BAD: window.SRI_HTML_BAD };
+            if (value.SRI_HTML !== undefined || Date.now() - started > 3000) resolve(value);
+            else setTimeout(tick, 50);
+          };
+          tick();
+        }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/sri-html.html');
+  check('insertAdjacentHTML with a production integrity hash runs the override', sriHtmlPage.SRI_HTML, 'LOCAL');
+  check('sibling inserted in that markup stays blocked', sriHtmlPage.SRI_HTML_BAD, undefined);
+
+  const sriExecRule = await addPageRule(sriGroup, '*:8001/sri-exec.js', 'overrideBody', 'inPlace');
+  await typeCode(sriExecRule, 'window.SRI_EXEC = "LOCAL";');
+  const sriUnsafeRule = await addPageRule(sriGroup, '*:8001/sri-unsafe.js', 'overrideBody', 'inPlace');
+  await typeCode(sriUnsafeRule, 'window.SRI_UNSAFE = "LOCAL";');
+  await saveAndSettle();
+  await waitStatus(sriExecRule, 'Applied');
+  await waitStatus(sriUnsafeRule, 'Applied');
+  shieldPaths.push('/sri-exec.html');
+  const sriExecPage = await sriWorker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () =>
+        new Promise((resolve) => {
+          const started = Date.now();
+          const tick = () => {
+            const value = {
+              SRI_EXEC: window.SRI_EXEC,
+              SRI_EXEC_BAD: window.SRI_EXEC_BAD,
+              SRI_UNSAFE: window.SRI_UNSAFE,
+              SRI_UNSAFE_BAD: window.SRI_UNSAFE_BAD,
+            };
+            if ((value.SRI_EXEC !== undefined && value.SRI_UNSAFE !== undefined) || Date.now() - started > 3000) resolve(value);
+            else setTimeout(tick, 50);
+          };
+          tick();
+        }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/sri-exec.html');
+  check('createContextualFragment with a production integrity hash runs the override', sriExecPage.SRI_EXEC, 'LOCAL');
+  check('sibling inserted by createContextualFragment stays blocked', sriExecPage.SRI_EXEC_BAD, undefined);
+  check('setHTMLUnsafe with runScripts and a production integrity hash runs the override', sriExecPage.SRI_UNSAFE, 'LOCAL');
+  check('sibling inserted by setHTMLUnsafe stays blocked', sriExecPage.SRI_UNSAFE_BAD, undefined);
+
+  const sriNsRule = await addPageRule(sriGroup, '*:8001/sri-ns.js', 'overrideBody', 'inPlace');
+  await typeCode(sriNsRule, 'window.SRI_NS = "LOCAL";');
+  const sriOuterRule = await addPageRule(sriGroup, '*:8001/sri-outer.css', 'overrideBody', 'inPlace');
+  await typeCode(sriOuterRule, 'html{--sri-outer:local}');
+  const sriShadowRule = await addPageRule(sriGroup, '*:8001/sri-shadow.css', 'overrideBody', 'inPlace');
+  await typeCode(sriShadowRule, 'span{--sri-shadow:local}');
+  await saveAndSettle();
+  await waitStatus(sriNsRule, 'Applied');
+  await waitStatus(sriOuterRule, 'Applied');
+  await waitStatus(sriShadowRule, 'Applied');
+  shieldPaths.push('/sri-inert.html');
+  const sriInertPage = await sriWorker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () =>
+        new Promise((resolve) => {
+          const started = Date.now();
+          const tick = () => {
+            const probe = document.getElementById('shadow-host')?.shadowRoot?.querySelector('#probe');
+            const value = {
+              SRI_NS: window.SRI_NS,
+              SRI_NS_BAD: window.SRI_NS_BAD,
+              outer: getComputedStyle(document.documentElement).getPropertyValue('--sri-outer').trim(),
+              outerBad: getComputedStyle(document.documentElement).getPropertyValue('--sri-outer-bad').trim(),
+              shadow: probe ? getComputedStyle(probe).getPropertyValue('--sri-shadow').trim() : '',
+              shadowBad: probe ? getComputedStyle(probe).getPropertyValue('--sri-shadow-bad').trim() : '',
+            };
+            const ready = value.SRI_NS !== undefined && value.outer === 'local' && value.shadow === 'local';
+            if (ready || Date.now() - started > 3000) resolve(value);
+            else setTimeout(tick, 50);
+          };
+          tick();
+        }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/sri-inert.html');
+  check('setAttributeNS with a production integrity hash runs the override', sriInertPage.SRI_NS, 'LOCAL');
+  check('sibling whose setAttributeNS integrity does not match stays blocked', sriInertPage.SRI_NS_BAD, undefined);
+  check('outerHTML stylesheet with a production integrity hash is accepted', sriInertPage.outer, 'local');
+  check('sibling stylesheet in that outerHTML stays blocked', sriInertPage.outerBad, '');
+  check('shadow innerHTML stylesheet with a production integrity hash is accepted', sriInertPage.shadow, 'local');
+  check('sibling stylesheet in that shadow root stays blocked', sriInertPage.shadowBad, '');
+
+  const sriUnsafeCssRule = await addPageRule(sriGroup, '*:8001/sri-unsafe-css.css', 'overrideBody', 'inPlace');
+  await typeCode(sriUnsafeCssRule, 'html{--sri-unsafe-css:local}');
+  const sriUnsafeShadowRule = await addPageRule(sriGroup, '*:8001/sri-unsafe-shadow.css', 'overrideBody', 'inPlace');
+  await typeCode(sriUnsafeShadowRule, 'span{--sri-unsafe-shadow:local}');
+  await saveAndSettle();
+  await waitStatus(sriUnsafeCssRule, 'Applied');
+  await waitStatus(sriUnsafeShadowRule, 'Applied');
+  shieldPaths.length = 0;
+  shieldPaths.push('/sri-unsafe-css.html');
+  const sriUnsafeCssPage = await sriWorker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () =>
+        new Promise((resolve) => {
+          const started = Date.now();
+          const tick = () => {
+            const host = document.getElementById('host');
+            const probe = document.getElementById('shadow-host')?.shadowRoot?.querySelector('#probe');
+            const value = {
+              css: getComputedStyle(document.documentElement).getPropertyValue('--sri-unsafe-css').trim(),
+              cssBad: getComputedStyle(document.documentElement).getPropertyValue('--sri-unsafe-css-bad').trim(),
+              sibling: host?.querySelector('link[href="/sri-unsafe-css-bad.css"]')?.getAttribute('integrity') ?? '',
+              shadow: probe ? getComputedStyle(probe).getPropertyValue('--sri-unsafe-shadow').trim() : '',
+              shadowBad: probe ? getComputedStyle(probe).getPropertyValue('--sri-unsafe-shadow-bad').trim() : '',
+              shadowSibling: document.getElementById('shadow-host')?.shadowRoot?.querySelector('link[href="/sri-unsafe-shadow-bad.css"]')?.getAttribute('integrity') ?? '',
+            };
+            const ready = value.css === 'local' && value.shadow === 'local';
+            if (ready || Date.now() - started > 3000) resolve(value);
+            else setTimeout(tick, 50);
+          };
+          tick();
+        }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/sri-unsafe-css.html');
+  const badIntegrity = 'sha384-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+  check('setHTMLUnsafe without runScripts accepts a stylesheet with a production integrity hash', sriUnsafeCssPage.css, 'local');
+  check('sibling stylesheet in that setHTMLUnsafe stays blocked', sriUnsafeCssPage.cssBad, '');
+  check('sibling hash in that setHTMLUnsafe stays', sriUnsafeCssPage.sibling, badIntegrity);
+  check('setHTMLUnsafe with runScripts false accepts a shadow stylesheet', sriUnsafeCssPage.shadow, 'local');
+  check('sibling stylesheet in that shadow setHTMLUnsafe stays blocked', sriUnsafeCssPage.shadowBad, '');
+  check('sibling hash in that shadow setHTMLUnsafe stays', sriUnsafeCssPage.shadowSibling, badIntegrity);
+
+  const sriParseRule = await addPageRule(sriGroup, '*:8001/sri-parse.css', 'overrideBody', 'inPlace');
+  await typeCode(sriParseRule, 'html{--sri-parse:local}');
+  await saveAndSettle();
+  await waitStatus(sriParseRule, 'Applied');
+  shieldPaths.length = 0;
+  shieldPaths.push('/sri-parse.html');
+  const sriParsePage = await sriWorker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () =>
+        new Promise((resolve) => {
+          const started = Date.now();
+          const tick = () => {
+            const host = document.getElementById('host');
+            const value = {
+              css: getComputedStyle(document.documentElement).getPropertyValue('--sri-parse').trim(),
+              cssBad: getComputedStyle(document.documentElement).getPropertyValue('--sri-parse-bad').trim(),
+              integrity: host?.querySelector('link[href="/sri-parse.css"]')?.getAttribute('integrity') ?? '',
+              sibling: host?.querySelector('link[href="/sri-parse-bad.css"]')?.getAttribute('integrity') ?? '',
+              script: window.SRI_PARSE,
+              parser: window.DETOUR_PARSER ?? '',
+              xml: window.DETOUR_XML ?? '',
+            };
+            if (value.css === 'local' || Date.now() - started > 3000) resolve(value);
+            else setTimeout(tick, 50);
+          };
+          tick();
+        }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/sri-parse.html');
+  check('parseHTMLUnsafe stylesheet adopted into the page is accepted', sriParsePage.css, 'local');
+  check('sibling stylesheet adopted from parseHTMLUnsafe stays blocked', sriParsePage.cssBad, '');
+  check('sibling hash adopted from parseHTMLUnsafe stays', sriParsePage.sibling, badIntegrity);
+  check('adopted matching hash is the override', sriParsePage.integrity, sha384('html{--sri-parse:local}'));
+  check('script parsed by parseHTMLUnsafe does not run after adopt', sriParsePage.script, undefined);
+  check('DOMParser text/html carries the override hash', sriParsePage.parser, sha384('html{--sri-parse:local}'));
+  check('DOMParser XHTML keeps the page hash', sriParsePage.xml, badIntegrity);
+
+  const sriNodeRule = await addPageRule(sriGroup, '*:8001/sri-node.js', 'overrideBody', 'inPlace');
+  await typeCode(sriNodeRule, 'window.SRI_NODE = "LOCAL";');
+  await saveAndSettle();
+  await waitStatus(sriNodeRule, 'Applied');
+  shieldPaths.length = 0;
+  shieldPaths.push('/sri-node.html');
+  const sriNodePage = await sriWorker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () =>
+        new Promise((resolve) => {
+          const started = Date.now();
+          const tick = () => {
+            const matched = document.querySelector('script[src="/sri-node.js"]');
+            const sibling = document.querySelector('script[src="/sri-node-bad.js"]');
+            const value = {
+              SRI_NODE: window.SRI_NODE,
+              SRI_NODE_BAD: window.SRI_NODE_BAD,
+              integrity: matched ? matched.getAttribute('integrity') : '',
+              sibling: sibling ? sibling.getAttribute('integrity') : '',
+            };
+            if (value.SRI_NODE !== undefined || Date.now() - started > 3000) resolve(value);
+            else setTimeout(tick, 50);
+          };
+          tick();
+        }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/sri-node.html');
+  check('setAttributeNode with a production integrity hash runs the override', sriNodePage.SRI_NODE, 'LOCAL');
+  check('sibling whose setAttributeNodeNS integrity does not match stays blocked', sriNodePage.SRI_NODE_BAD, undefined);
+  check('setAttributeNode matching hash is the override', sriNodePage.integrity, sha384('window.SRI_NODE = "LOCAL";'));
+  check('sibling hash set with setAttributeNodeNS stays', sriNodePage.sibling, badIntegrity);
+  shieldPaths.length = 0;
+
+  const sriNamedRule = await addPageRule(sriGroup, '*:8001/sri-named.js', 'overrideBody', 'inPlace');
+  await typeCode(sriNamedRule, 'window.SRI_NAMED = "LOCAL";');
+  await saveAndSettle();
+  await waitStatus(sriNamedRule, 'Applied');
+  shieldPaths.length = 0;
+  shieldPaths.push('/sri-named.html');
+  const sriNamedPage = await sriWorker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () =>
+        new Promise((resolve) => {
+          const started = Date.now();
+          const tick = () => {
+            const sibling = document.querySelector('script[src="/sri-named-bad.js"]');
+            const value = {
+              SRI_NAMED: window.SRI_NAMED,
+              SRI_NAMED_BAD: window.SRI_NAMED_BAD,
+              afterNamed: window.DETOUR_AFTER_NAMED ?? '',
+              afterValue: window.DETOUR_AFTER_VALUE ?? '',
+              sibling: sibling ? sibling.getAttribute('integrity') : '',
+            };
+            if (value.SRI_NAMED !== undefined || Date.now() - started > 3000) resolve(value);
+            else setTimeout(tick, 50);
+          };
+          tick();
+        }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/sri-named.html');
+  check('setNamedItem with a production integrity hash runs the override', sriNamedPage.SRI_NAMED, 'LOCAL');
+  check('setNamedItem matching hash is the override before Attr.value', sriNamedPage.afterNamed, sha384('window.SRI_NAMED = "LOCAL";'));
+  check('Attr.value nodeValue and textContent keep the override hash', sriNamedPage.afterValue, sha384('window.SRI_NAMED = "LOCAL";'));
+  check('sibling whose setNamedItemNS integrity does not match stays blocked', sriNamedPage.SRI_NAMED_BAD, undefined);
+  check('sibling hash set with setNamedItemNS stays', sriNamedPage.sibling, badIntegrity);
+  shieldPaths.length = 0;
+
+  const sriWriteRule = await addPageRule(sriGroup, '*:8001/sri-write.js', 'overrideBody', 'inPlace');
+  await typeCode(sriWriteRule, 'window.SRI_WRITE = "LOCAL";');
+  await saveAndSettle();
+  await waitStatus(sriWriteRule, 'Applied');
+  shieldPaths.length = 0;
+  shieldPaths.push('/sri-write.html');
+  const sriWritePage = await sriWorker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () =>
+        new Promise((resolve) => {
+          const started = Date.now();
+          const tick = () => {
+            const matched = document.querySelector('script[src="/sri-write.js"]');
+            const sibling = document.querySelector('script[src="/sri-write-bad.js"]');
+            const value = {
+              SRI_WRITE: window.SRI_WRITE,
+              SRI_WRITE_BAD: window.SRI_WRITE_BAD,
+              integrity: matched ? matched.getAttribute('integrity') : '',
+              sibling: sibling ? sibling.getAttribute('integrity') : '',
+            };
+            if (value.SRI_WRITE !== undefined || Date.now() - started > 3000) resolve(value);
+            else setTimeout(tick, 50);
+          };
+          tick();
+        }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/sri-write.html');
+  check('document.write with a production integrity hash runs the override', sriWritePage.SRI_WRITE, 'LOCAL');
+  check('document.write matching hash is the override', sriWritePage.integrity, sha384('window.SRI_WRITE = "LOCAL";'));
+  check('sibling written with document.writeln stays blocked', sriWritePage.SRI_WRITE_BAD, undefined);
+  check('sibling hash written with document.writeln stays', sriWritePage.sibling, badIntegrity);
+  shieldPaths.length = 0;
+
+  const sriSrcdocRule = await addPageRule(sriGroup, '*:8001/sri-srcdoc.js', 'overrideBody', 'inPlace');
+  await typeCode(sriSrcdocRule, 'window.SRI_SRCDOC = "LOCAL";');
+  await saveAndSettle();
+  await waitStatus(sriSrcdocRule, 'Applied');
+  shieldPaths.length = 0;
+  shieldPaths.push('/sri-srcdoc.html');
+  const sriSrcdocPage = await sriWorker.evaluate(async (url) => {
+    const tab = await chrome.tabs.create({ url, active: false });
+    const waitComplete = async () => {
+      const current = await chrome.tabs.get(tab.id);
+      if (current.status === 'complete') return;
+      await new Promise((resolve) => {
+        const listener = (tabId, info) => {
+          if (tabId === tab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            resolve();
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    };
+    await waitComplete();
+    await chrome.tabs.reload(tab.id);
+    await waitComplete();
+    const [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: () =>
+        new Promise((resolve) => {
+          const started = Date.now();
+          const tick = () => {
+            const frame = document.querySelector('iframe');
+            const child = frame && frame.contentDocument;
+            const win = frame && frame.contentWindow;
+            const matched = child && child.querySelector('script[src="/sri-srcdoc.js"]');
+            const sibling = child && child.querySelector('script[src="/sri-srcdoc-bad.js"]');
+            const value = {
+              SRI_SRCDOC: win ? win.SRI_SRCDOC : undefined,
+              SRI_SRCDOC_BAD: win ? win.SRI_SRCDOC_BAD : undefined,
+              integrity: matched ? matched.getAttribute('integrity') : '',
+              sibling: sibling ? sibling.getAttribute('integrity') : '',
+            };
+            if (value.SRI_SRCDOC !== undefined || Date.now() - started > 3000) resolve(value);
+            else setTimeout(tick, 50);
+          };
+          tick();
+        }),
+    });
+    await chrome.tabs.remove(tab.id);
+    return injected.result;
+  }, 'http://127.0.0.1:8001/sri-srcdoc.html');
+  check('iframe srcdoc with a production integrity hash runs the override', sriSrcdocPage.SRI_SRCDOC, 'LOCAL');
+  check('iframe srcdoc matching hash is the override', sriSrcdocPage.integrity, sha384('window.SRI_SRCDOC = "LOCAL";'));
+  check('sibling in iframe srcdoc stays blocked', sriSrcdocPage.SRI_SRCDOC_BAD, undefined);
+  check('sibling hash in iframe srcdoc stays', sriSrcdocPage.sibling, badIntegrity);
+  shieldPaths.length = 0;
+
+  // Local Bridge: consent is already on, so serveLocal is fulfilled in place (the URL stays on port 8001).
+  shieldPaths.push('/bridge.html', '/csp-bridge.html');
+  const bridgeDir = path.join(outDir, 'bridge-root');
+  fs.mkdirSync(bridgeDir);
+  fs.writeFileSync(path.join(bridgeDir, 'bridge.js'), 'window.BRIDGE = "DISK";\n');
+  fs.writeFileSync(path.join(bridgeDir, 'csp-bridge.js'), 'window.CSP_BRIDGE = "DISK";\n');
+  fs.writeFileSync(path.join(bridgeDir, 'sri-disk.js'), 'window.SRI_DISK = "DISK";\n');
+  const cli = path.resolve(import.meta.dirname, '../../cli/src/cli.ts');
+  bridgeProc = spawn(process.execPath, ['--experimental-strip-types', cli, 'bridge', bridgeDir, '--port', '8099'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let bridgeLog = '';
+  bridgeProc.stdout.on('data', (chunk) => {
+    bridgeLog += chunk;
+  });
+  bridgeProc.stderr.on('data', (chunk) => {
+    bridgeLog += chunk;
+  });
+  const token = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`bridge did not print a token\n${bridgeLog}`)), 8000);
+    const wait = () => {
+      const match = /token: ([0-9a-f]{64})/.exec(bridgeLog);
+      if (match) {
+        clearTimeout(timer);
+        resolve(match[1]);
+        return;
+      }
+      setTimeout(wait, 50);
+    };
+    wait();
+  });
+  await editor.bringToFront();
+  await clickTab('Rules');
+  await editor.click('button.bridge-btn');
+  await editor.waitForSelector('#bridge-port', { timeout: 5000 });
+  await editor.$eval('#bridge-port', (el) => {
+    el.value = '8099';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await editor.$eval('#bridge-token', (el, value) => {
+    el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, token);
+  await editor.click('#bridge-connect');
+  await editor.waitForFunction(() => (document.querySelector('[data-testid=bridge-status]')?.textContent ?? '').includes('Connected to'), { timeout: 8000 }).catch(async (e) => {
+    console.log('--- bridge connect failed ---\n' + bridgeLog + '\n' + (await editorText()));
+    throw e;
+  });
+  check('local bridge connected from the rules page', true, true);
+  await editor.click('[data-testid=drawer-done]');
+
+  await editor.click('#add-group');
+  await editor.keyboard.type('Local bridge');
+  const bridgeGroup = (await editor.$$('section.group')).at(-1);
+  const bridgeRule = await addPageRule(bridgeGroup, '*:8001/bridge.js', 'serveLocal');
+  await editor.$$eval('[data-testid=drawer] [role=tab]', (tabs) => tabs[1]?.click());
+  await (await editor.waitForSelector('[data-testid=drawer] input[id$="-path"]', { timeout: 5000 })).type('bridge.js');
+  await closeDrawer();
+  const cspRule = await addPageRule(bridgeGroup, '*:8001/csp-bridge.js', 'serveLocal');
+  await editor.$$eval('[data-testid=drawer] [role=tab]', (tabs) => tabs[1]?.click());
+  await (await editor.waitForSelector('[data-testid=drawer] input[id$="-path"]', { timeout: 5000 })).type('csp-bridge.js');
+  await closeDrawer();
+  await saveAndSettle();
+  await waitStatus(bridgeRule, 'Applied');
+  await waitStatus(cspRule, 'Applied');
+  check('serve-local rule applied', await statusOf(bridgeRule), 'Applied');
+
+  const bridgeWorkerTarget = await browser.waitForTarget((t) => t.type() === 'service_worker' && t.url().includes(id), { timeout: 10000 });
+  const bridgeWorker = await bridgeWorkerTarget.worker();
+  const readBridgePage = (url) =>
+    bridgeWorker.evaluate(async (pageUrl) => {
+      const tab = await chrome.tabs.create({ url: pageUrl, active: false });
+      const waitComplete = async () => {
+        const current = await chrome.tabs.get(tab.id);
+        if (current.status === 'complete') return;
+        await new Promise((resolve) => {
+          const listener = (tabId, info) => {
+            if (tabId === tab.id && info.status === 'complete') {
+              chrome.tabs.onUpdated.removeListener(listener);
+              resolve();
+            }
+          };
+          chrome.tabs.onUpdated.addListener(listener);
+        });
+      };
+      await waitComplete();
+      await chrome.tabs.reload(tab.id);
+      await waitComplete();
+      const [injected] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        world: 'MAIN',
+        func: () => ({
+          BRIDGE: window.BRIDGE,
+          CSP_BRIDGE: window.CSP_BRIDGE,
+          SRI_DISK: window.SRI_DISK,
+          urls: performance.getEntriesByType('resource').map((entry) => entry.name),
+        }),
+      });
+      await chrome.tabs.remove(tab.id);
+      return injected.result;
+    }, url);
+
+  const fromDisk = await readBridgePage('http://127.0.0.1:8001/bridge.html');
+  check('script is served from the bridge folder', fromDisk.BRIDGE, 'DISK');
+  check('in-place serve keeps the original script URL', fromDisk.urls.includes('http://127.0.0.1:8001/bridge.js') && !fromDisk.urls.some((item) => item.includes(':8099')), true);
+
+  const fromCsp = await readBridgePage('http://127.0.0.1:8001/csp-bridge.html');
+  check('CSP that blocks the bridge port still runs the disk script', fromCsp.CSP_BRIDGE, 'DISK');
+  check('CSP page never requested the bridge port', fromCsp.urls.some((item) => item.includes(':8099')), false);
+
+  const sriDiskRule = await addPageRule(bridgeGroup, '*:8001/sri-disk.js', 'serveLocal');
+  await editor.$$eval('[data-testid=drawer] [role=tab]', (tabs) => tabs[1]?.click());
+  await (await editor.waitForSelector('[data-testid=drawer] input[id$="-path"]', { timeout: 5000 })).type('sri-disk.js');
+  await closeDrawer();
+  await saveAndSettle();
+  await waitStatus(sriDiskRule, 'Applied');
+  shieldPaths.push('/sri-disk.html');
+  const fromSriDisk = await readBridgePage('http://127.0.0.1:8001/sri-disk.html');
+  check('in-place file runs when the page integrity hash was for the production file', fromSriDisk.SRI_DISK, 'DISK');
+  shieldPaths.length = 0;
+} finally {
+  bridgeProc?.kill('SIGTERM');
+  await browser.close();
+  prod.close();
+  local.close();
+}
+
+const failed = results.filter((ok) => !ok).length;
+console.log(`${results.length - failed}/${results.length} checks passed`);
+process.exit(failed ? 1 : 0);

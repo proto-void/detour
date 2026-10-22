@@ -1,0 +1,59 @@
+/* Detour brand palette — Protovoid dark + lilac (dark default). Structural rules stay in ui/base.css. */
+:root {
+  color-scheme: dark;
+  --bg: #07060d;
+  --surface: #0f0c1b;
+  --surface-2: #17122a;
+  --border: #241c3d;
+  --text: #f4f1fb;
+  --text-muted: #a9a0c4;
+  --accent: #c08cff;
+  --accent-text: #0f0c1b;
+  --accent-tint: color-mix(in srgb, var(--accent) 16%, transparent);
+  --danger: #f2777a;
+  --warning: #e5b567;
+  --focus: #c08cff;
+  --selection: #3a2a5c;
+  --status-applied: #c08cff;
+  --status-applied-bg: color-mix(in srgb, var(--status-applied) 18%, transparent);
+  --status-refused: #f2777a;
+  --status-refused-bg: color-mix(in srgb, var(--status-refused) 18%, transparent);
+  --status-unsaved: #e5b567;
+  --status-unsaved-bg: color-mix(in srgb, var(--status-unsaved) 18%, transparent);
+  --status-off: #a9a0c4;
+  --status-off-bg: color-mix(in srgb, var(--status-off) 18%, transparent);
+  --radius: 8px;
+  --radius-pill: 6px;
+  --radius-btn-pill: 24px;
+  --shadow-1: 0 1px 2px color-mix(in srgb, #000 35%, transparent);
+  --shadow-2: 0 8px 24px color-mix(in srgb, #000 40%, transparent);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --surface: #f7f5fb;
+  --surface-2: #efeaf7;
+  --border: #e6e1f0;
+  --text: #16131f;
+  --text-muted: #5c5670;
+  --accent: #7b1398;
+  --accent-text: #ffffff;
+  --accent-tint: color-mix(in srgb, var(--accent) 12%, transparent);
+  --danger: #b42318;
+  --warning: #7a4e00;
+  --focus: #7b1398;
+  --selection: #e4d6f5;
+  --status-applied: #7b1398;
+  --status-applied-bg: color-mix(in srgb, var(--status-applied) 14%, transparent);
+  --status-refused: #b42318;
+  --status-refused-bg: color-mix(in srgb, var(--status-refused) 12%, transparent);
+  --status-unsaved: #9a6700;
+  --status-unsaved-bg: color-mix(in srgb, var(--status-unsaved) 14%, transparent);
+  --status-off: #5c5670;
+  --status-off-bg: color-mix(in srgb, var(--status-off) 10%, transparent);
+  --shadow-1: 0 1px 2px color-mix(in srgb, #000 8%, transparent);
+  --shadow-2: 0 8px 24px color-mix(in srgb, #000 12%, transparent);
+}

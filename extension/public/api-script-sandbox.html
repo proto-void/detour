@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Detour API script sandbox</title>
+  </head>
+  <body>
+    <!--
+      MV3 sandbox page (null origin). No extension APIs.
+      Host posts detour-api-script-run; we reply with detour-api-script-result.
+      pm.expect is a chai-compatible subset embedded for the null-origin sandbox.
+    -->
+    <script>
+      (function () {
+        'use strict';
+
+        function deepEqual(a, b) {
+          if (Object.is(a, b)) return true;
+          if (typeof a !== typeof b || !a || !b || typeof a !== 'object') return false;
+          if (Array.isArray(a) !== Array.isArray(b)) return false;
+          const keys = Object.keys(a);
+          if (keys.length !== Object.keys(b).length) return false;
+          return keys.every(function (k) {
+            return deepEqual(a[k], b[k]);
+          });
+        }
+
+        function expect(actual) {
+          const api = {};
+          api.to = {};
+          api.to.equal = function (expected) {
+            if (!Object.is(actual, expected)) throw new Error('expected ' + JSON.stringify(actual) + ' to equal ' + JSON.stringify(expected));
+            return api;
+          };
+          api.to.eql = function (expected) {
+            if (!deepEqual(actual, expected)) throw new Error('expected deep equality');
+            return api;
+          };
+          api.to.deep = { equal: api.to.eql };
+          api.to.include = function (expected) {
+            if (typeof actual === 'string') {
+              if (actual.indexOf(String(expected)) === -1) throw new Error('expected include');
+            } else if (Array.isArray(actual)) {
+              if (!actual.some(function (x) { return deepEqual(x, expected); })) throw new Error('expected include');
+            } else if (actual && typeof actual === 'object') {
+              if (!(expected in actual)) throw new Error('expected include key');
+            } else throw new Error('include: unsupported');
+            return api;
+          };
+          api.to.have = {
+            property: function (name, value) {
+              if (!actual || typeof actual !== 'object' || !(name in actual)) throw new Error('expected property ' + name);
+              if (arguments.length > 1 && !Object.is(actual[name], value)) throw new Error('property value mismatch');
+              return api;
+            },
+            lengthOf: function (n) {
+              if (!actual || actual.length !== n) throw new Error('expected length ' + n);
+              return api;
+            },
+          };
+          api.to.be = {};
+          Object.defineProperty(api.to.be, 'ok', {
+            get: function () {
+              if (!actual) throw new Error('expected ok');
+              return api;
+            },
+          });
+          Object.defineProperty(api.to.be, 'true', {
+            get: function () {
+              if (actual !== true) throw new Error('expected true');
+              return api;
+            },
+          });
+          Object.defineProperty(api.to.be, 'false', {
+            get: function () {
+              if (actual !== false) throw new Error('expected false');
+              return api;
+            },
+          });
+          api.to.match = function (re) {
+            const r = re instanceof RegExp ? re : new RegExp(re);
+            if (typeof actual !== 'string' || !r.test(actual)) throw new Error('expected match');
+            return api;
+          };
+          return api;
+        }
+
+        function bag(initial) {
+          const data = Object.assign({}, initial || {});
+          return {
+            get: function (key) {
+              return data[key];
+            },
+            set: function (key, value) {
+              data[key] = String(value);
+            },
+            unset: function (key) {
+              delete data[key];
+            },
+            toObject: function () {
+              return Object.assign({}, data);
+            },
+          };
+        }
+
+        function buildPm(context) {
+          const environment = bag(context.environment);
+          const collectionVariables = bag(context.collectionVariables);
+          const globals = bag(context.globals);
+          const req = {
+            method: context.request.method,
+            url: context.request.url,
+            headers: Object.assign({}, context.request.headers),
+            body: context.request.body,
+          };
+          const tests = [];
+          let nextRequest = null;
+          let visualizer = null;
+          const response = context.response
+            ? {
+                code: context.response.status,
+                status: context.response.statusText,
+                responseTime: context.response.responseTime,
+                headers: {
+                  get: function (name) {
+                    const lower = String(name).toLowerCase();
+                    const keys = Object.keys(context.response.headers);
+                    for (let i = 0; i < keys.length; i++) {
+                      if (keys[i].toLowerCase() === lower) return context.response.headers[keys[i]];
+                    }
+                    return undefined;
+                  },
+                  toObject: function () {
+                    return Object.assign({}, context.response.headers);
+                  },
+                },
+                text: function () {
+                  return context.response.body;
+                },
+                json: function () {
+                  return JSON.parse(context.response.body || 'null');
+                },
+              }
+            : undefined;
+          const pm = {
+            environment: environment,
+            collectionVariables: collectionVariables,
+            globals: globals,
+            variables: {
+              get: function (key) {
+                const a = environment.get(key);
+                if (a !== undefined) return a;
+                const b = collectionVariables.get(key);
+                if (b !== undefined) return b;
+                return globals.get(key);
+              },
+              set: function (key, value) {
+                environment.set(key, value);
+              },
+            },
+            request: req,
+            response: response,
+            test: function (name, fn) {
+              try {
+                fn();
+                tests.push({ name: String(name), passed: true });
+              } catch (err) {
+                tests.push({ name: String(name), passed: false, error: err && err.message ? err.message : String(err) });
+              }
+            },
+            expect: expect,
+            execution: {
+              setNextRequest: function (name) {
+                nextRequest = name == null || name === '' ? null : String(name);
+              },
+            },
+            visualizer: {
+              set: function (template, data) {
+                visualizer = { template: String(template || ''), data: data };
+              },
+            },
+          };
+          return {
+            pm: pm,
+            tests: tests,
+            environment: environment,
+            collectionVariables: collectionVariables,
+            globals: globals,
+            req: req,
+            getNextRequest: function () {
+              return nextRequest;
+            },
+            getVisualizer: function () {
+              return visualizer;
+            },
+          };
+        }
+
+        window.addEventListener('message', function (event) {
+          const data = event.data;
+          if (!data || data.type !== 'detour-api-script-run') return;
+          const built = buildPm(data.context || { request: { method: 'GET', url: '', headers: {}, body: null } });
+          let ok = true;
+          let error;
+          try {
+            const runner = new Function('pm', '"use strict";\n' + String(data.code || ''));
+            runner(built.pm);
+          } catch (err) {
+            ok = false;
+            error = err && err.message ? err.message : String(err);
+          }
+          const allPass = built.tests.every(function (t) {
+            return t.passed;
+          });
+          event.source.postMessage(
+            {
+              type: 'detour-api-script-result',
+              id: data.id,
+              ok: ok && allPass,
+              error: error,
+              tests: built.tests,
+              mutated: {
+                environment: built.environment.toObject(),
+                collectionVariables: built.collectionVariables.toObject(),
+                globals: built.globals.toObject(),
+                request: {
+                  method: built.req.method,
+                  url: built.req.url,
+                  headers: built.req.headers,
+                  body: built.req.body,
+                },
+                nextRequest: built.getNextRequest(),
+                visualizer: built.getVisualizer(),
+              },
+            },
+            '*',
+          );
+        });
+      })();
+    </script>
+  </body>
+</html>

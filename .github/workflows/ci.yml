@@ -1,0 +1,272 @@
+# Free-tier GitHub Actions. No store credentials. The CLI is tested here and is not in the store zips.
+# pnpm 12.9.1 matches the root packageManager field.
+# Local equivalent: docs/distribution/README.md
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type == 'branch' }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.9.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: CLI tests
+        run: pnpm --filter @detour/cli test
+
+      - name: CLI typecheck
+        run: pnpm --filter @detour/cli typecheck
+
+      - name: Unit tests
+        run: pnpm --filter @detour/extension test
+
+      - name: Typecheck
+        run: pnpm --filter @detour/extension typecheck
+
+      - name: Chrome build
+        run: pnpm --filter @detour/extension build
+
+      - name: Firefox build
+        run: pnpm --filter @detour/extension build:firefox
+
+      - name: Install Chrome for Testing
+        working-directory: extension
+        env:
+          CHROME_CACHE: ${{ runner.temp }}/chrome
+        run: |
+          set -euo pipefail
+          line=$(node scripts/install-chrome.mjs)
+          echo "CHROME=${line}" >> "$GITHUB_ENV"
+          sudo env PATH="$PATH" CHROME_CACHE="$CHROME_CACHE" node scripts/install-chrome.mjs --deps
+
+      - name: Chrome e2e
+        working-directory: extension
+        run: pnpm e2e:chrome
+
+      - name: Package store zips
+        working-directory: extension
+        run: |
+          pnpm zip
+          pnpm zip:firefox
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: detour-packages
+          path: extension/.output/**/*.zip
+          if-no-files-found: error
+
+  sea-db-host:
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            pack_os: windows
+            pack_arch: x64
+          - runner: macos-latest
+            pack_os: macos
+            pack_arch: arm64
+          - runner: macos-15-intel
+            pack_os: macos
+            pack_arch: x64
+          - runner: ubuntu-latest
+            pack_os: linux
+            pack_arch: x64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.9.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: SEA build for DB host
+        working-directory: cli
+        run: pnpm sea:build
+
+      - name: SEA smoke (--version, install --dry-run)
+        working-directory: cli
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN=".sea/detour-db-host"
+          if [[ "${{ runner.os }}" == "Windows" ]]; then BIN=".sea/detour-db-host.exe"; fi
+          "$BIN" --version
+          "$BIN" install --dry-run
+          "$BIN" doctor || true
+
+      - name: SEA stdio ping
+        working-directory: cli
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN=".sea/detour-db-host"
+          if [[ "${{ runner.os }}" == "Windows" ]]; then BIN=".sea/detour-db-host.exe"; fi
+          # One JSON-RPC ping framed for native messaging (4-byte LE length + UTF-8 JSON).
+          node --input-type=module <<'EOF'
+          import { spawn } from 'node:child_process';
+          import { platform } from 'node:os';
+          const bin = platform() === 'win32' ? '.sea/detour-db-host.exe' : '.sea/detour-db-host';
+          const child = spawn(bin, [], { stdio: ['pipe', 'pipe', 'inherit'] });
+          const req = Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'version' }), 'utf8');
+          const header = Buffer.alloc(4);
+          header.writeUInt32LE(req.length, 0);
+          child.stdin.write(Buffer.concat([header, req]));
+          child.stdin.end();
+          const chunks = [];
+          child.stdout.on('data', (c) => chunks.push(c));
+          const code = await new Promise((resolve) => child.on('close', resolve));
+          const buf = Buffer.concat(chunks);
+          if (buf.length < 4) {
+            console.error('No response from SEA host');
+            process.exit(1);
+          }
+          const len = buf.readUInt32LE(0);
+          const body = buf.subarray(4, 4 + len).toString('utf8');
+          console.log('ping response:', body);
+          const parsed = JSON.parse(body);
+          if (!parsed.result && !parsed.error) {
+            console.error('Unexpected RPC shape');
+            process.exit(1);
+          }
+          process.exit(typeof code === 'number' && code !== 0 ? code : 0);
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: detour-db-sea-${{ matrix.pack_os }}-${{ matrix.pack_arch }}
+          path: |
+            cli/.sea/**
+          if-no-files-found: error
+
+  os-packs:
+    needs: [verify, sea-db-host]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pack_os: windows
+            pack_arch: x64
+            sea_artifact: detour-db-sea-windows-x64
+            helper_bin: detour-db-host.exe
+          - pack_os: macos
+            pack_arch: arm64
+            sea_artifact: detour-db-sea-macos-arm64
+            helper_bin: detour-db-host
+          - pack_os: macos
+            pack_arch: x64
+            sea_artifact: detour-db-sea-macos-x64
+            helper_bin: detour-db-host
+          - pack_os: linux
+            pack_arch: x64
+            sea_artifact: detour-db-sea-linux-x64
+            helper_bin: detour-db-host
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.9.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Chrome extension build
+        run: pnpm --filter @detour/extension build
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.sea_artifact }}
+          path: cli/.sea
+
+      - name: Assemble OS pack
+        env:
+          DETOUR_PACK_OS: ${{ matrix.pack_os }}
+          DETOUR_PACK_ARCH: ${{ matrix.pack_arch }}
+        run: |
+          set -euo pipefail
+          chmod +x "cli/.sea/${{ matrix.helper_bin }}" 2>/dev/null || true
+          # pack:os runs with cwd=cli/; SEA artifact was downloaded to cli/.sea
+          pnpm --filter @detour/cli pack:os
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: detour-os-pack-${{ matrix.pack_os }}-${{ matrix.pack_arch }}
+          path: |
+            cli/.packs/*.zip
+            cli/.packs/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    needs: [verify, sea-db-host, os-packs]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: detour-packages
+          path: packages
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: detour-os-pack-*
+          path: os-packs
+          merge-multiple: true
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          assets=(packages/*.zip os-packs/*.zip os-packs/*.tar.gz)
+          gh release create "${GITHUB_REF_NAME}" "${assets[@]}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --verify-tag

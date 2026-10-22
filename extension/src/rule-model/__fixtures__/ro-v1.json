@@ -1,0 +1,32 @@
+{
+  "v": 1,
+  "data": [
+    {
+      "id": "d1",
+      "matchUrl": "*",
+      "on": true,
+      "rules": [
+        { "id": "r1", "type": "normalOverride", "match": "https://cdn.example.com/*.js", "replace": "http://localhost:8080/*.js", "on": true },
+        { "id": "r2", "type": "fileOverride", "match": "https://cdn.example.com/app.css", "file": "body { color: red }", "fileId": "f2", "on": true },
+        {
+          "id": "r3",
+          "type": "headerRule",
+          "match": "https://api.example.com/*",
+          "requestRules": "set X-Debug: 1;remove Cookie",
+          "responseRules": "set Access-Control-Allow-Origin: *;remove Content-Security-Policy",
+          "on": false
+        },
+        { "id": "r4", "type": "fileInject", "fileName": "inject.js", "file": "console.log(1)", "fileId": "f4", "fileType": "js", "injectLocation": "head", "on": true }
+      ]
+    },
+    {
+      "id": "d2",
+      "matchUrl": "https://app.example.com/*",
+      "on": false,
+      "rules": [
+        { "id": "r5", "type": "normalOverride", "match": "https://**.example.com/*", "replace": "https://**.staging.example.com/*", "on": true },
+        { "id": "r6", "type": "headerRule", "match": "https://x.example.com/*", "requestRules": "", "responseRules": "", "on": true }
+      ]
+    }
+  ]
+}

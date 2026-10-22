@@ -1,0 +1,14 @@
+---
+description: Read AI/ Project Intelligence first; write durable facts back
+alwaysApply: true
+---
+
+# Project Intelligence
+
+Before non-trivial work:
+
+1. Open `AI/README.md`, then `AI/PRODUCT.md` and `AI/PROGRESS.md`.
+2. Open the matching file under `AI/intelligence/` **before** grepping the codebase for product/architecture facts.
+3. Specs under `AI/specs/` are Draft until Approved — do not implement extension/cli code from Draft specs alone.
+4. After learning durable facts (stack choices, APIs, gotchas, decisions), write them back via `AI/skills/write-back-kb` — bump **Last verified**, never store secrets.
+5. Plans live only under `AI/plans/`. Product facts in `AI/` override vendor skill defaults.
