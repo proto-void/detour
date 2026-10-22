@@ -50,7 +50,7 @@ Generic build hooks for out-of-tree partner flavors ([ADR-026](../DECISIONS.md),
 - [x] `DETOUR_BRAND_DIR` absolute path resolves brand assets (`brand.ts`, `tokens.css`, `icon.svg`, …) without requiring `extension/brands/<slug>` in this repo
 - [x] Brand `nativeHostName` defaults to `com.detour.db`; partners may set a distinct native-messaging application name
 - [x] Fixed public Chrome manifest `key` per brand (already from OS packs) remains the mechanism for stable unpacked id / NM `allowed_origins`
-- [x] Dual store zips (`zip` / `zip:rogers`) unchanged; partner closed packs live in the private repo
+- [x] Detour store/sideload zips (`zip`); partner Rogers packs retired (plan 033)
 
 Still open (not this approval):
 

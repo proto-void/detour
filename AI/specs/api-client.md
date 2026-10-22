@@ -198,7 +198,7 @@ Anything in global Out of scope below.
 ### After each Approved slice ships
 
 - KB: ADR (sandbox scripts, simulated rules, storage keys, optional permissions); `architecture.md`; `gotchas.md`; `PROGRESS.md`
-- Dual zip (`zip` and `zip:rogers`); reload Rogers as needed
+- Detour zip (`zip`); reload extension as needed
 
 ## Related
 

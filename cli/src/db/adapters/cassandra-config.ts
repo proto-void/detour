@@ -35,6 +35,10 @@ export type CassandraConnectionInput = {
     /** Passphrase for an encrypted client private key (Node TLS `passphrase`). */
     keyPassphrase?: string;
     rejectUnauthorized?: boolean;
+    /** SNI / TLS server name (required when contacting by IP with verify-full). */
+    servername?: string;
+    /** Node TLS minVersion (e.g. TLSv1.2). */
+    minVersion?: string;
   };
 };
 
@@ -52,6 +56,8 @@ export type BuiltCassandraOptions = {
     cert?: string;
     key?: string;
     passphrase?: string;
+    servername?: string;
+    minVersion?: string;
   };
   /** Bundled Starfield CA path marker for Keyspaces. */
   keyspacesTls?: { useStarfieldCa: true; port: number };
@@ -66,6 +72,43 @@ export const COSMOS_CASSANDRA_PORT = 10350;
 export const KEYSPACES_PORT = 9142;
 /** Default Cassandra/Scylla port. */
 export const CASSANDRA_PORT = 9042;
+
+/** Forward hydrated TLS material into driver sslOptions (incl. SNI + minVersion). */
+export function cassandraSslOptionsFromTls(
+  tls: NonNullable<CassandraConnectionInput['tls']> | undefined,
+  defaults: { rejectUnauthorized: boolean },
+): BuiltCassandraOptions['sslOptions'] {
+  return {
+    rejectUnauthorized: defaults.rejectUnauthorized,
+    ...(tls?.ca ? { ca: [tls.ca] } : {}),
+    ...(tls?.cert ? { cert: tls.cert } : {}),
+    ...(tls?.key ? { key: tls.key } : {}),
+    ...(tls?.keyPassphrase ? { passphrase: tls.keyPassphrase } : {}),
+    ...(tls?.servername ? { servername: tls.servername } : {}),
+    ...(tls?.minVersion ? { minVersion: tls.minVersion } : {}),
+  };
+}
+
+/**
+ * Keyspaces rebuild: Starfield (or custom) CA plus any SNI/minVersion/client material
+ * already present on built.sslOptions — do not drop servername/minVersion.
+ */
+export function mergeKeyspacesSslOptions(
+  built: BuiltCassandraOptions,
+  starfieldCa?: string,
+): NonNullable<BuiltCassandraOptions['sslOptions']> {
+  const prev = built.sslOptions;
+  const ca = starfieldCa ?? prev?.ca?.[0];
+  return {
+    rejectUnauthorized: prev?.rejectUnauthorized ?? true,
+    ...(ca ? { ca: [ca] } : {}),
+    ...(prev?.cert ? { cert: prev.cert } : {}),
+    ...(prev?.key ? { key: prev.key } : {}),
+    ...(prev?.passphrase ? { passphrase: prev.passphrase } : {}),
+    ...(prev?.servername ? { servername: prev.servername } : {}),
+    ...(prev?.minVersion ? { minVersion: prev.minVersion } : {}),
+  };
+}
 
 export function normalizeTarget(raw: string | undefined): CassandraTarget {
   const t = (raw ?? 'apache').toLowerCase();
@@ -109,13 +152,9 @@ export function buildCassandraOptions(input: CassandraConnectionInput): BuiltCas
   if (target === 'cosmos') {
     const port = input.port ?? COSMOS_CASSANDRA_PORT;
     out.protocolOptions = { port };
-    out.sslOptions = {
+    out.sslOptions = cassandraSslOptionsFromTls(input.tls, {
       rejectUnauthorized: input.tls?.rejectUnauthorized !== false,
-      ...(input.tls?.ca ? { ca: [input.tls.ca] } : {}),
-      ...(input.tls?.cert ? { cert: input.tls.cert } : {}),
-      ...(input.tls?.key ? { key: input.tls.key } : {}),
-      ...(input.tls?.keyPassphrase ? { passphrase: input.tls.keyPassphrase } : {}),
-    };
+    });
     if (!input.username || !input.password) {
       throw new Error('Cosmos Cassandra API requires username and password (account key).');
     }
@@ -127,10 +166,7 @@ export function buildCassandraOptions(input: CassandraConnectionInput): BuiltCas
     const port = input.port ?? KEYSPACES_PORT;
     out.protocolOptions = { port };
     out.keyspacesTls = { useStarfieldCa: true, port };
-    out.sslOptions = {
-      rejectUnauthorized: true,
-      ...(input.tls?.ca ? { ca: [input.tls.ca] } : {}),
-    };
+    out.sslOptions = cassandraSslOptionsFromTls(input.tls, { rejectUnauthorized: true });
     const auth = input.keyspacesAuth ?? (input.password ? 'password' : 'sigv4');
     if (auth === 'sigv4') {
       const region = input.region?.trim();
@@ -153,13 +189,9 @@ export function buildCassandraOptions(input: CassandraConnectionInput): BuiltCas
   }
   if (input.tls?.enabled) {
     // Pass cert and/or key as present; no IncompletePair gate (TablePlus-style).
-    out.sslOptions = {
+    out.sslOptions = cassandraSslOptionsFromTls(input.tls, {
       rejectUnauthorized: input.tls.rejectUnauthorized !== false,
-      ...(input.tls.ca ? { ca: [input.tls.ca] } : {}),
-      ...(input.tls.cert ? { cert: input.tls.cert } : {}),
-      ...(input.tls.key ? { key: input.tls.key } : {}),
-      ...(input.tls.keyPassphrase ? { passphrase: input.tls.keyPassphrase } : {}),
-    };
+    });
   }
   return out;
 }

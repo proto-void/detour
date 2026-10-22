@@ -28,10 +28,9 @@ Deliver a root-cause note and (if code) a minimal fix plus unit test. No secrets
 | Surface | In public `proto-void/detour`? | Stack |
 | --- | --- | --- |
 | Extension UI + `db-client` | Yes | TypeScript / Svelte |
-| Native host `com.detour.db` | Yes — under `cli/` | **Node** + `cassandra-driver` |
-| Rogers / Detour **Go** helper | **No** — private `rogers-detour` only | Go `gocql` / TLS helpers |
+| Native host `com.detour.db` | Yes — under `cli/` | **Node** + `cassandra-driver` only |
 
-**Investigate the public Node path first.** Do not assume Go helper behavior unless the reporter confirms they installed a Rogers OS pack. Private Go source is out of scope for a GitHub-only agent.
+**Investigate the public Node path.** The former private Rogers Go helper product was deleted (plan 033, 2026-10-23). Do not look for `rogers-detour` or invent Go/Java fixes.
 
 ---
 
@@ -231,7 +230,7 @@ URL → draft mapping lives in `connectionFromUrl` in the same `url.ts` as `buil
 
 ## 13. Out of scope
 
-- **Rogers private Go helper** (`rogers-detour` / OS packs): not in this GitHub repo. If the reporter only uses a Rogers-installed helper, say so and stop; do not invent Go fixes from public Node code alone.
+- **Rogers / Go helper:** retired. If an old machine still has a Rogers-installed host, uninstall and reinstall the public Node helper (`detour db install`). Fix connectivity in Node only (SNI/`servername`, `minVersion`, Keyspaces ssl merge, safer `innerErrors`).
 - Storing or requesting live passwords, account keys, PEM/JKS bodies, or Astra tokens.
 - Changing unrelated engines (Postgres, MySQL, etc.) unless needed as a pattern reference (e.g. Redis SNI).
 
@@ -243,7 +242,7 @@ Please include (redacted):
 
 1. **Working client parameters** — host/contact points, port, local DC, TLS mode, whether SNI/server name is set (value can be the hostname only), SSH/proxy yes/no, target flavor (apache/scylla/keyspaces/cosmos/astra).
 2. **Detour error string** — full message from UI or host log (no secrets).
-3. **Which host is installed** — public Node `com.detour.db` from Detour CLI/zip, vs Rogers OS pack Go helper; OS (macOS/Windows) and approximate install date if known.
+3. **Which host is installed** — public Node `com.detour.db` from Detour CLI/zip (reinstall after host changes); OS (macOS/Windows).
 
 ---
 

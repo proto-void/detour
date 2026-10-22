@@ -345,7 +345,7 @@ Cassandra 4 and 5, ScyllaDB, Postgres, MySQL, MariaDB, SQL Server Developer, Ora
 ### CI / packaging
 
 - SEA binaries for each OS in GitHub Actions (free for public repos)
-- Dual zip (`zip` and `zip:rogers`) after each Approved slice ships
+- Detour zip (`zip`) after each Approved slice ships
 
 ### Docs / KB (per slice)
 

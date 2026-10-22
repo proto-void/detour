@@ -44,7 +44,7 @@ GitHub Actions sets `CI`, which makes the smoke test pass `--no-sandbox`, `--dis
 
 ### OS packs (extension + Databases helper)
 
-Self-sufficient sideload packs (ADR-029). **Not** for store upload. CI builds Detour packs; local Rogers via `pack:os:rogers`.
+Self-sufficient sideload packs (ADR-029). **Not** for store upload. CI builds Detour packs.
 
 | File | Use |
 |------|-----|
@@ -64,23 +64,16 @@ corepack pnpm pack:os
 
 In-pack READMEs are generated from `cli/pack/templates/` (single source with the root README links).
 
-Internal Rogers flavor (local gitignored `brands/rogers/`; not for store upload):
-
-```sh
-corepack pnpm --filter @detour/extension zip:rogers
-# → extension/.output/rogers/rogers-<version>-chrome.zip
-```
-
-**QA sideload (Rogers Chrome zip):** send `rogers-<version>-chrome.zip` (extension only; includes `README-load-unpacked.md` and `load-unpacked-steps.jpg`). Recipient: unzip first (do not Load unpacked the `.zip`), then in Chrome:
+**QA sideload (Chrome zip):** send `detour-<version>-chrome.zip` (extension only; includes `README-load-unpacked.md` and `load-unpacked-steps.jpg`). Recipient: unzip first (do not Load unpacked the `.zip`), then in Chrome:
 
 1. Open `chrome://extensions`
 2. Turn on **Developer mode** (top right)
 3. Click **Load unpacked**
 4. Select the **unzipped folder** that contains `manifest.json`
 
-See the annotated screenshot in the zip (`load-unpacked-steps.jpg`) or in `extension/public/`. For Databases, use a Rogers OS pack instead (Load unpacked → `extension/` inside the pack, then Install Helper).
+See the annotated screenshot in the zip (`load-unpacked-steps.jpg`) or in `extension/public/`. For Databases, use a Detour OS pack (Load unpacked → `extension/` inside the pack, then Install Helper) or `detour db install` from this repo.
 
-**Agent / local delivery DoD:** produce **both** Detour `zip` and Rogers `zip:rogers` unless Hamza asks for one flavor only (ADR-026).
+**Agent / local delivery DoD:** Detour `zip` only (Rogers product retired — plan 033).
 
 
 `<version>` is `extension/package.json` (`0.1.1` today). The root [LICENSE](../../LICENSE) is MIT. The sources zip excludes `node_modules`, tests, `.output`, `.wxt`, and secret-like files (`.env`, `*.pem`, `*.p12`).

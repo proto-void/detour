@@ -7,7 +7,7 @@ import {
   chromeAllowedOrigins,
   resolveChromiumExtensionIds,
 } from './install.ts';
-import { DETOUR_UNPACKED_CHROMIUM_ID, ROGERS_UNPACKED_CHROMIUM_ID } from './extension-ids.ts';
+import { DETOUR_STORE_CHROMIUM_IDS, DETOUR_UNPACKED_CHROMIUM_ID } from './extension-ids.ts';
 
 describe('helperInstallDir', () => {
   it('uses Application Support on macOS', () => {
@@ -37,9 +37,10 @@ describe('helperInstallDir', () => {
 });
 
 describe('allowed_origins / extension ids', () => {
-  it('defaults to Detour unpacked id', () => {
-    assert.deepEqual(resolveChromiumExtensionIds({}), [DETOUR_UNPACKED_CHROMIUM_ID]);
-    assert.deepEqual(resolveChromiumExtensionIds({ brand: 'rogers' }), [ROGERS_UNPACKED_CHROMIUM_ID]);
+  it('defaults to Detour unpacked + store ids', () => {
+    const expected = [DETOUR_UNPACKED_CHROMIUM_ID, ...DETOUR_STORE_CHROMIUM_IDS];
+    assert.deepEqual(resolveChromiumExtensionIds({}), expected);
+    assert.deepEqual(resolveChromiumExtensionIds({ brand: 'detour' }), expected);
   });
 
   it('merges --extension-id with brand defaults', () => {
@@ -47,6 +48,7 @@ describe('allowed_origins / extension ids', () => {
     const extra = 'abcdefghijklmnopabcdefghijklmnop';
     assert.deepEqual(resolveChromiumExtensionIds({ extensionId: extra }), [
       DETOUR_UNPACKED_CHROMIUM_ID,
+      ...DETOUR_STORE_CHROMIUM_IDS,
       extra,
     ]);
   });

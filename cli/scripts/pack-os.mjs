@@ -3,10 +3,9 @@
  * Assemble a self-sufficient OS pack: extension + SEA helper + install scripts + READMEs.
  *
  *   corepack pnpm --filter @detour/cli pack:os
- *   DETOUR_BRAND=rogers corepack pnpm --filter @detour/cli pack:os
  *
  * Env:
- *   DETOUR_BRAND=detour|rogers (default detour)
+ *   DETOUR_BRAND=detour (default; other slugs only if a matching brands/<slug> exists)
  *   DETOUR_PACK_OS / DETOUR_PACK_ARCH — override target labels (default: host)
  *   DETOUR_SEA_DIR — prebuilt .sea directory (default cli/.sea)
  *   DETOUR_EXT_DIR — prebuilt unpacked extension (default extension/.output/<brand>/chrome-mv3)
@@ -218,7 +217,7 @@ function assertNoPlaceholders(dir) {
 
 function writeInstallScripts(root, opts) {
   const { isWin, helperBinary, installScript, uninstallScript, brand } = opts;
-  const brandFlag = brand === 'rogers' ? ' --brand=rogers' : '';
+  const brandFlag = '';
   if (isWin) {
     writeFileSync(
       join(root, installScript),

@@ -1,6 +1,6 @@
 /**
  * Stable Chromium extension ids for native-messaging allowed_origins.
- * Derived from the public manifest key in extension/brands/<slug>/brand.ts (public key only).
+ * Derived from the public manifest key in extension/brands/detour/brand.ts (public key only).
  * Store listing ids are appended when published.
  */
 
@@ -12,15 +12,7 @@ export const DETOUR_STORE_CHROMIUM_IDS: readonly string[] = [
   'jfgbokgdgpjhkciooicmbdgablgkklmn',
 ];
 
-/** Rogers unpacked id (manifest key in gitignored brands/rogers). */
-export const ROGERS_UNPACKED_CHROMIUM_ID = 'mgemcepjhfdnnoocgejgfahmieololca';
-
-export const ROGERS_STORE_CHROMIUM_IDS: readonly string[] = [];
-
-export function defaultChromiumExtensionIds(brand: 'detour' | 'rogers' = 'detour'): string[] {
-  if (brand === 'rogers') {
-    return [ROGERS_UNPACKED_CHROMIUM_ID, ...ROGERS_STORE_CHROMIUM_IDS];
-  }
+export function defaultChromiumExtensionIds(_brand: 'detour' = 'detour'): string[] {
   return [DETOUR_UNPACKED_CHROMIUM_ID, ...DETOUR_STORE_CHROMIUM_IDS];
 }
 

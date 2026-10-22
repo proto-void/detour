@@ -3,12 +3,31 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   buildCassandraOptions,
+  mergeKeyspacesSslOptions,
   type CassandraConnectionInput,
   type BuiltCassandraOptions,
 } from './cassandra-config.ts';
 import type { DbAdapter, DescribeResult, ExecuteOptions, ExecuteResult, ObjectNode, ObjectPath } from './types.ts';
 
 const STARFIELD_CA = join(dirname(fileURLToPath(import.meta.url)), '..', 'certs', 'starfield-keyspaces.pem');
+
+/** Safe connect-error text: top message + short per-node innerErrors (no config dumps). */
+export function formatCassandraConnectError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  const inner = (e as { innerErrors?: unknown })?.innerErrors;
+  if (!inner || typeof inner !== 'object') return msg;
+  const parts: string[] = [];
+  for (const [host, err] of Object.entries(inner as Record<string, unknown>)) {
+    const hostLabel = String(host).slice(0, 120);
+    let detail = err instanceof Error ? err.message : String(err);
+    // Never echo obvious secret-like payloads if a driver stuffed them into the message.
+    detail = detail.replace(/(password|passwd|token|secret|authorization)\s*[:=]\s*\S+/gi, '$1=[redacted]');
+    parts.push(`${hostLabel}: ${detail.slice(0, 200)}`);
+    if (parts.length >= 8) break;
+  }
+  if (parts.length === 0) return msg;
+  return `${msg} [${parts.join('; ')}]`;
+}
 
 type ClientLike = {
   connect(): Promise<void>;
@@ -74,10 +93,8 @@ function toDriverOptions(built: BuiltCassandraOptions, driver: DriverModule): Re
     } catch {
       ca = built.sslOptions?.ca?.[0];
     }
-    opts.sslOptions = {
-      rejectUnauthorized: true,
-      ...(ca ? { ca: [ca] } : {}),
-    };
+    // Preserve servername / minVersion / client material from buildCassandraOptions.
+    opts.sslOptions = mergeKeyspacesSslOptions(built, ca);
     opts.protocolOptions = { port: built.keyspacesTls.port };
   } else if (built.sslOptions) {
     opts.sslOptions = built.sslOptions;
@@ -144,7 +161,7 @@ export function createCassandraAdapter(): DbAdapter {
         return { ok: true as const, latencyMs: Date.now() - started };
       } catch (e) {
         await this.close();
-        return { ok: false as const, error: e instanceof Error ? e.message : String(e) };
+        return { ok: false as const, error: formatCassandraConnectError(e) };
       }
     },
 

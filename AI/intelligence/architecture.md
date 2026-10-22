@@ -204,9 +204,8 @@ DNR onRuleMatchedDebug (unpacked Chromium) or getMatchedRules (packed fallback)
 
 - `DETOUR_BRAND` (default `detour`) loads `extension/brands/<slug>/` at build time
 - Detour zip: `corepack pnpm --filter @detour/extension zip` → `.output/detour/detour-<v>-chrome.zip`
-- Rogers zip: `corepack pnpm --filter @detour/extension zip:rogers` → `.output/rogers/rogers-<v>-chrome.zip` (requires local gitignored `brands/rogers/`)
-- Rogers (and other partner) flavors use **Detour** as the manifest/UI display name; partner identity is tokens, icons, and optional partner logo
-- **Default delivery:** both zips unless a single flavor is requested
+- **Delivery DoD:** Detour zip only. Partner Rogers product retired 2026-10-23 (plan 033); no `zip:rogers`, no private `rogers-detour`
+- Generic brand hook (`brands/<slug>/`, `DETOUR_BRAND_DIR`) remains for future partners; no Rogers slug in tree
 - UI tokens come from `brands/*/tokens.css` via `virtual:brand-tokens`; `ui/base.css` stays structural
 
-**Last verified:** 2026-10-09
+**Last verified:** 2026-10-23

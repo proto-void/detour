@@ -705,31 +705,34 @@ ADR-009 correctly avoided `data:` as the only strategy (CSP `connect-src` / `scr
 
 ## ADR-026 — Build-time brand flavors; private brands stay out of git
 
-**Status:** Accepted  
+**Status:** Accepted (historical Rogers dual-zip superseded 2026-10-23 — see note)  
 **Date:** 2026-10-09 (Hamza: Rogers white-label + dual-zip DoD)
 
 ### Context
 
-Internal partners (e.g. Rogers) need a separately themed extension zip. The public MIT repository must remain Detour-branded and must never ship partner marks. Long partner product titles (e.g. “Rogers Dev Override”) are too long for the toolbar and lockup.
+Internal partners (e.g. Rogers) needed a separately themed extension zip. The public MIT repository must remain Detour-branded and must never ship partner marks. Long partner product titles are too long for the toolbar and lockup.
 
 ### Decision
 
 - Brands live under `extension/brands/<slug>/` (`brand.ts`, `tokens.css`, `icon.svg`, optional `logo.svg` / `mark.svg` / `partner-logo.svg` / `fonts/`)
 - `DETOUR_BRAND` (default `detour`) selects the flavor in `wxt.config.ts`; missing brands fail the build clearly
 - Manifest name / short_name / description / action title, zip slug, outDir (`.output/<slug>`), icons (`@wxt-dev/auto-icons`), and CSS tokens (`virtual:brand-tokens`) come from the brand
-- **Display name is always Detour** for partner flavors (Rogers included). Partner identity is theme, tokens, icons, and optional partner logo — not a different product title. `DETOUR_BRAND_NAME` can still override when needed
-- Zip/outDir slug stays distinct (Rogers: `rogers`) so artifacts do not collide with Detour
+- **Display name is always Detour** for partner flavors. Partner identity is theme, tokens, icons, and optional partner logo — not a different product title. `DETOUR_BRAND_NAME` can still override when needed
 - Co-brand lockup: `Detour | [partner]` when `partner-logo.svg` is present
 - `import.meta.env.BRAND` exposes `{ name, shortName, slug, defaultTheme }` to the UI; user-facing copy uses `brandName`
 - **Committed:** `brands/detour/`, `brands/_template/`
-- **Gitignored:** `brands/rogers/` and any other private partner trees
-- Scripts: `zip` / `build` = Detour; `zip:rogers` / `build:rogers` = `DETOUR_BRAND=rogers`
-- **Delivery DoD:** produce both Detour and Rogers zips unless Hamza requests a single flavor
+- **Gitignored:** private partner brand trees under `brands/<slug>/` when needed
+- Scripts: `zip` / `build` = Detour (`DETOUR_BRAND=detour`)
+- **Delivery DoD (current):** Detour zip only
 - No change to rules, engine, or storage keys across flavors
+
+### Note (2026-10-23) — Rogers product retired
+
+Plan [033](plans/033-node-cassandra-rogers-exit.md): entire Rogers product (private `rogers-detour` repo + local tree + public `zip:rogers` / dual-zip DoD) deleted. ADR text kept for history. Do not revive Rogers hooks without a new Approved plan.
 
 ### Consequences
 
-- Public clones build Detour only; Rogers requires a local `brands/rogers/` tree
+- Public clones build Detour only
 - Storage and exports stay Detour-schema compatible across flavors
 - Official partner logos are optional drop-ins; agents must not recreate trademarked marks
 
@@ -869,7 +872,7 @@ Browsers never allow an extension to register its own native host, so one local 
 
 ## ADR-030 — Partner native helpers may be closed and out of tree; public helper stays MIT
 
-**Status:** Accepted  
+**Status:** Accepted (Rogers closed-helper delivery abandoned 2026-10-23 — see note)  
 **Date:** 2026-10-09 (Hamza Approved closed Rogers native helper plan — “Go and approved”)
 
 ### Context
@@ -884,19 +887,24 @@ Some partners need a **compiled, obfuscated** Databases helper (no Node, no read
   - protocol `hello` + `capabilities[]` + protocol-version mismatch UX
   - `DETOUR_DB_HOST_CMD` for portable contract tests against any conforming binary
   - per-brand manifest `key` (already ADR-029)
-- **Partner helpers** (e.g. a Go native host) and partner brand assets live in a **private repo** (submodule pin of this public tree). Nothing Rogers-specific beyond ADR-026 notes goes into the public KB or source.
-- Accepted limit (record in the private partner spec): extension JS on the user’s machine can still be inspected after deobfuscation; the bar is casual/moderate reverse engineering, not impossibility.
+- **Partner helpers** (historically: Go native host) were intended for a private repo. Public KB must not depend on that tree.
+- Accepted limit for any future closed helper: extension JS on the user’s machine can still be inspected after deobfuscation; the bar is casual/moderate reverse engineering, not impossibility.
+
+### Note (2026-10-23) — Rogers product retired; plan 029 abandoned for delivery
+
+Plan [029](plans/029-closed-rogers-native-helper.md) public hooks remain historical. The private Rogers product (`rogers-detour`) was deleted end-to-end (plan [033](plans/033-node-cassandra-rogers-exit.md)). Databases stays on the **public Node** host only. No Java Cassandra path. Do not resurrect Go helper work without a new Approved plan.
 
 ### Alternatives considered
 
 | Option | Why not |
 |--------|---------|
 | Closed helper inside public repo | Breaks MIT / free-forever posture for core |
-| Force all partners onto Node SEA only | Fails partner “no readable JS / no Node” requirement |
+| Force all partners onto Node SEA only | Fails partner “no readable JS / no Node” requirement (when that requirement exists) |
 | Fork the entire public tree privately | Duplicates maintenance; hooks + submodule are enough |
+| Java Cassandra sidecar / full Java DB host | Rejected in plan 033 — Node + TLS wiring fix is enough |
 
 ### Consequences
 
-- Public dual-zip DoD unchanged; partner closed packs are private-repo artifacts
-- Distinct `nativeHostName` lets Detour and partner helpers install side by side
-- Specs: [db-client](specs/db-client.md), [distribution](specs/distribution.md); plan [029](plans/029-closed-rogers-native-helper.md)
+- **Delivery DoD:** Detour zip only; no dual-zip Rogers
+- Distinct `nativeHostName` remains available for a future partner if needed
+- Specs: [db-client](specs/db-client.md), [distribution](specs/distribution.md); plans [029](plans/029-closed-rogers-native-helper.md) (abandoned for delivery), [033](plans/033-node-cassandra-rogers-exit.md)

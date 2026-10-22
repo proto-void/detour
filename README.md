@@ -881,16 +881,14 @@ corepack pnpm --filter @detour/extension build:firefox
 cd extension && CHROME=$(node scripts/install-chrome.mjs) corepack pnpm e2e:chrome
 ```
 
-**Dual-zip DoD** (when `extension/` changes): both flavors unless Hamza asks for one only:
+**Detour zip DoD** (when `extension/` changes):
 
 ```sh
 corepack pnpm --filter @detour/extension zip
 # → extension/.output/detour/detour-<version>-chrome.zip
-corepack pnpm --filter @detour/extension zip:rogers
-# → extension/.output/rogers/rogers-<version>-chrome.zip
 ```
 
-Brand flavors use build-time `DETOUR_BRAND`. Rogers brand files under `extension/brands/rogers/` are gitignored; public tree stays Detour-only. See ADR-026.
+Brand flavors use build-time `DETOUR_BRAND` (default `detour`). Partner Rogers product retired (plan 033 / ADR-026 note).
 
 Distribution, CI, and store listing: [docs/distribution/README.md](docs/distribution/README.md). Bridge CLI: [cli/README.md](cli/README.md).
 

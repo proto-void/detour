@@ -31,7 +31,7 @@ export type DbInstallArgs = {
   extensionId?: string;
   firefox: boolean;
   dryRun: boolean;
-  brand: 'detour' | 'rogers';
+  brand: 'detour';
   /** Prefer SEA self-install when running as SEA (or --sea). */
   sea: boolean;
 };
@@ -52,7 +52,7 @@ export type ParsedArgs =
 
 /**
  * `detour bridge <folder> [--port 47321]`
- * `detour db install [--extension-id=…] [--no-firefox] [--dry-run] [--brand=detour|rogers]`
+ * `detour db install [--extension-id=…] [--no-firefox] [--dry-run] [--brand=detour]`
  * `detour db uninstall`
  * `detour db doctor`
  * `detour db-host-stdio` (native messaging entry; also via launcher)
@@ -135,7 +135,7 @@ function parseDbInstall(
   let extensionId: string | undefined;
   let firefox = true;
   let dryRun = false;
-  let brand: 'detour' | 'rogers' = 'detour';
+  let brand: 'detour' = 'detour';
   let sea = opts?.seaDefault === true || isRunningAsSea();
   for (const arg of args) {
     if (arg.startsWith('--extension-id=')) extensionId = arg.slice('--extension-id='.length);
@@ -144,7 +144,7 @@ function parseDbInstall(
     else if (arg === '--sea') sea = true;
     else if (arg.startsWith('--brand=')) {
       const b = arg.slice('--brand='.length);
-      if (b !== 'detour' && b !== 'rogers') return { error: `Unknown brand "${b}". Use detour or rogers.` };
+      if (b !== 'detour') return { error: `Unknown brand "${b}". Use detour.` };
       brand = b;
     } else if (arg === '--help' || arg === '-h') return { error: usage() };
     else return { error: `Unknown option "${arg}".\n${usage()}` };
@@ -156,7 +156,7 @@ export function usage(): string {
   return [
     'Usage:',
     '  detour bridge <folder> [--port 47321]',
-    '  detour db install [--extension-id=<id>] [--no-firefox] [--dry-run] [--brand=detour|rogers]',
+    '  detour db install [--extension-id=<id>] [--no-firefox] [--dry-run] [--brand=detour]',
     '  detour db uninstall',
     '  detour db doctor',
     '  detour-db-host install | uninstall | doctor | --version   (SEA pack helper)',

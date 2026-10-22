@@ -4,8 +4,10 @@ import {
   buildCassandraOptions,
   COSMOS_CASSANDRA_PORT,
   KEYSPACES_PORT,
+  mergeKeyspacesSslOptions,
   parseCassandraUrl,
 } from './adapters/cassandra-config.ts';
+import { formatCassandraConnectError } from './adapters/cassandra.ts';
 import { chunkResult, reassembleChunks, utf8ByteLength, CHUNK_PAYLOAD_MAX } from './protocol.ts';
 import { createRpcHandlers } from './host.ts';
 import { _resetSecretsForTests, getSecret, setSecret, deleteSecret } from './secrets.ts';
@@ -88,6 +90,88 @@ describe('buildCassandraOptions', () => {
       contactPoints: ['10.18.250.13'],
     });
     assert.equal(opts.localDataCenter, undefined);
+  });
+
+  it('forwards tls.servername and tls.minVersion into apache sslOptions', () => {
+    const opts = buildCassandraOptions({
+      target: 'apache',
+      contactPoints: ['10.18.250.13'],
+      localDataCenter: 'DC1',
+      tls: {
+        enabled: true,
+        ca: '-----BEGIN CERTIFICATE-----\nCA\n-----END CERTIFICATE-----',
+        rejectUnauthorized: true,
+        servername: 'cassandra.example.internal',
+        minVersion: 'TLSv1.2',
+      },
+    });
+    assert.equal(opts.sslOptions?.servername, 'cassandra.example.internal');
+    assert.equal(opts.sslOptions?.minVersion, 'TLSv1.2');
+    assert.deepEqual(opts.sslOptions?.ca, [
+      '-----BEGIN CERTIFICATE-----\nCA\n-----END CERTIFICATE-----',
+    ]);
+  });
+
+  it('forwards servername/minVersion for cosmos and keyspaces', () => {
+    const cosmos = buildCassandraOptions({
+      target: 'cosmos',
+      contactPoints: ['myaccount.cassandra.cosmos.azure.com'],
+      username: 'myaccount',
+      password: 'account-key',
+      tls: { servername: 'myaccount.cassandra.cosmos.azure.com', minVersion: 'TLSv1.2' },
+    });
+    assert.equal(cosmos.sslOptions?.servername, 'myaccount.cassandra.cosmos.azure.com');
+    assert.equal(cosmos.sslOptions?.minVersion, 'TLSv1.2');
+
+    const ks = buildCassandraOptions({
+      target: 'keyspaces',
+      contactPoints: ['cassandra.us-east-1.amazonaws.com'],
+      region: 'us-east-1',
+      keyspacesAuth: 'sigv4',
+      tls: { servername: 'cassandra.us-east-1.amazonaws.com', minVersion: 'TLSv1.2', ca: 'CUSTOM-CA' },
+    });
+    assert.equal(ks.sslOptions?.servername, 'cassandra.us-east-1.amazonaws.com');
+    assert.equal(ks.sslOptions?.minVersion, 'TLSv1.2');
+    assert.deepEqual(ks.sslOptions?.ca, ['CUSTOM-CA']);
+  });
+
+  it('mergeKeyspacesSslOptions preserves SNI/minVersion when applying Starfield CA', () => {
+    const built = buildCassandraOptions({
+      target: 'keyspaces',
+      contactPoints: ['cassandra.us-east-1.amazonaws.com'],
+      region: 'us-east-1',
+      keyspacesAuth: 'sigv4',
+      tls: { servername: 'cassandra.us-east-1.amazonaws.com', minVersion: 'TLSv1.2' },
+    });
+    const merged = mergeKeyspacesSslOptions(built, 'STARFIELD');
+    assert.deepEqual(merged.ca, ['STARFIELD']);
+    assert.equal(merged.servername, 'cassandra.us-east-1.amazonaws.com');
+    assert.equal(merged.minVersion, 'TLSv1.2');
+    assert.equal(merged.rejectUnauthorized, true);
+  });
+});
+
+describe('formatCassandraConnectError', () => {
+  it('appends safe innerErrors host summaries', () => {
+    const err = Object.assign(new Error('All host(s) tried for query failed'), {
+      innerErrors: {
+        '10.0.0.1:9042': new Error('Error: self-signed certificate'),
+        '10.0.0.2:9042': new Error('connect ECONNREFUSED'),
+      },
+    });
+    const text = formatCassandraConnectError(err);
+    assert.match(text, /All host\(s\) tried/);
+    assert.match(text, /10\.0\.0\.1:9042: Error: self-signed certificate/);
+    assert.match(text, /10\.0\.0\.2:9042: connect ECONNREFUSED/);
+  });
+
+  it('redacts password-like fragments in inner error text', () => {
+    const err = Object.assign(new Error('failed'), {
+      innerErrors: { 'h:9042': new Error('auth failed password=super-secret token:abc') },
+    });
+    const text = formatCassandraConnectError(err);
+    assert.doesNotMatch(text, /super-secret/);
+    assert.match(text, /password=\[redacted\]/);
   });
 });
 

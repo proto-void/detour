@@ -177,7 +177,7 @@ export type InstallOptions = {
   /** Extra / full list of Chromium ids (merged with extensionId and defaults). */
   extensionIds?: string[];
   /** Brand defaults for allowed_origins when no ids passed. */
-  brand?: 'detour' | 'rogers';
+  brand?: 'detour';
   /** Absolute path to the host launcher script or SEA binary. */
   hostPath: string;
   /** Also register Firefox with gecko id. */
@@ -192,7 +192,7 @@ export type InstallOptions = {
 export function resolveChromiumExtensionIds(options: {
   extensionId?: string;
   extensionIds?: string[];
-  brand?: 'detour' | 'rogers';
+  brand?: 'detour';
 }): string[] {
   const out: string[] = [];
   const push = (id: string | undefined) => {
@@ -516,7 +516,7 @@ export type SeaInstallOptions = {
   sourceDir: string;
   extensionId?: string;
   extensionIds?: string[];
-  brand?: 'detour' | 'rogers';
+  brand?: 'detour';
   firefox?: boolean;
   os?: OsPlatform;
   dryRun?: boolean;

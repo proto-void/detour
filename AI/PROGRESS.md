@@ -1,8 +1,10 @@
 # Progress
 
-**Last verified:** 2026-10-21
+**Last verified:** 2026-10-23
 
 ## Done
+
+- [x] **Node Cassandra + Rogers product exit** (plan 033, 2026-10-23): deleted local `/Users/hamzakhan/rogers-detour` + GitHub `HamzaKhan-Rogers/rogers-detour` (already 404); cleared Rogers/Detour NM hosts + Application Support db-host; scrubbed public `zip:rogers` / dual-zip DoD / Rogers extension ids; Node `cassandra-config` forwards `servername`+`minVersion`; Keyspaces merge preserves them; safe `innerErrors` in testConnection. Detour zip only. Live Cassandra smoke skipped if VPN unavailable. No commit.
 
 - [x] **Root README overhaul** (user guide): collapsible `<details>` per tab/feature; contributor material collapsed at bottom; `cli/README.md` bridge wording aligned; README-sections convention in `AI/intelligence/conventions.md`; plan 025 docs DoD step; Databases Connect section updated for A–D
 - [x] Workspace git init + root agent entrypoints (`AGENTS.md`, `README.md`, ignores)
@@ -97,12 +99,12 @@
 3. **CWS listing plain text** — Hamza pastes store-listing copy in the dashboard when editing (not agent)
 4. **Optional:** Protovoid `/products/` Detour CTA still points at detour.protovoid.com — switch primary CTA to CWS only if product wants install-from-store there
 5. **Plan 032 smoke (Windows Cassandra)** — Reload pack extension → Install Helper from **new** windows zip → connection: SSL Required/Verify CA, Java truststore+keystore paths + store passwords, Local datacenter from app config, Test. Also smoke PEM-only path still works
-6. **Plan 029 / 030 / 031 smoke** — Browse / SSL Disable+key path / encrypted-key modal; clean Chrome + Win/Ubuntu VMs; Edge manifests; Firefox route; pin public submodule when Detour has a remote+tag; install Rosetta to exercise macos-x64 `--version`; optional live plugin gaps (Astra/SigV4)
-7. **Smoke-load OS pack + store zips** — clean Chrome profile: load pack `extension/`, run Install Helper, Databases → Start → SQLite; also reload Detour/Rogers store zips for API Tester C
-8. **Databases optional** — start Docker and run `DETOUR_DB_E2E=1`; `pnpm approve-builds` for ssh2/oracledb if needed; live TLS compose e2e when Docker is up
-9. CI will not run until a git remote exists and `main` is pushed
-10. npm publish of `@detour/cli` is still out of scope
-11. Drop official Rogers `partner-logo.svg` into local `extension/brands/rogers/` when brand marketing provides it (do not recreate trademarks)
+6. **Plan 033 follow-up** — reinstall public Node helper if not done; live Cassandra Test connection (DC1 + truststore/CA + Server name when IP) when VPN available; cipher/OpenSSL plan only if still failing (not Java)
+7. **Plan 030 / 031 smoke** — Browse / SSL Disable+key path / encrypted-key modal; clean Chrome + Win/Ubuntu VMs; Edge manifests; Firefox route
+8. **Smoke-load OS pack + Detour store zip** — clean Chrome profile: load pack `extension/`, run Install Helper, Databases → Start → SQLite
+9. **Databases optional** — start Docker and run `DETOUR_DB_E2E=1`; `pnpm approve-builds` for ssh2/oracledb if needed; live TLS compose e2e when Docker is up
+10. CI will not run until a git remote exists and `main` is pushed
+11. npm publish of `@detour/cli` is still out of scope
 12. After Edge publish, append Edge store id the same way as CWS
 
 ## Open questions (not blocking)
