@@ -9,6 +9,8 @@
     language,
     describedby,
     invalid = false,
+    runGutter = false,
+    onRunAt,
     onchange,
   }: {
     id: string;
@@ -17,6 +19,9 @@
     language: CodeLanguage;
     describedby?: string;
     invalid?: boolean;
+    /** Databases: show Run on statement-start lines. */
+    runGutter?: boolean;
+    onRunAt?: (charOffset: number) => void;
     onchange: (value: string) => void;
   } = $props();
 
@@ -32,11 +37,39 @@
     spellcheck: 'false',
   });
 
+  export function getValue(): string {
+    return editor?.getValue() ?? value;
+  }
+
+  export function getSelection(): string {
+    return editor?.getSelection() ?? '';
+  }
+
+  export function getCursor(): number {
+    return editor?.getCursor() ?? 0;
+  }
+
+  export function insertAtCursor(text: string) {
+    if (editor) {
+      editor.insertAtCursor(text);
+      onchange(editor.getValue());
+      return;
+    }
+    onchange(value + text);
+  }
+
   onMount(() => {
     let destroyed = false;
     void import('./codemirror').then(({ createEditor }) => {
       if (destroyed) return;
-      editor = createEditor(host, { value, language, attributes, onchange: (next) => onchange(next) });
+      editor = createEditor(host, {
+        value,
+        language,
+        attributes,
+        onchange: (next) => onchange(next),
+        runGutter,
+        onRunAt,
+      });
     });
     return () => {
       destroyed = true;

@@ -3,9 +3,17 @@ import { css } from '@codemirror/lang-css';
 import { javascript } from '@codemirror/lang-javascript';
 import { json } from '@codemirror/lang-json';
 import { bracketMatching, HighlightStyle, indentOnInput, syntaxHighlighting } from '@codemirror/language';
-import { Compartment, EditorState, type Extension } from '@codemirror/state';
-import { drawSelection, EditorView, keymap, lineNumbers } from '@codemirror/view';
+import { Compartment, EditorState, StateField, type Extension } from '@codemirror/state';
+import {
+  drawSelection,
+  EditorView,
+  GutterMarker,
+  gutter,
+  keymap,
+  lineNumbers,
+} from '@codemirror/view';
 import { tags as t } from '@lezer/highlight';
+import { statementStartLines } from '../db-client/statement';
 
 /** Loaded on demand (dynamic import) so CodeMirror stays out of the popup and the options first paint. */
 
@@ -63,34 +71,140 @@ const editorChrome = (light: boolean) =>
       '.cm-gutters': { backgroundColor: 'var(--surface)', color: 'var(--text-muted)', border: 'none' },
       '.cm-cursor': { borderLeftColor: 'var(--text)' },
       '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'var(--selection)' },
+      '.cm-runGutter': {
+        width: '1.4rem',
+        minWidth: '1.4rem',
+      },
+      '.cm-runGutter .cm-gutterElement': {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      },
+      '.cm-runBtn': {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '1.15rem',
+        height: '1.15rem',
+        margin: '0 auto',
+        padding: 0,
+        border: 0,
+        borderRadius: '3px',
+        background: 'transparent',
+        color: 'var(--accent, #7c5cfc)',
+        cursor: 'pointer',
+        fontSize: '0.65rem',
+        lineHeight: 1,
+        opacity: 0,
+        transition: 'opacity 0.1s ease',
+      },
+      '.cm-runGutter .cm-gutterElement:hover .cm-runBtn, .cm-runBtn:focus-visible': {
+        opacity: 1,
+      },
+      '.cm-runBtn:hover': {
+        background: 'color-mix(in srgb, var(--accent, #7c5cfc) 18%, transparent)',
+      },
+      '.cm-lineNumbers .cm-gutterElement': {
+        minWidth: '2ch',
+      },
     },
     { dark: !light },
   );
 
 const isLight = () => document.documentElement.dataset.theme === 'light';
 
+const statementStartsField = StateField.define<Set<number>>({
+  create(state) {
+    return new Set(statementStartLines(state.doc.toString()));
+  },
+  update(value, tr) {
+    if (tr.docChanged) return new Set(statementStartLines(tr.state.doc.toString()));
+    return value;
+  },
+});
+
+class RunGutterMarker extends GutterMarker {
+  override toDOM() {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cm-runBtn';
+    btn.title = 'Run statement';
+    btn.setAttribute('aria-label', 'Run statement');
+    btn.textContent = '▶';
+    return btn;
+  }
+}
+
+const runMarker = new RunGutterMarker();
+
+function createRunGutter(onRunAt: (charOffset: number) => void): Extension[] {
+  return [
+    statementStartsField,
+    // Always show line numbers; Run lives in a separate gutter (hover-only).
+    lineNumbers(),
+    gutter({
+      class: 'cm-runGutter',
+      lineMarker(view, line) {
+        const lineNo = view.state.doc.lineAt(line.from).number;
+        const starts = view.state.field(statementStartsField);
+        return starts.has(lineNo) ? runMarker : null;
+      },
+      domEventHandlers: {
+        click(view, line, event) {
+          const lineNo = view.state.doc.lineAt(line.from).number;
+          const starts = view.state.field(statementStartsField);
+          if (!starts.has(lineNo)) return false;
+          event.preventDefault();
+          event.stopPropagation();
+          // First non-whitespace on this line (statement start)
+          const text = view.state.doc.toString();
+          const lineObj = view.state.doc.lineAt(line.from);
+          let offset = lineObj.from;
+          while (offset < lineObj.to && /\s/.test(text[offset]!)) offset++;
+          onRunAt(offset);
+          return true;
+        },
+      },
+    }),
+  ];
+}
+
 export interface CodeEditorHandle {
   setValue(value: string): void;
+  getValue(): string;
+  getSelection(): string;
+  getCursor(): number;
+  insertAtCursor(text: string): void;
   setLanguage(language: CodeLanguage): void;
   setAttributes(attributes: Record<string, string>): void;
   destroy(): void;
 }
 
-export function createEditor(
-  parent: HTMLElement,
-  options: { value: string; language: CodeLanguage; attributes: Record<string, string>; onchange: (value: string) => void },
-): CodeEditorHandle {
+export type CreateEditorOptions = {
+  value: string;
+  language: CodeLanguage;
+  attributes: Record<string, string>;
+  onchange: (value: string) => void;
+  /** Databases only: statement-start Run gutter. */
+  runGutter?: boolean;
+  onRunAt?: (charOffset: number) => void;
+};
+
+export function createEditor(parent: HTMLElement, options: CreateEditorOptions): CodeEditorHandle {
   const language = new Compartment();
   const attributes = new Compartment();
   const appearance = new Compartment();
   const coloring = new Compartment();
   const light = isLight();
+  const useRunGutter = Boolean(options.runGutter && options.onRunAt);
   const view = new EditorView({
     parent,
     state: EditorState.create({
       doc: options.value,
       extensions: [
-        lineNumbers(),
+        ...(useRunGutter
+          ? createRunGutter(options.onRunAt!)
+          : [lineNumbers()]),
         history(),
         drawSelection(),
         indentOnInput(),
@@ -118,6 +232,24 @@ export function createEditor(
   return {
     setValue(value) {
       if (view.state.doc.toString() !== value) view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
+    },
+    getValue() {
+      return view.state.doc.toString();
+    },
+    getSelection() {
+      const { from, to } = view.state.selection.main;
+      if (from === to) return '';
+      return view.state.sliceDoc(from, to);
+    },
+    getCursor() {
+      return view.state.selection.main.head;
+    },
+    insertAtCursor(text: string) {
+      const { from, to } = view.state.selection.main;
+      view.dispatch({
+        changes: { from, to, insert: text },
+        selection: { anchor: from + text.length },
+      });
     },
     setLanguage: (next) => view.dispatch({ effects: language.reconfigure(languages[next]()) }),
     setAttributes: (next) => view.dispatch({ effects: attributes.reconfigure(EditorView.contentAttributes.of(next)) }),

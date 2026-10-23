@@ -4,6 +4,7 @@ import type { HistoryEntry } from './model';
 
 const entry = (partial: Partial<HistoryEntry> & Pick<HistoryEntry, 'id' | 'at' | 'url'>): HistoryEntry => ({
   method: 'GET',
+  bodyPreview: '',
   ...partial,
 });
 

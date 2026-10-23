@@ -1,22 +1,46 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import CodeEditor from '../../ui/CodeEditor.svelte';
+  import Drawer from '../../ui/Drawer.svelte';
+  import Icon from '../../ui/icons/Icon.svelte';
+  import DbSidebar from './db/DbSidebar.svelte';
+  import DbExplorer from './db/DbExplorer.svelte';
+  import DbQueryWorkbench from './db/DbQueryWorkbench.svelte';
+  import DbResultsPane from './db/DbResultsPane.svelte';
+  import DbCollectionsTree from './db/DbCollectionsTree.svelte';
   import {
+    clearCollectionQueryIds,
+    collectQueryIdsInCollection,
+    collectQueryIdsInFolder,
+    collectionIsNonEmpty,
+    createQueryTab,
     defaultAdvanced,
+    defaultDbUiPrefs,
     defaultPort,
     defaultProxy,
     defaultReadOnly,
+    defaultSaveLocation,
     defaultSsh,
     defaultStatement,
     defaultTls,
     emptyDbClientState,
+    emptyTabResult,
     ENGINE_LABELS,
+    ENV_LABELS,
+    ENV_OPTIONS,
+    findQueryInCollections,
+    folderIsNonEmpty,
     migrateConnection,
+    moveQuery,
     newId,
+    renameQueryInCollections,
+    upsertQueryAt,
     type DbClientState,
     type DbConnection,
     type DbEngine,
     type DbEnvironment,
+    type DbQueryTab,
+    type DbQueryTabResult,
   } from '../../db-client/model';
   import {
     ADVANCED_GROUPS,
@@ -33,6 +57,9 @@
   import { loadDbClientState, saveDbClientState } from '../../db-client/storage';
   import { classifyCql, isReadOnlyBlocked } from '../../db-client/safety';
   import { exportDbBundle } from '../../db-client/export';
+  import { appendSelectIfNeeded, newTabWithSelect } from '../../db-client/query-tabs';
+  import { resolveRunPlan, statementAtOffset } from '../../db-client/statement';
+  import { formatDbCell } from '../../db-client/cell-format';
   import {
     connectNativePort,
     createNativeRpcClient,
@@ -60,19 +87,23 @@
     | 'mismatch'
     | 'needs_reload';
 
+  type ExplorerNode = { id: string; label: string; kind: string; meta?: Record<string, unknown> };
+  type ColumnInfo = { name: string; type: string; kind?: string };
+  type DrawerMode = null | { kind: 'row' | 'cell' | 'result' | 'pro'; title: string; payload: unknown };
+
   let dbState: DbClientState = $state.raw(emptyDbClientState());
   let loadError = $state('');
   let helperStatus = $state<HelperStatus>('stopped');
   let helperVersion = $state('');
   let helperCapabilities: string[] = $state.raw([]);
-  /** Pack slug for the current browser OS/arch (GitHub Releases). */
   let packSlug = $state('macos-arm64');
   let packOsLabel = $state('macOS');
   let helperOpen = $state(0);
   let helperError = $state('');
+  let helperMenuOpen = $state(false);
   let selectedId = $state<string | null>(null);
   let search = $state('');
-  let cql = $state('SELECT release_version FROM system.local;');
+  let explorerSearch = $state('');
   let consistency = $state('LOCAL_ONE');
   let pageSize = $state(500);
   let tracing = $state(false);
@@ -82,54 +113,50 @@
   let erText = $state('');
   let designerDdl = $state('');
   let compareText = $state('');
-  let proPanel = $state<'query' | 'pro'>('query');
   let running = $state(false);
-  let resultColumns: string[] = $state.raw([]);
-  let resultRows: unknown[][] = $state.raw([]);
-  let pageToken: string | null = $state(null);
-  let lastStatement = $state('');
-  let messages: string[] = $state.raw([]);
-  let warnings: string[] = $state.raw([]);
-  let timingMs = $state<number | undefined>();
-  let explorer: Array<{ id: string; label: string; kind: string; meta?: Record<string, unknown> }> = $state.raw([]);
+  let activeRequestId = $state<string | null>(null);
+  let resultsPane: 'results' | 'messages' = $state('results');
+  let rootKeyspaces: ExplorerNode[] = $state.raw([]);
+  let childrenByParentId: Record<string, ExplorerNode[]> = $state.raw({});
+  let columnsByTableId: Record<string, ColumnInfo[]> = $state.raw({});
+  let selectedTableId = $state<string | null>(null);
   let ddlPreview = $state('');
+  let showDdl = $state(false);
   let formOpen = $state(false);
+  let dialogTab = $state<'main' | 'ssl' | 'ssh' | 'advanced'>('main');
   let draft: DbConnection = $state.raw(blankConnection());
   let pasteUrl = $state('');
   let passwordDraft = $state('');
-  /** Ephemeral TLS client-key passphrase → host `${secretAccount}:sslKeyPass`. */
   let sslKeyPassDraft = $state('');
-  /** True after user confirms passphrase this session (or edit assumes keychain may have one). */
   let sslKeyPassMaybeStored = $state(false);
-  /** Last inspectPemKey result for draft tls.keyPath (null = unknown). */
   let sslKeyEncrypted: boolean | null = $state(null);
-  /** Java store passwords → `:trustStorePass` / `:keyStorePass` (never chrome.storage). */
   let trustStorePassDraft = $state('');
   let keyStorePassDraft = $state('');
   let trustStorePassMaybeStored = $state(false);
   let keyStorePassMaybeStored = $state(false);
   let sslKeyPassModalOpen = $state(false);
   let sslKeyPassModalInput = $state('');
-  /** Resume Test/Connect after passphrase modal Confirm. */
   let pendingAfterKeyPass: (() => Promise<void>) | null = null;
   let testMsg = $state('');
-  /** Test/Connect footer outcome — errors use alert styling; progress/ok stay muted. */
   let testMsgKind: 'idle' | 'progress' | 'ok' | 'error' = $state('idle');
-  /** Browse / pickFile feedback (cancel, helper fail, picker error). */
   let browseMsg = $state('');
   let browseMsgIsError = $state(false);
-  /** One in-flight pickFile at a time (all Browse buttons share this). */
-  let browsing = $state(false);
-  /** Bumps on each Browse / force-reset so late RPC results cannot re-lock the UI. */
+  /** Path currently in pickFile, or null when idle. */
+  let activeBrowsingPath = $state<string | null>(null);
+  /** True from lock until pickFile RPC starts (button shows Opening…). */
+  let browseOpening = $state(false);
   let browseGeneration = 0;
-  /** Unlock all Browse buttons if the host never answers (dialog behind Chrome / hung picker). */
   const BROWSE_TIMEOUT_MS = 90_000;
+  const CERT_PICK_FILTERS = [
+    { name: 'Certificates', extensions: ['pem', 'crt', 'cer', 'key', 'jks', 'p12', 'pfx'] },
+  ];
+  const BUNDLE_PICK_FILTERS = [{ name: 'Secure connect bundle', extensions: ['zip'] }];
   let showImportUrl = $state(false);
   let portTouched = $state(false);
   let advancedOpen: Record<string, boolean> = $state({
     auth: false,
-    tls: false,
-    ssh: false,
+    tls: true,
+    ssh: true,
     proxy: false,
     driver: false,
     advanced: false,
@@ -139,9 +166,29 @@
   let confirmTyped = $state('');
   let confirmExpected = $state('');
   let pendingRun: (() => Promise<void>) | null = null;
+  let deleteConfirm: null | { title: string; message: string; run: () => void } = $state(null);
   let rpc: NativeRpcClient | null = null;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
-  let side = $state<'connections' | 'collections' | 'history'>('connections');
+  let codeEditor: { getValue(): string; getSelection(): string; getCursor(): number; insertAtCursor(t: string): void } | undefined =
+    $state.raw(undefined);
+  let drawer: DrawerMode = $state.raw(null);
+
+  const ui = $derived(dbState.ui ?? defaultDbUiPrefs());
+  const side = $derived(ui.side);
+  const sidebarCollapsed = $derived(ui.sidebarCollapsed);
+  const explorerCollapsed = $derived(ui.explorerCollapsed);
+  const queryTabs = $derived(dbState.queryTabs ?? []);
+  const activeQueryTabId = $derived(dbState.activeQueryTabId);
+  const activeTab = $derived(queryTabs.find((t) => t.id === activeQueryTabId) ?? null);
+  const canCancel = $derived(helperCapabilities.length === 0 || hasCapability(helperCapabilities, 'cancel'));
+
+  const resultSets = $derived(activeTab?.resultSets ?? []);
+  const activeResultIndex = $derived(activeTab?.activeResultIndex ?? 0);
+  const activeResult = $derived(resultSets[activeResultIndex] ?? null);
+  const batchMessages = $derived(activeTab?.batchMessages ?? []);
+  const pageToken = $derived(activeResult?.pageToken ?? null);
+  const lastStatement = $derived(activeResult?.lastStatement ?? '');
+  const collectionsExpandedIds = $derived(ui.collectionsExpandedIds ?? []);
 
   function blankConnection(engine: DbEngine = 'cassandra'): DbConnection {
     return migrateConnection({
@@ -177,6 +224,53 @@
     });
   }
 
+  function patchUi(partial: Partial<typeof ui>) {
+    dbState = { ...dbState, ui: { ...defaultDbUiPrefs(), ...ui, ...partial } };
+    void persist();
+  }
+
+  function setSide(s: typeof side) {
+    patchUi({ side: s });
+  }
+
+  function activeKeyspaceFor(connId: string | null): string | null {
+    if (!connId) return null;
+    const map = ui.activeKeyspaceByConnectionId ?? {};
+    if (Object.prototype.hasOwnProperty.call(map, connId)) {
+      return map[connId] ?? null;
+    }
+    // Migrate legacy explorerScope drill-down once
+    const legacy = ui.explorerScopeByConnectionId?.[connId];
+    if (legacy?.kind === 'keyspace' && legacy.keyspace) return legacy.keyspace;
+    return null;
+  }
+
+  function expandedIdsFor(connId: string | null): string[] {
+    if (!connId) return [];
+    return ui.expandedIdsByConnectionId?.[connId] ?? [];
+  }
+
+  function setActiveKeyspace(connId: string, keyspace: string | null) {
+    patchUi({
+      activeKeyspaceByConnectionId: {
+        ...(ui.activeKeyspaceByConnectionId ?? {}),
+        [connId]: keyspace,
+      },
+    });
+  }
+
+  function setExpandedIds(connId: string, ids: string[]) {
+    patchUi({
+      expandedIdsByConnectionId: {
+        ...(ui.expandedIdsByConnectionId ?? {}),
+        [connId]: ids,
+      },
+    });
+  }
+
+  const activeKeyspace = $derived(activeKeyspaceFor(selectedId));
+  const expandedIds = $derived(expandedIdsFor(selectedId));
+
   function draftGet(path: string): unknown {
     return getByPath(draft as unknown as Record<string, unknown>, path);
   }
@@ -188,7 +282,6 @@
     }
     if (path === 'host') {
       const h = String(value ?? '');
-      // Spring-style "a, b, c" contact lists → multiple CQL contact points
       const points = h
         .split(/[,;\s]+/)
         .map((p) => p.trim())
@@ -198,25 +291,147 @@
     if (path === 'port') portTouched = true;
   }
 
+  function ensureQueryTabs(engine: DbEngine = selected?.engine ?? 'cassandra') {
+    if ((dbState.queryTabs?.length ?? 0) > 0) return;
+    const tab = createQueryTab({
+      name: 'Query 1',
+      body: defaultStatement(engine),
+      connectionId: selectedId,
+    });
+    dbState = { ...dbState, queryTabs: [tab], activeQueryTabId: tab.id };
+  }
+
+  function ensureActiveTabBody(body: string) {
+    ensureQueryTabs();
+    updateActiveTab({ body });
+  }
+
+  function updateActiveTab(partial: Partial<DbQueryTab>) {
+    const id = dbState.activeQueryTabId;
+    if (!id) return;
+    dbState = {
+      ...dbState,
+      queryTabs: (dbState.queryTabs ?? []).map((t) => (t.id === id ? { ...t, ...partial } : t)),
+    };
+  }
+
+  function patchTab(tabId: string, partial: Partial<DbQueryTab>) {
+    dbState = {
+      ...dbState,
+      queryTabs: (dbState.queryTabs ?? []).map((t) => (t.id === tabId ? { ...t, ...partial } : t)),
+    };
+  }
+
+  function setActiveResultIndex(index: number) {
+    const id = dbState.activeQueryTabId;
+    if (!id) return;
+    patchTab(id, { activeResultIndex: index });
+    void persist();
+  }
+
+  function toggleCollectionExpand(id: string) {
+    const cur = new Set(ui.collectionsExpandedIds ?? []);
+    if (cur.has(id)) cur.delete(id);
+    else cur.add(id);
+    patchUi({ collectionsExpandedIds: [...cur] });
+  }
+
+  function selectTab(id: string) {
+    dbState = { ...dbState, activeQueryTabId: id };
+    void persist();
+  }
+
+  function closeTab(id: string) {
+    const tabs = (dbState.queryTabs ?? []).filter((t) => t.id !== id);
+    let active = dbState.activeQueryTabId;
+    if (active === id) active = tabs[0]?.id ?? null;
+    dbState = { ...dbState, queryTabs: tabs, activeQueryTabId: active };
+    if (tabs.length === 0) ensureQueryTabs();
+    void persist();
+  }
+
+  function newTab(partial?: Partial<DbQueryTab>) {
+    const n = (dbState.queryTabs?.length ?? 0) + 1;
+    const tab = createQueryTab({
+      name: partial?.name ?? `Query ${n}`,
+      body: partial?.body ?? defaultStatement(selected?.engine ?? 'cassandra'),
+      connectionId: partial?.connectionId ?? selectedId,
+      ...partial,
+    });
+    const tabs = [...(dbState.queryTabs ?? []), tab].slice(0, 20);
+    dbState = { ...dbState, queryTabs: tabs, activeQueryTabId: tab.id };
+    void persist();
+  }
+
   function resetBrowsingLock(message?: string) {
     browseGeneration += 1;
-    browsing = false;
+    activeBrowsingPath = null;
+    browseOpening = false;
     if (message) {
       browseMsgIsError = true;
       browseMsg = message;
     }
   }
 
+  function pickFileFiltersFor(path: string): Array<{ name: string; extensions: string[] }> | undefined {
+    if (path === 'secureConnectBundlePath') return BUNDLE_PICK_FILTERS;
+    if (
+      path === 'tls.caPath' ||
+      path === 'tls.certPath' ||
+      path === 'tls.keyPath' ||
+      path === 'tls.trustStorePath' ||
+      path === 'tls.keyStorePath'
+    ) {
+      return CERT_PICK_FILTERS;
+    }
+    return undefined;
+  }
+
+  function browseButtonLabel(path: string): string {
+    if (activeBrowsingPath !== path) return 'Browse';
+    return browseOpening ? 'Opening…' : 'Cancel…';
+  }
+
+  function browseLockedOther(path: string): boolean {
+    return activeBrowsingPath !== null && activeBrowsingPath !== path;
+  }
+
+  function isEmptyRequiredValue(value: unknown): boolean {
+    if (value === undefined || value === null) return true;
+    if (typeof value === 'number') return Number.isNaN(value);
+    return String(value).trim() === '';
+  }
+
+  /** Soft-required Name + visible FieldDescriptor.required (+ Astra bundle). */
+  function missingRequiredMessage(): string | null {
+    if (isEmptyRequiredValue(draft.name)) return 'Name is required.';
+    for (const field of draftFields) {
+      if (!field.required || !renderField(field)) continue;
+      if (isEmptyRequiredValue(draftGet(field.path))) {
+        return `${field.label} is required.`;
+      }
+    }
+    if (draft.engine === 'cassandra' && draft.target === 'astra') {
+      if (isEmptyRequiredValue(draft.secureConnectBundlePath)) {
+        return 'Secure connect bundle is required.';
+      }
+    }
+    return null;
+  }
+
   async function browsePath(path: string) {
-    if (browsing) {
-      // Buttons stay enabled as "Cancel…" so a hung pickFile never locks the form forever.
-      resetBrowsingLock(
-        'Browse cancelled. If a file dialog is still open, close it or Alt+Tab to it. Or paste an absolute path.',
-      );
+    if (activeBrowsingPath !== null) {
+      // Same-field second click cancels the lock (hung dialog behind Chrome).
+      if (activeBrowsingPath === path) {
+        resetBrowsingLock(
+          'Browse cancelled. If a file dialog is still open, close it or Alt+Tab to it. Or paste an absolute path.',
+        );
+      }
       return;
     }
     const gen = ++browseGeneration;
-    browsing = true;
+    activeBrowsingPath = path;
+    browseOpening = true;
     browseMsg = '';
     browseMsgIsError = false;
     let timedOut = false;
@@ -243,12 +458,19 @@
           'This helper build is missing Browse (no pickFile). Re-run Install Detour Helper from the OS pack root (Reload alone is not enough), then Start again. Or paste an absolute path.';
         return;
       }
+      if (gen !== browseGeneration) return;
+      browseOpening = false;
       try {
-        const result = (await rpc!.request('pickFile', { title: 'Select file' })) as {
+        const filters = pickFileFiltersFor(path);
+        const result = (await rpc!.request('pickFile', {
+          title: 'Select file',
+          ...(filters ? { filters } : {}),
+        })) as {
           path?: string | null;
         };
         if (gen !== browseGeneration || timedOut) return;
         if (result.path) {
+          // Keep host path as returned (no slash normalization).
           draftSet(path, result.path);
           browseMsg = '';
           if (path === 'tls.keyPath') {
@@ -274,7 +496,8 @@
     } finally {
       clearTimeout(timeoutId);
       if (gen === browseGeneration) {
-        browsing = false;
+        activeBrowsingPath = null;
+        browseOpening = false;
       }
     }
   }
@@ -381,12 +604,6 @@
     await then();
   }
 
-  function friendlyHelperError(msg: string): string {
-    if (/connectNative missing/i.test(msg)) {
-      return 'Chrome needs a one-time reload after enabling the database helper.';
-    }
-    return msg;
-  }
 
   const draftFields = $derived(fieldsFor(draft.engine));
   const draftVariants = $derived(variantsFor(draft.engine === 'mysql' || draft.engine === 'mariadb' ? 'mysql' : draft.engine === 'elasticsearch' || draft.engine === 'opensearch' ? 'elasticsearch' : draft.engine));
@@ -403,12 +620,15 @@
       );
     }),
   );
-  /** Engines advertised by the helper; empty before handshake → show all labels (form still usable offline). */
   const availableEngines = $derived.by(() => {
     const fromCap = enginesFromCapabilities(helperCapabilities);
-    if (fromCap.length === 0) return Object.entries(ENGINE_LABELS);
-    return Object.entries(ENGINE_LABELS).filter(([id]) => fromCap.includes(id));
+    const entries =
+      fromCap.length === 0
+        ? Object.entries(ENGINE_LABELS)
+        : Object.entries(ENGINE_LABELS).filter(([id]) => fromCap.includes(id));
+    return entries.sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: 'base' }));
   });
+  const environmentOptions = ENV_OPTIONS;
   const hasSshCap = $derived(
     helperCapabilities.length === 0 || helperCapabilities.includes('ssh'),
   );
@@ -432,6 +652,7 @@
   async function startHelper(): Promise<boolean> {
     helperStatus = 'connecting';
     helperError = '';
+    helperMenuOpen = false;
     const ok = await ensurePermission();
     if (!ok) {
       helperStatus = 'error';
@@ -505,6 +726,7 @@
     helperVersion = '';
     helperCapabilities = [];
     helperOpen = 0;
+    helperMenuOpen = false;
   }
 
   async function restartHelper() {
@@ -516,7 +738,6 @@
     await saveDbClientState(area, dbState);
   }
 
-  /** Write connection password + optional keychain kinds (never into chrome.storage). */
   async function storeDraftSecrets(secretAccount: string) {
     if (!rpc) return;
     if (passwordDraft) {
@@ -542,6 +763,14 @@
     }
   }
 
+
+  function friendlyHelperError(msg: string): string {
+    if (/connectNative missing/i.test(msg)) {
+      return 'Chrome needs a one-time reload after enabling the database helper.';
+    }
+    return msg;
+  }
+
   async function connectSelected(): Promise<boolean> {
     if (!selected) return false;
     if (helperStatus !== 'ready') {
@@ -561,75 +790,365 @@
     return true;
   }
 
+  async function applySessionKeyspace(connId: string, keyspace: string | null) {
+    if (!rpc) return;
+    try {
+      await rpc.request('setKeyspace', { connectionId: connId, keyspace });
+    } catch {
+      /* older helpers without setKeyspace — unqualified SELECTs may fail until reconnect */
+    }
+  }
+
+  function nodeKeyspace(node: ExplorerNode): string {
+    return String(
+      node.meta?.keyspace ?? node.meta?.database ?? node.meta?.schema ?? activeKeyspace ?? '',
+    );
+  }
+
+  function listPathForContainer(node: ExplorerNode): Record<string, unknown> {
+    if (node.kind === 'keyspace') return { kind: 'keyspace', keyspace: node.label };
+    if (node.kind === 'database') return { kind: 'database', database: node.label };
+    if (node.kind === 'schema') return { kind: 'schema', schema: node.label };
+    const ks = nodeKeyspace(node);
+    return {
+      kind: node.kind === 'view' ? 'table' : node.kind,
+      keyspace: ks,
+      database: ks,
+      schema: ks,
+      name: node.label,
+    };
+  }
+
+  async function ensureChildren(parent: ExplorerNode) {
+    if (!selected || !rpc) return;
+    if (childrenByParentId[parent.id]) return;
+    bumpIdle();
+    const kids = (await rpc.request('listObjects', {
+      connectionId: selected.id,
+      path: listPathForContainer(parent),
+    })) as ExplorerNode[];
+    childrenByParentId = { ...childrenByParentId, [parent.id]: kids };
+  }
+
+  async function ensureColumns(node: ExplorerNode) {
+    if (!selected || !rpc) return;
+    if (columnsByTableId[node.id]) return;
+    bumpIdle();
+    const ks = nodeKeyspace(node);
+    const desc = (await rpc.request('describe', {
+      connectionId: selected.id,
+      ref: {
+        kind: node.kind === 'view' ? 'table' : node.kind === 'materialized_view' ? 'table' : node.kind,
+        keyspace: ks,
+        database: ks,
+        schema: ks,
+        name: node.label,
+      },
+    })) as { ddl?: string; columns?: ColumnInfo[] };
+    columnsByTableId = { ...columnsByTableId, [node.id]: desc.columns ?? [] };
+    if (selectedTableId === node.id) {
+      ddlPreview = desc.ddl ?? '';
+    }
+  }
+
   async function refreshExplorer() {
     if (!selected || !(await connectSelected())) return;
     bumpIdle();
-    explorer = (await rpc!.request('listObjects', { connectionId: selected.id, path: { kind: 'root' } })) as typeof explorer;
+    childrenByParentId = {};
+    columnsByTableId = {};
+    selectedTableId = null;
+    ddlPreview = '';
+    showDdl = false;
+
+    rootKeyspaces = (await rpc!.request('listObjects', {
+      connectionId: selected.id,
+      path: { kind: 'root' },
+    })) as ExplorerNode[];
+
+    // Seed active keyspace from connection metadata when unset
+    const map = ui.activeKeyspaceByConnectionId ?? {};
+    const hasExplicit = Object.prototype.hasOwnProperty.call(map, selected.id);
+    let ks = activeKeyspaceFor(selected.id);
+    if (!hasExplicit) {
+      const seed = (selected.keyspace || selected.database || '').trim();
+      if (seed) {
+        setActiveKeyspace(selected.id, seed);
+        ks = seed;
+      }
+    }
+
+    await applySessionKeyspace(selected.id, ks);
+
+    if (ks) {
+      const ksNode =
+        rootKeyspaces.find((n) => n.label === ks) ??
+        ({
+          id: `ks:${ks}`,
+          label: ks,
+          kind: 'keyspace',
+          meta: { keyspace: ks },
+        } satisfies ExplorerNode);
+      if (!rootKeyspaces.some((n) => n.label === ks)) {
+        rootKeyspaces = [...rootKeyspaces, ksNode];
+      }
+      await ensureChildren(ksNode);
+    }
   }
 
-  async function openNode(node: { id: string; label: string; kind: string; meta?: Record<string, unknown> }) {
+  async function onActiveKeyspaceChange(ks: string | null) {
+    if (!selectedId) return;
+    setActiveKeyspace(selectedId, ks);
+    selectedTableId = null;
+    ddlPreview = '';
+    showDdl = false;
+    if (!(await connectSelected())) return;
+    await applySessionKeyspace(selectedId, ks);
+    if (ks) {
+      const ksNode =
+        rootKeyspaces.find((n) => n.label === ks) ??
+        ({ id: `ks:${ks}`, label: ks, kind: 'keyspace', meta: { keyspace: ks } } satisfies ExplorerNode);
+      await ensureChildren(ksNode);
+    }
+  }
+
+  async function onUseKeyspace(ks: string) {
+    await onActiveKeyspaceChange(ks);
+  }
+
+  async function onToggleExpand(nodeId: string) {
+    if (!selectedId || !selected || !rpc) return;
+    const current = expandedIdsFor(selectedId);
+    const open = current.includes(nodeId);
+    if (open) {
+      setExpandedIds(
+        selectedId,
+        current.filter((id) => id !== nodeId),
+      );
+      return;
+    }
+    setExpandedIds(selectedId, [...current, nodeId]);
+
+    const ksNode = rootKeyspaces.find((n) => n.id === nodeId);
+    if (ksNode) {
+      await ensureChildren(ksNode);
+      return;
+    }
+    // Table / MV under some parent
+    for (const kids of Object.values(childrenByParentId)) {
+      const node = kids.find((n) => n.id === nodeId);
+      if (node && (node.kind === 'table' || node.kind === 'materialized_view' || node.kind === 'view')) {
+        selectedTableId = node.id;
+        await ensureColumns(node);
+        const desc = columnsByTableId[node.id];
+        if (desc) {
+          /* columns cached */
+        }
+        const full = (await rpc.request('describe', {
+          connectionId: selected.id,
+          ref: {
+            kind: node.kind === 'view' || node.kind === 'materialized_view' ? 'table' : node.kind,
+            keyspace: nodeKeyspace(node),
+            name: node.label,
+          },
+        })) as { ddl?: string; columns?: ColumnInfo[] };
+        columnsByTableId = { ...columnsByTableId, [node.id]: full.columns ?? [] };
+        ddlPreview = full.ddl ?? '';
+        showDdl = false;
+        return;
+      }
+    }
+  }
+
+  async function onExplorerNodeClick(node: ExplorerNode) {
     if (!selected || !rpc) return;
     bumpIdle();
-    if (node.kind === 'keyspace') {
-      explorer = (await rpc.request('listObjects', {
-        connectionId: selected.id,
-        path: { kind: 'keyspace', keyspace: node.label },
-      })) as typeof explorer;
-      const desc = (await rpc.request('describe', {
-        connectionId: selected.id,
-        ref: { kind: 'keyspace', keyspace: node.label },
-      })) as { ddl?: string };
-      ddlPreview = desc.ddl ?? '';
+    if (node.kind === 'keyspace' || node.kind === 'database' || node.kind === 'schema') {
+      // Primary click on keyspace name activates context (plan); chevron still expands separately.
+      await onActiveKeyspaceChange(node.label);
       return;
     }
-    if (node.kind === 'table' || node.kind === 'materialized_view') {
-      const ks = String(node.meta?.keyspace ?? '');
+    if (node.kind === 'table' || node.kind === 'materialized_view' || node.kind === 'view') {
+      selectedTableId = node.id;
+      await ensureColumns(node);
       const desc = (await rpc.request('describe', {
         connectionId: selected.id,
-        ref: { kind: node.kind, keyspace: ks, name: node.label },
-      })) as { ddl?: string };
+        ref: {
+          kind: node.kind === 'view' || node.kind === 'materialized_view' ? 'table' : node.kind,
+          keyspace: nodeKeyspace(node),
+          name: node.label,
+        },
+      })) as { ddl?: string; columns?: ColumnInfo[] };
+      columnsByTableId = { ...columnsByTableId, [node.id]: desc.columns ?? [] };
       ddlPreview = desc.ddl ?? '';
-      cql = `SELECT * FROM ${ks}.${node.label} LIMIT 100;`;
+      showDdl = false;
+      // Expand columns under the table
+      const cur = expandedIdsFor(selected.id);
+      if (!cur.includes(node.id)) setExpandedIds(selected.id, [...cur, node.id]);
     }
   }
 
-  async function runCql(nextPage = false) {
-    if (!selected) return;
-    const statement = nextPage ? lastStatement : cql.trim();
-    if (!statement) return;
+  function onExplorerNodeDblClick(node: ExplorerNode, shiftKey: boolean) {
+    if (node.kind !== 'table' && node.kind !== 'materialized_view' && node.kind !== 'view') return;
+    const ks = nodeKeyspace(node);
+    const activeKs = activeKeyspaceFor(selectedId);
+    ensureQueryTabs();
+    if (shiftKey) {
+      const tab = newTabWithSelect(ks, node.label, selectedId, undefined, activeKs);
+      const tabs = [...(dbState.queryTabs ?? []), tab].slice(0, 20);
+      dbState = { ...dbState, queryTabs: tabs, activeQueryTabId: tab.id };
+      void persist();
+      return;
+    }
+    const active = dbState.queryTabs?.find((t) => t.id === dbState.activeQueryTabId);
+    const body = active?.body ?? '';
+    const { body: next } = appendSelectIfNeeded(body, ks, node.label, activeKs);
+    updateActiveTab({ body: next, connectionId: active?.connectionId ?? selectedId });
+    void persist();
+  }
 
-    const env = selected.environment;
-    const readOnly = defaultReadOnly(env, selected.readOnly);
-    const unlocked = Date.now() < unlockUntil;
-    if (isReadOnlyBlocked(statement, readOnly && !unlocked)) {
-      messages = ['Connection is read-only. Unlock writes for production (timed) or change the connection.'];
+  function onColumnClick(name: string) {
+    if (codeEditor) {
+      codeEditor.insertAtCursor(name);
+      return;
+    }
+    const active = dbState.queryTabs?.find((t) => t.id === dbState.activeQueryTabId);
+    if (!active) return;
+    updateActiveTab({ body: active.body + name });
+  }
+
+  let batchAbort = false;
+
+  async function runQuery(nextPage = false) {
+    if (!selected) return;
+    ensureQueryTabs();
+    const tabId = dbState.activeQueryTabId;
+    if (!tabId) return;
+    const tab = dbState.queryTabs?.find((t) => t.id === tabId);
+    if (!tab) return;
+
+    if (nextPage) {
+      const statement = tab.resultSets?.[tab.activeResultIndex ?? 0]?.lastStatement ?? lastStatement;
+      if (!statement) return;
+      const runConnId = tab.connectionId || selected.id;
+      const runConn = dbState.connections.find((c) => c.id === runConnId) ?? selected;
+      await executeOne(statement, true, tabId, runConn, tab.activeResultIndex ?? 0);
       return;
     }
 
-    const verdict = classifyCql(statement);
-    if ((env === 'production' || verdict.level !== 'safe') && verdict.level !== 'safe' && !nextPage) {
-      confirmExpected = verdict.objectName ?? selected.name;
+    const source = codeEditor?.getValue() ?? tab.body;
+    const selection = codeEditor?.getSelection() ?? '';
+    const plan = resolveRunPlan(source, selection);
+    if (plan.statements.length === 0) return;
+    if (!tab.connectionId) updateActiveTab({ connectionId: selectedId });
+    await runStatements(plan.statements, tabId);
+  }
+
+  /** Gutter Run: one statement at character offset. */
+  async function runAtOffset(offset: number) {
+    if (!selected) return;
+    ensureQueryTabs();
+    const tabId = dbState.activeQueryTabId;
+    if (!tabId) return;
+    const tab = dbState.queryTabs?.find((t) => t.id === tabId);
+    if (!tab) return;
+    const source = codeEditor?.getValue() ?? tab.body;
+    const span = statementAtOffset(source, offset);
+    if (!span?.text) return;
+    if (!tab.connectionId) updateActiveTab({ connectionId: selectedId });
+    await runStatements([span.text], tabId);
+  }
+
+  async function runStatements(statements: string[], tabId: string) {
+    if (!selected || statements.length === 0) return;
+    const tab = dbState.queryTabs?.find((t) => t.id === tabId);
+    if (!tab) return;
+    const runConnId = tab.connectionId || selected.id;
+    const runConn = dbState.connections.find((c) => c.id === runConnId) ?? selected;
+    const env = runConn.environment;
+    const readOnly = defaultReadOnly(env, runConn.readOnly);
+    const unlocked = Date.now() < unlockUntil;
+
+    for (const statement of statements) {
+      if (isReadOnlyBlocked(statement, readOnly && !unlocked)) {
+        patchTab(tabId, {
+          resultSets: [],
+          activeResultIndex: 0,
+          batchMessages: [
+            'Connection is read-only. Unlock writes for production (timed) or change the connection.',
+          ],
+        });
+        resultsPane = 'messages';
+        void persist();
+        return;
+      }
+    }
+
+    const needsConfirm = statements.some((statement) => {
+      const verdict = classifyCql(statement);
+      return verdict.level !== 'safe';
+    });
+    if (needsConfirm) {
+      const firstUnsafe = statements.find((s) => classifyCql(s).level !== 'safe')!;
+      const verdict = classifyCql(firstUnsafe);
+      confirmExpected = verdict.objectName ?? runConn.name;
       confirmTyped = '';
       confirmOpen = true;
-      pendingRun = () => executeNow(statement, false);
+      pendingRun = () => executeBatch(statements, tabId, runConn);
       return;
     }
-    await executeNow(statement, nextPage);
+    await executeBatch(statements, tabId, runConn);
   }
 
-  async function executeNow(statement: string, nextPage: boolean) {
-    if (!(await connectSelected()) || !rpc || !selected) return;
+  async function executeBatch(statements: string[], tabId: string, runConn: DbConnection) {
+    selectedId = runConn.id;
+    if (!(await connectSelected()) || !rpc) return;
+    batchAbort = false;
     running = true;
-    messages = [];
-    warnings = [];
     bumpIdle();
+    patchTab(tabId, { resultSets: [], activeResultIndex: 0, batchMessages: [] });
+    resultsPane = 'results';
+
+    try {
+      for (let i = 0; i < statements.length; i++) {
+        if (batchAbort) break;
+        const statement = statements[i]!;
+        const ok = await executeOne(statement, false, tabId, runConn, -1);
+        if (!ok) break;
+      }
+    } finally {
+      running = false;
+      activeRequestId = null;
+      await persist();
+    }
+  }
+
+  /** Returns false on error / abort (stops batch). nextPageIndex is resultSets index, or -1 to append. */
+  async function executeOne(
+    statement: string,
+    nextPage: boolean,
+    tabId: string,
+    runConn: DbConnection,
+    resultIndex: number,
+  ): Promise<boolean> {
+    selectedId = runConn.id;
+    if (!(await connectSelected()) || !rpc) return false;
+    const requestId = newId('req');
+    activeRequestId = requestId;
+    running = true;
+    bumpIdle();
+    const tabBefore = dbState.queryTabs?.find((t) => t.id === tabId);
+    const pageTok =
+      nextPage && resultIndex >= 0
+        ? (tabBefore?.resultSets?.[resultIndex]?.pageToken ?? null)
+        : null;
     try {
       const result = (await rpc.request(nextPage ? 'fetchPage' : 'execute', {
-        connectionId: selected.id,
+        connectionId: runConn.id,
         statement,
         params: [],
-        pageToken: nextPage ? pageToken : null,
-        options: { pageSize, consistency, tracing },
+        pageToken: pageTok,
+        requestId,
+        options: { pageSize, consistency, tracing, requestId },
       })) as {
         columns: string[];
         rows: unknown[][];
@@ -638,19 +1157,36 @@
         messages?: string[];
         warnings?: string[];
       };
-      resultColumns = result.columns;
-      resultRows = nextPage ? [...resultRows, ...result.rows] : result.rows;
-      pageToken = result.pageToken ?? null;
-      lastStatement = statement;
-      timingMs = result.timingMs;
-      messages = result.messages ?? [];
-      warnings = result.warnings ?? [];
+      if (batchAbort) return false;
+
+      const tab = dbState.queryTabs?.find((t) => t.id === tabId);
+      const sets = [...(tab?.resultSets ?? [])];
+      const entry: DbQueryTabResult = emptyTabResult({
+        columns: result.columns,
+        rows: nextPage && resultIndex >= 0 ? [...(sets[resultIndex]?.rows ?? []), ...result.rows] : result.rows,
+        pageToken: result.pageToken ?? null,
+        timingMs: result.timingMs,
+        messages: result.messages ?? [],
+        warnings: result.warnings ?? [],
+        lastStatement: statement,
+      });
+      let activeIdx: number;
+      if (nextPage && resultIndex >= 0) {
+        sets[resultIndex] = entry;
+        activeIdx = resultIndex;
+      } else {
+        sets.push(entry);
+        activeIdx = sets.length - 1;
+      }
+      patchTab(tabId, { resultSets: sets, activeResultIndex: activeIdx });
+      if ((result.warnings?.length ?? 0) > 0) resultsPane = 'messages';
+      else resultsPane = 'results';
       dbState = {
         ...dbState,
         history: [
           {
             id: newId('hist'),
-            connectionId: selected.id,
+            connectionId: runConn.id,
             statement,
             at: Date.now(),
             ok: true,
@@ -659,29 +1195,308 @@
           ...dbState.history,
         ].slice(0, 200),
       };
-      await persist();
+      return true;
     } catch (e) {
-      messages = [e instanceof Error ? e.message : String(e)];
+      const msg = e instanceof Error ? e.message : String(e);
+      const tab = dbState.queryTabs?.find((t) => t.id === tabId);
+      const prior = tab?.batchMessages ?? [];
+      patchTab(tabId, {
+        batchMessages: [...prior, msg],
+        resultSets: tab?.resultSets ?? [],
+        activeResultIndex: tab?.activeResultIndex ?? 0,
+      });
+      resultsPane = 'messages';
       dbState = {
         ...dbState,
         history: [
           {
             id: newId('hist'),
-            connectionId: selected.id,
+            connectionId: runConn.id,
             statement,
             at: Date.now(),
             ok: false,
-            error: messages[0],
+            error: msg,
           },
           ...dbState.history,
         ].slice(0, 200),
       };
-      await persist();
+      return false;
     } finally {
-      running = false;
+      if (!nextPage) {
+        /* batch loop owns running flag */
+      } else {
+        running = false;
+        activeRequestId = null;
+        await persist();
+      }
+      activeRequestId = null;
     }
   }
 
+  async function stopQuery() {
+    batchAbort = true;
+    const req = activeRequestId;
+    running = false;
+    if (!req || !rpc || !selected) {
+      activeRequestId = null;
+      return;
+    }
+    try {
+      if (canCancel) {
+        await rpc.request('cancel', { connectionId: selected.id, requestId: req });
+      }
+    } catch {
+      /* local abort still clears running */
+    }
+    activeRequestId = null;
+  }
+
+  function saveActiveToCollection(collectionId?: string, folderId?: string | null) {
+    ensureQueryTabs();
+    const tab = activeTab;
+    if (!tab) return;
+    let collections = dbState.collections;
+    if (collections.length === 0) {
+      const colId = newId('col');
+      collections = [
+        {
+          id: colId,
+          name: 'My queries',
+          queries: [],
+          folders: [],
+        },
+      ];
+      patchUi({ collectionsExpandedIds: [colId] });
+    }
+    const col = collections.find((c) => c.id === collectionId) ?? collections[0]!;
+    const loc =
+      collectionId !== undefined && folderId !== undefined
+        ? { collectionId: col.id, folderId }
+        : defaultSaveLocation(col);
+    // If an existing saved query lives elsewhere, upsert there instead of duplicating.
+    const existing = tab.collectionQueryId
+      ? findQueryInCollections(collections, tab.collectionQueryId)
+      : null;
+    const target = existing
+      ? { collectionId: existing.collection.id, folderId: existing.folderId }
+      : loc;
+    const q = {
+      id: tab.collectionQueryId || newId('q'),
+      name: tab.name,
+      body: codeEditor?.getValue() ?? tab.body,
+      description: '',
+      tags: [] as string[],
+      defaultConnectionId: tab.connectionId ?? selectedId,
+    };
+    collections = upsertQueryAt(collections, target, q);
+    updateActiveTab({ collectionQueryId: q.id, name: q.name });
+    dbState = { ...dbState, collections };
+    void persist();
+  }
+
+  function openCollectionQuery(
+    _collectionId: string,
+    _folderId: string | null,
+    queryId: string,
+  ) {
+    const found = findQueryInCollections(dbState.collections, queryId);
+    if (!found) return;
+    newTab({
+      name: found.query.name,
+      body: found.query.body,
+      connectionId: found.query.defaultConnectionId ?? selectedId,
+      collectionQueryId: found.query.id,
+    });
+  }
+
+  function renameCollection(collectionId: string, name: string) {
+    dbState = {
+      ...dbState,
+      collections: dbState.collections.map((c) => (c.id === collectionId ? { ...c, name } : c)),
+    };
+    void persist();
+  }
+
+  function renameFolder(collectionId: string, folderId: string, name: string) {
+    dbState = {
+      ...dbState,
+      collections: dbState.collections.map((c) =>
+        c.id === collectionId
+          ? {
+              ...c,
+              folders: (c.folders ?? []).map((f) => (f.id === folderId ? { ...f, name } : f)),
+            }
+          : c,
+      ),
+    };
+    void persist();
+  }
+
+  function renameQuery(
+    _collectionId: string,
+    _folderId: string | null,
+    queryId: string,
+    name: string,
+  ) {
+    dbState = {
+      ...dbState,
+      collections: renameQueryInCollections(dbState.collections, queryId, name),
+      queryTabs: (dbState.queryTabs ?? []).map((t) =>
+        t.collectionQueryId === queryId ? { ...t, name } : t,
+      ),
+    };
+    void persist();
+  }
+
+  function applyDeleteCollection(collectionId: string) {
+    const col = dbState.collections.find((c) => c.id === collectionId);
+    if (!col) return;
+    const deleted = new Set(collectQueryIdsInCollection(col));
+    dbState = {
+      ...dbState,
+      collections: dbState.collections.filter((c) => c.id !== collectionId),
+      queryTabs: clearCollectionQueryIds(dbState.queryTabs ?? [], deleted),
+    };
+    void persist();
+  }
+
+  function deleteCollection(collectionId: string) {
+    const col = dbState.collections.find((c) => c.id === collectionId);
+    if (!col) return;
+    if (collectionIsNonEmpty(col)) {
+      deleteConfirm = {
+        title: 'Delete collection',
+        message: `Delete collection “${col.name}” and all folders/queries inside?`,
+        run: () => applyDeleteCollection(collectionId),
+      };
+      return;
+    }
+    applyDeleteCollection(collectionId);
+  }
+
+  function applyDeleteFolder(collectionId: string, folderId: string) {
+    const col = dbState.collections.find((c) => c.id === collectionId);
+    const folder = col?.folders?.find((f) => f.id === folderId);
+    if (!col || !folder) return;
+    const deleted = new Set(collectQueryIdsInFolder(folder));
+    dbState = {
+      ...dbState,
+      collections: dbState.collections.map((c) =>
+        c.id === collectionId
+          ? { ...c, folders: (c.folders ?? []).filter((f) => f.id !== folderId) }
+          : c,
+      ),
+      queryTabs: clearCollectionQueryIds(dbState.queryTabs ?? [], deleted),
+    };
+    void persist();
+  }
+
+  function deleteFolder(collectionId: string, folderId: string) {
+    const col = dbState.collections.find((c) => c.id === collectionId);
+    const folder = col?.folders?.find((f) => f.id === folderId);
+    if (!col || !folder) return;
+    if (folderIsNonEmpty(folder)) {
+      deleteConfirm = {
+        title: 'Delete folder',
+        message: `Delete folder “${folder.name}” and its queries?`,
+        run: () => applyDeleteFolder(collectionId, folderId),
+      };
+      return;
+    }
+    applyDeleteFolder(collectionId, folderId);
+  }
+
+  function applyDeleteQuery(queryId: string) {
+    const deleted = new Set([queryId]);
+    dbState = {
+      ...dbState,
+      collections: dbState.collections.map((c) => ({
+        ...c,
+        queries: (c.queries ?? []).filter((q) => q.id !== queryId),
+        folders: (c.folders ?? []).map((f) => ({
+          ...f,
+          queries: (f.queries ?? []).filter((q) => q.id !== queryId),
+        })),
+      })),
+      queryTabs: clearCollectionQueryIds(dbState.queryTabs ?? [], deleted),
+    };
+    void persist();
+  }
+
+  function deleteQuery(
+    _collectionId: string,
+    _folderId: string | null,
+    queryId: string,
+  ) {
+    const found = findQueryInCollections(dbState.collections, queryId);
+    if (!found) return;
+    deleteConfirm = {
+      title: 'Delete query',
+      message: `Delete query “${found.query.name}”?`,
+      run: () => applyDeleteQuery(queryId),
+    };
+  }
+
+  function newFolderInCollection(collectionId: string) {
+    const foldId = newId('fold');
+    dbState = {
+      ...dbState,
+      collections: dbState.collections.map((c) =>
+        c.id === collectionId
+          ? {
+              ...c,
+              folders: [...(c.folders ?? []), { id: foldId, name: 'New folder', queries: [] }],
+            }
+          : c,
+      ),
+    };
+    const expanded = new Set(collectionsExpandedIds);
+    expanded.add(collectionId);
+    expanded.add(foldId);
+    patchUi({ collectionsExpandedIds: [...expanded] });
+    void persist();
+  }
+
+  function newQueryInLocation(collectionId: string, folderId: string | null) {
+    ensureQueryTabs();
+    const tab = activeTab;
+    const q = {
+      id: newId('q'),
+      name: tab?.name?.trim() || 'New query',
+      body: codeEditor?.getValue() ?? tab?.body ?? '',
+      description: '',
+      tags: [] as string[],
+      defaultConnectionId: tab?.connectionId ?? selectedId,
+    };
+    dbState = {
+      ...dbState,
+      collections: upsertQueryAt(
+        dbState.collections,
+        { collectionId, folderId },
+        q,
+      ),
+    };
+    const expanded = new Set(collectionsExpandedIds);
+    expanded.add(collectionId);
+    if (folderId) expanded.add(folderId);
+    patchUi({ collectionsExpandedIds: [...expanded] });
+    void persist();
+  }
+
+  function moveCollectionQuery(
+    queryId: string,
+    toCollectionId: string,
+    toFolderId: string | null,
+  ) {
+    dbState = {
+      ...dbState,
+      collections: moveQuery(dbState.collections, queryId, {
+        collectionId: toCollectionId,
+        folderId: toFolderId,
+      }),
+    };
+    void persist();
+  }
   function openNew() {
     draft = blankConnection();
     passwordDraft = '';
@@ -699,6 +1514,7 @@
     browseMsgIsError = false;
     showImportUrl = false;
     portTouched = false;
+    dialogTab = 'main';
     formOpen = true;
   }
 
@@ -720,6 +1536,7 @@
     browseMsgIsError = false;
     showImportUrl = false;
     portTouched = true;
+    dialogTab = 'main';
     formOpen = true;
   }
 
@@ -750,6 +1567,12 @@
   }
 
   async function testDraft() {
+    const missing = missingRequiredMessage();
+    if (missing) {
+      testMsgKind = 'error';
+      testMsg = missing;
+      return;
+    }
     await ensureKeyPassBeforeConnect(async () => {
       testMsgKind = 'progress';
       testMsg = 'Testing…';
@@ -783,6 +1606,12 @@
 
   /** Save draft then connect; keep the modal open and surface errors in the footer on failure. */
   async function connectDraft() {
+    const missing = missingRequiredMessage();
+    if (missing) {
+      testMsgKind = 'error';
+      testMsg = missing;
+      return;
+    }
     await ensureKeyPassBeforeConnect(async () => {
       testMsgKind = 'progress';
       testMsg = 'Connecting…';
@@ -829,6 +1658,12 @@
   }
 
   async function saveDraft() {
+    const missing = missingRequiredMessage();
+    if (missing) {
+      testMsgKind = 'error';
+      testMsg = missing;
+      return;
+    }
     const env = draft.environment as DbEnvironment;
     const saved: DbConnection = {
       ...draft,
@@ -863,6 +1698,7 @@
     await persist();
   }
 
+
   function unlockWrites() {
     unlockUntil = Date.now() + 10 * 60 * 1000;
   }
@@ -876,13 +1712,30 @@
     URL.revokeObjectURL(a.href);
   }
 
-  function cellText(value: unknown): string {
-    if (value === null || value === undefined) return 'null';
-    if (typeof value === 'object') return JSON.stringify(value);
-    return String(value);
+  function openDrawer(mode: DrawerMode) {
+    drawer = mode;
+  }
+
+  function copyDrawerJson() {
+    if (!drawer) return;
+    void navigator.clipboard.writeText(JSON.stringify(drawer.payload, null, 2));
+  }
+
+  function onGlobalKey(e: KeyboardEvent) {
+    if (e.key !== 'Escape') return;
+    if (deleteConfirm) {
+      e.preventDefault();
+      deleteConfirm = null;
+      return;
+    }
+    if (!drawer && !formOpen && !confirmOpen && activeKeyspace) {
+      e.preventDefault();
+      void onActiveKeyspaceChange(null);
+    }
   }
 
   onMount(() => {
+    window.addEventListener('keydown', onGlobalKey);
     void (async () => {
       try {
         const info = await browser.runtime.getPlatformInfo();
@@ -907,11 +1760,15 @@
       }
       dbState = loaded.value;
       if (dbState.connections[0]) selectedId = dbState.connections[0].id;
+      ensureQueryTabs(dbState.connections[0]?.engine ?? 'cassandra');
+      await persist();
     })();
+    return () => window.removeEventListener('keydown', onGlobalKey);
   });
 
   onDestroy(() => stopHelper());
 </script>
+
 
 <section class="db" aria-labelledby="db-heading">
   <header class="head">
@@ -920,35 +1777,58 @@
       <p class="sub">Connect to local or production databases, run queries, and save them</p>
     </div>
     <div class="helper" role="status" aria-live="polite">
-      <span
-        class="pill"
-        class:ready={helperStatus === 'ready'}
-        class:missing={helperStatus === 'missing'}
-        class:err={helperStatus === 'error' || helperStatus === 'needs_reload'}
-      >
-        Helper: {helperStatus === 'ready'
-          ? 'Ready'
-          : helperStatus === 'missing'
-            ? 'Not installed'
-            : helperStatus === 'connecting'
-              ? 'Starting…'
-              : helperStatus === 'needs_reload'
-                ? 'Reload needed'
-                : helperStatus === 'error'
-                  ? 'Error'
-                  : helperStatus === 'mismatch'
-                    ? 'Update needed'
-                    : 'Stopped'}
-        {#if helperVersion}
-          · v{helperVersion}
-        {/if}
-        {#if helperStatus === 'ready'}
-          · {helperOpen} open
-        {/if}
-      </span>
-      <button type="button" class="btn" onclick={() => startHelper()}>Start</button>
-      <button type="button" class="btn" onclick={() => stopHelper()}>Stop helper</button>
-      <button type="button" class="btn" onclick={() => restartHelper()}>Restart helper</button>
+      {#if helperStatus === 'ready'}
+        <div class="pill-menu">
+          <button
+            type="button"
+            class="pill ready compact"
+            aria-haspopup="menu"
+            aria-expanded={helperMenuOpen}
+            title="Database helper is running{helperVersion ? ` · v${helperVersion}` : ''} · {helperOpen} open"
+            onclick={() => (helperMenuOpen = !helperMenuOpen)}
+          >
+            Ready
+          </button>
+          {#if helperMenuOpen}
+            <div class="menu" role="menu">
+              <button type="button" role="menuitem" onclick={() => stopHelper()}>Stop helper</button>
+              <button type="button" role="menuitem" onclick={() => restartHelper()}>Restart helper</button>
+            </div>
+          {/if}
+        </div>
+      {:else if helperStatus === 'stopped' || helperStatus === 'connecting'}
+        <div class="helper-start">
+          <button
+            type="button"
+            class="btn primary"
+            disabled={helperStatus === 'connecting'}
+            title="Local process Detour uses to reach your databases."
+            onclick={() => void startHelper()}
+          >
+            {helperStatus === 'connecting' ? 'Starting…' : 'Start database helper'}
+          </button>
+          <span class="helper-hint"
+            >{helperStatus === 'connecting'
+              ? 'Starting local helper…'
+              : 'Local process Detour uses to reach your databases.'}</span
+          >
+        </div>
+      {:else if helperStatus === 'missing'}
+        <span class="pill missing muted-pill">Helper not installed</span>
+      {:else}
+        <span
+          class="pill"
+          class:err={helperStatus === 'error' || helperStatus === 'needs_reload' || helperStatus === 'mismatch'}
+        >
+          {helperStatus === 'needs_reload'
+            ? 'Reload needed'
+            : helperStatus === 'mismatch'
+              ? 'Update needed'
+              : helperStatus === 'error'
+                ? 'Helper error'
+                : helperStatus}
+        </span>
+      {/if}
     </div>
   </header>
 
@@ -976,7 +1856,7 @@
         </li>
         <li>
           If Chrome asks for permission, allow it, then <strong>Reload</strong> the extension once, then click
-          <strong>Start</strong>. You should see Helper: Ready.
+          <strong>Start database helper</strong>. You should see Helper ready.
         </li>
       </ol>
       <p class="muted">Host name: <code>{HOST_NAME}</code>.</p>
@@ -1011,15 +1891,15 @@
     <p class="warn" role="alert">{helperError}</p>
   {/if}
 
-  <div class="layout">
-    <aside class="side">
-      <div class="side-tabs" role="tablist">
-        <button type="button" class:active={side === 'connections'} onclick={() => (side = 'connections')}>Connections</button>
-        <button type="button" class:active={side === 'collections'} onclick={() => (side = 'collections')}>Collections</button>
-        <button type="button" class:active={side === 'history'} onclick={() => (side = 'history')}>History</button>
-      </div>
-
+  <div class="layout" class:nav-collapsed={sidebarCollapsed}>
+    <DbSidebar
+      side={side}
+      collapsed={sidebarCollapsed}
+      onSide={setSide}
+      onToggleCollapse={() => patchUi({ sidebarCollapsed: !sidebarCollapsed })}
+    >
       {#if side === 'connections'}
+        <h2 class="panel-title">Connections</h2>
         <div class="side-tools">
           <input type="search" placeholder="Search connections…" bind:value={search} aria-label="Search connections" />
           <button type="button" class="btn primary" onclick={openNew}>New connection</button>
@@ -1034,12 +1914,15 @@
                 class:active={selectedId === conn.id}
                 class:prod={conn.environment === 'production'}
                 style={`--conn-color:${conn.color}`}
-                onclick={() => (selectedId = conn.id)}
+                onclick={() => {
+                  selectedId = conn.id;
+                  void refreshExplorer();
+                }}
               >
                 <span class="swatch" aria-hidden="true"></span>
                 <span class="meta">
                   <span class="name">{conn.name}</span>
-                  <span class="env">{conn.environment}{#if conn.group} · {conn.group}{/if}</span>
+                  <span class="env">{ENV_LABELS[conn.environment] ?? conn.environment}{#if conn.group} · {conn.group}{/if}</span>
                 </span>
               </button>
               <div class="row-actions">
@@ -1051,348 +1934,315 @@
           {/each}
         </ul>
       {:else if side === 'collections'}
-        <p class="muted pad">Query collections with folders. Export never includes passwords.</p>
+        <h2 class="panel-title">Collections</h2>
+        <p class="muted pad">Folder and file tree of saved queries. Export never includes passwords.</p>
         {#if dbState.collections.length === 0}
           <button
             type="button"
             class="btn"
             onclick={() => {
+              const colId = newId('col');
               dbState = {
                 ...dbState,
                 collections: [
                   {
-                    id: newId('col'),
+                    id: colId,
                     name: 'My queries',
-                    folders: [{ id: newId('fold'), name: 'General', queries: [] }],
+                    queries: [],
+                    folders: [],
                   },
                 ],
               };
+              patchUi({ collectionsExpandedIds: [colId] });
               void persist();
             }}
           >
-            Create collection
+            <Icon name="plus" size={14} /> Create collection
           </button>
         {:else}
-          <ul class="conn-list">
-            {#each dbState.collections as col (col.id)}
-              <li class="pad">
-                <strong>{col.name}</strong>
-                {#each col.folders as folder (folder.id)}
-                  <div class="muted">{folder.name}</div>
-                  {#each folder.queries as q (q.id)}
-                    <button type="button" class="btn text" onclick={() => (cql = q.body)}>{q.name}</button>
-                  {/each}
-                  <button
-                    type="button"
-                    class="btn text"
-                    onclick={() => {
-                      const q = {
-                        id: newId('q'),
-                        name: 'Saved query',
-                        body: cql,
-                        description: '',
-                        tags: [] as string[],
-                        defaultConnectionId: selectedId,
-                      };
-                      dbState = {
-                        ...dbState,
-                        collections: dbState.collections.map((c) =>
-                          c.id === col.id
-                            ? {
-                                ...c,
-                                folders: c.folders.map((f) =>
-                                  f.id === folder.id ? { ...f, queries: [...f.queries, q] } : f,
-                                ),
-                              }
-                            : c,
-                        ),
-                      };
-                      void persist();
-                    }}
-                  >
-                    Save current CQL here
-                  </button>
-                {/each}
+          <div class="pad collections-tree-wrap">
+            <DbCollectionsTree
+              collections={dbState.collections}
+              expandedIds={collectionsExpandedIds}
+              onToggleExpand={toggleCollectionExpand}
+              onOpenQuery={openCollectionQuery}
+              onRenameCollection={renameCollection}
+              onRenameFolder={renameFolder}
+              onRenameQuery={renameQuery}
+              onDeleteCollection={deleteCollection}
+              onDeleteFolder={deleteFolder}
+              onDeleteQuery={deleteQuery}
+              onNewFolder={newFolderInCollection}
+              onNewQuery={newQueryInLocation}
+              onMoveQuery={moveCollectionQuery}
+              onSaveHere={(cId, fId) => saveActiveToCollection(cId, fId)}
+            />
+          </div>
+        {/if}
+      {:else}
+        <h2 class="panel-title">History</h2>
+        {#if dbState.history.length === 0}
+          <p class="muted pad empty-hint">Run a query to build history.</p>
+        {:else}
+          <ul class="hist">
+            {#each dbState.history.slice(0, 50) as h (h.id)}
+              <li>
+                <button
+                  type="button"
+                  class="btn text"
+                  onclick={() => {
+                    newTab({ name: 'History', body: h.statement, connectionId: h.connectionId });
+                  }}
+                >
+                  <span class:fail={!h.ok}>{h.ok ? 'OK' : 'ERR'}</span>
+                  {h.statement.slice(0, 80)}
+                </button>
               </li>
             {/each}
           </ul>
         {/if}
-      {:else}
-        <ul class="hist">
-          {#each dbState.history.slice(0, 50) as h (h.id)}
-            <li>
-              <button type="button" class="btn text" onclick={() => (cql = h.statement)}>
-                <span class:fail={!h.ok}>{h.ok ? 'OK' : 'ERR'}</span>
-                {h.statement.slice(0, 80)}
-              </button>
-            </li>
-          {/each}
-        </ul>
       {/if}
-    </aside>
+    </DbSidebar>
 
     <div class="main">
       {#if selected}
         <div class="conn-bar" class:prod={selected.environment === 'production'} style={`--conn-color:${selected.color}`}>
           <strong>{selected.name}</strong>
-          <span class="env-label">{selected.environment}</span>
+          <span class="env-label">{ENV_LABELS[selected.environment] ?? selected.environment}</span>
           {#if defaultReadOnly(selected.environment, selected.readOnly)}
             <span class="ro">Read-only{#if Date.now() < unlockUntil} (unlocked){/if}</span>
             {#if Date.now() >= unlockUntil}
               <button type="button" class="btn" onclick={unlockWrites}>Unlock writes (10 min)</button>
             {/if}
           {/if}
-          <button type="button" class="btn" onclick={() => refreshExplorer()}>Refresh explorer</button>
         </div>
       {:else}
-        <p class="muted pad">Create a connection to browse keyspaces and run CQL.</p>
+        <p class="muted pad">Create a connection to browse schema and run queries.</p>
       {/if}
 
-      <div class="split">
-        <div class="explorer">
-          <h3>Explorer</h3>
-          <ul>
-            {#each explorer as node (node.id)}
-              <li>
-                <button type="button" class="btn text" onclick={() => openNode(node)}>
-                  {node.kind}: {node.label}
-                </button>
-              </li>
-            {/each}
-          </ul>
-          {#if ddlPreview}
-            <pre class="ddl">{ddlPreview}</pre>
-          {/if}
-        </div>
+      <div class="split" class:ex-collapsed={explorerCollapsed}>
+        <DbExplorer
+          collapsed={explorerCollapsed}
+          bind:search={explorerSearch}
+          keyspaces={rootKeyspaces}
+          activeKeyspace={activeKeyspace}
+          childrenByParentId={childrenByParentId}
+          columnsByTableId={columnsByTableId}
+          expandedIds={expandedIds}
+          selectedTableId={selectedTableId}
+          showDdl={showDdl}
+          ddl={ddlPreview}
+          onToggleCollapse={() => patchUi({ explorerCollapsed: !explorerCollapsed })}
+          onRefresh={() => void refreshExplorer()}
+          onActiveKeyspaceChange={(ks) => void onActiveKeyspaceChange(ks)}
+          onToggleExpand={(id) => void onToggleExpand(id)}
+          onUseKeyspace={(ks) => void onUseKeyspace(ks)}
+          onNodeClick={(n) => void onExplorerNodeClick(n)}
+          onNodeDblClick={onExplorerNodeDblClick}
+          onColumnClick={onColumnClick}
+          onToggleDdl={() => (showDdl = !showDdl)}
+        />
 
-        <div class="editor-pane">
-          <div class="side-tabs" role="tablist" style="margin-bottom:8px">
-            <button type="button" class:active={proPanel === 'query'} onclick={() => (proPanel = 'query')}>Query</button>
-            <button type="button" class:active={proPanel === 'pro'} onclick={() => (proPanel = 'pro')}>Pro tools</button>
-          </div>
-          <div class="run-bar">
-            {#if selected?.engine === 'cassandra'}
-              <label>
-                Consistency
-                <select bind:value={consistency}>
-                  {#each ['ONE', 'LOCAL_ONE', 'QUORUM', 'LOCAL_QUORUM', 'ALL'] as c}
-                    <option value={c}>{c}</option>
-                  {/each}
-                </select>
-              </label>
-              <label class="check"><input type="checkbox" bind:checked={tracing} /> Tracing</label>
-            {/if}
-            <label>
-              Page size
-              <input type="number" min="1" max="5000" bind:value={pageSize} />
-            </label>
-            <label class="check"><input type="checkbox" bind:checked={txMode} /> Transaction mode</label>
-            <button type="button" class="btn primary" disabled={running || !selected} onclick={() => runCql(false)}>
-              {running ? 'Running…' : 'Run'}
-            </button>
-            <button type="button" class="btn" disabled={!pageToken || running} onclick={() => runCql(true)}>
-              Load next page
-            </button>
-            <button
-              type="button"
-              class="btn"
-              disabled={!selected || running}
-              onclick={async () => {
-                if (!selected || !(await connectSelected()) || !rpc) return;
-                try {
-                  explainText = JSON.stringify(
-                    await rpc.request('explain', { connectionId: selected.id, statement: cql }),
-                    null,
-                    2,
-                  );
-                } catch (e) {
-                  explainText = e instanceof Error ? e.message : String(e);
-                }
-              }}
-            >
-              Explain
-            </button>
-            {#if txMode}
-              <button type="button" class="btn" onclick={async () => { if (selected && (await connectSelected())) await rpc!.request('beginTransaction', { connectionId: selected.id }); }}>Begin</button>
-              <button type="button" class="btn" onclick={async () => { if (selected && (await connectSelected())) await rpc!.request('commit', { connectionId: selected.id }); }}>Commit</button>
-              <button type="button" class="btn" onclick={async () => { if (selected && (await connectSelected())) await rpc!.request('rollback', { connectionId: selected.id }); }}>Rollback</button>
-            {/if}
-            <button
-              type="button"
-              class="btn"
-              disabled={!selected}
-              onclick={async () => {
-                if (!selected || !rpc) return;
-                const exported = (await rpc.request('exportData', {
-                  format: 'csv',
-                  columns: resultColumns,
-                  rows: resultRows,
-                  table: 'export',
-                })) as { text: string };
-                const blob = new Blob([exported.text], { type: 'text/csv' });
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = 'detour-export.csv';
-                a.click();
-              }}
-            >
-              Export CSV
-            </button>
-          </div>
-          <div class="cm">
-            <CodeEditor id="db-cql" label="CQL editor" language="text" value={cql} onchange={(v) => (cql = v)} />
-          </div>
-          {#if proPanel === 'pro'}
-            <div class="pro">
-              <h3>Pro tools</h3>
-              <button
-                type="button"
-                class="btn"
-                disabled={!selected}
-                onclick={async () => {
-                  if (!selected || !(await connectSelected()) || !rpc) return;
-                  const tables = explorer.filter((n) => n.kind === 'table').slice(0, 20).map((n) => ({
-                    id: n.id,
-                    label: n.label,
-                    schema: String(n.meta?.schema ?? n.meta?.database ?? 'public'),
-                    name: n.label,
-                  }));
-                  erText = JSON.stringify(await rpc.request('erDiagram', { connectionId: selected.id, tables }), null, 2);
-                }}
-              >
-                ER diagram from explorer tables
-              </button>
-              <button
-                type="button"
-                class="btn"
-                onclick={async () => {
-                  if (!rpc) await startHelper();
-                  designerDdl = String(
-                    (
-                      (await rpc!.request('tableDesigner', {
-                        action: 'create',
-                        schema: 'public',
-                        table: 'example',
-                        columns: [
-                          { name: 'id', type: 'int', primaryKey: true, nullable: false },
-                          { name: 'name', type: 'text' },
-                        ],
-                      })) as { ddl: string }
-                    ).ddl,
-                  );
-                }}
-              >
-                Table designer preview
-              </button>
-              <label>
-                Pending edits JSON
-                <textarea rows="4" bind:value={pendingEditsJson}></textarea>
-              </label>
-              <button
-                type="button"
-                class="btn"
-                disabled={!selected}
-                onclick={async () => {
-                  if (!selected || !(await connectSelected()) || !rpc) return;
-                  const edits = JSON.parse(pendingEditsJson);
-                  messages = [JSON.stringify(await rpc.request('applyEdits', { connectionId: selected.id, edits }))];
-                }}
-              >
-                Commit pending edits
-              </button>
-              <label>
-                Git sync folder
-                <input
-                  value={dbState.syncFolder ?? ''}
-                  oninput={(e) => {
-                    dbState = { ...dbState, syncFolder: e.currentTarget.value };
-                  }}
+        <div class="center">
+          <DbQueryWorkbench
+            tabs={queryTabs}
+            activeTabId={activeQueryTabId}
+            selectedConnectionId={selectedId}
+            connectionLabel={selected?.name ?? ''}
+            connectionColor={selected?.color ?? ''}
+            canCancel={canCancel}
+            running={running}
+            bind:consistency
+            bind:pageSize
+            bind:tracing
+            showCassandraOpts={selected?.engine === 'cassandra'}
+            onSelectTab={selectTab}
+            onCloseTab={closeTab}
+            onNewTab={() => newTab()}
+            onRun={() => void runQuery(false)}
+            onStop={() => void stopQuery()}
+            onSave={() => saveActiveToCollection()}
+            onOpenPro={() =>
+              openDrawer({
+                kind: 'pro',
+                title: 'Pro tools',
+                payload: { erText, designerDdl, compareText, explainText, syncFolder: dbState.syncFolder },
+              })}
+          >
+            {#snippet editor()}
+              {#if activeTab}
+                <CodeEditor
+                  id="db-cql-{activeTab.id}"
+                  label="Query editor"
+                  language="text"
+                  value={activeTab.body}
+                  runGutter={true}
+                  onRunAt={(offset) => void runAtOffset(offset)}
+                  onchange={(v) => updateActiveTab({ body: v })}
+                  bind:this={codeEditor}
                 />
-              </label>
-              <button
-                type="button"
-                class="btn"
-                onclick={async () => {
-                  if (!rpc) await startHelper();
-                  const folder = dbState.syncFolder;
-                  if (!folder) {
-                    messages = ['Set a sync folder path first.'];
-                    return;
-                  }
-                  await rpc!.request('syncCollections', {
-                    folder,
-                    direction: 'push',
-                    collections: dbState.collections,
-                  });
-                  await persist();
-                  messages = [`Pushed collections to ${folder}`];
-                }}
-              >
-                Push collections to folder
-              </button>
-              <button
-                type="button"
-                class="btn"
-                onclick={async () => {
-                  if (!rpc) await startHelper();
-                  const status = await rpc!.request('bridgeStatus', {});
-                  messages = [`Local Bridge: ${JSON.stringify(status)}`];
-                }}
-              >
-                Local Bridge status
-              </button>
-              {#if erText}<pre class="ddl">{erText}</pre>{/if}
-              {#if designerDdl}<pre class="ddl">{designerDdl}</pre>{/if}
-              {#if compareText}<pre class="ddl">{compareText}</pre>{/if}
-            </div>
-          {:else}
-            {#if warnings.length}
-              <ul class="warn-list">
-                {#each warnings as w}
-                  <li>{w}</li>
-                {/each}
-              </ul>
-            {/if}
-            {#if messages.length}
-              <p class="muted">{messages.join(' · ')}{#if timingMs !== undefined} · {timingMs} ms{/if}</p>
-            {/if}
-            {#if explainText}
-              <pre class="ddl">{explainText}</pre>
-            {/if}
-            <div class="grid-wrap">
-              <table class="grid">
-                <thead>
-                  <tr>
-                    {#each resultColumns as col}
-                      <th>{col}</th>
-                    {/each}
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each resultRows.slice(0, 500) as row, i (i)}
-                    <tr>
-                      {#each row as cell}
-                        <td><code>{cellText(cell)}</code></td>
-                      {/each}
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-              {#if resultRows.length > 500}
-                <p class="muted">Showing first 500 of {resultRows.length} loaded rows.</p>
               {/if}
-            </div>
-          {/if}
+            {/snippet}
+          </DbQueryWorkbench>
+
+          <DbResultsPane
+            resultSets={resultSets}
+            activeResultIndex={activeResultIndex}
+            batchMessages={batchMessages}
+            running={running}
+            bind:activePane={resultsPane}
+            onSelectResult={setActiveResultIndex}
+            onLoadMore={() => void runQuery(true)}
+            onRowClick={(row, index) =>
+              openDrawer({
+                kind: 'row',
+                title: `Row ${index + 1}`,
+                payload: Object.fromEntries((activeResult?.columns ?? []).map((c, i) => [c, row[i]])),
+              })}
+            onCellClick={(column, value, row, index) =>
+              openDrawer({
+                kind: 'cell',
+                title: `${column} · row ${index + 1}`,
+                payload: {
+                  column,
+                  value,
+                  preview: formatDbCell(value),
+                  row: Object.fromEntries((activeResult?.columns ?? []).map((c, i) => [c, row[i]])),
+                },
+              })}
+          />
         </div>
       </div>
     </div>
   </div>
 </section>
 
+<Drawer
+  open={drawer !== null}
+  title={drawer?.title ?? 'Details'}
+  docked={true}
+  onclose={() => (drawer = null)}
+>
+  {#snippet head()}
+    <button type="button" class="btn" onclick={copyDrawerJson}>Copy JSON</button>
+  {/snippet}
+  {#if drawer?.kind === 'pro'}
+    <div class="pro-drawer">
+      <button
+        type="button"
+        class="btn"
+        disabled={!selected}
+        onclick={async () => {
+          if (!selected || !(await connectSelected()) || !rpc) return;
+          const loaded = Object.values(childrenByParentId).flat();
+          const tables = loaded
+            .filter((n) => n.kind === 'table')
+            .slice(0, 20)
+            .map((n) => ({
+              id: n.id,
+              label: n.label,
+              schema: String(n.meta?.schema ?? n.meta?.database ?? n.meta?.keyspace ?? 'public'),
+              name: n.label,
+            }));
+          erText = JSON.stringify(await rpc.request('erDiagram', { connectionId: selected.id, tables }), null, 2);
+          openDrawer({ kind: 'pro', title: 'Pro tools', payload: { erText } });
+        }}
+      >
+        ER diagram from explorer tables
+      </button>
+      <button
+        type="button"
+        class="btn"
+        onclick={async () => {
+          if (!rpc) await startHelper();
+          designerDdl = String(
+            (
+              (await rpc!.request('tableDesigner', {
+                action: 'create',
+                schema: 'public',
+                table: 'example',
+                columns: [
+                  { name: 'id', type: 'int', primaryKey: true, nullable: false },
+                  { name: 'name', type: 'text' },
+                ],
+              })) as { ddl: string }
+            ).ddl,
+          );
+        }}
+      >
+        Table designer preview
+      </button>
+      <label>
+        Pending edits JSON
+        <textarea rows="4" bind:value={pendingEditsJson}></textarea>
+      </label>
+      <button
+        type="button"
+        class="btn"
+        disabled={!selected}
+        onclick={async () => {
+          if (!selected || !(await connectSelected()) || !rpc) return;
+          const edits = JSON.parse(pendingEditsJson);
+          openDrawer({
+            kind: 'result',
+            title: 'Apply edits',
+            payload: await rpc.request('applyEdits', { connectionId: selected.id, edits }),
+          });
+        }}
+      >
+        Commit pending edits
+      </button>
+      <label>
+        Git sync folder
+        <input
+          value={dbState.syncFolder ?? ''}
+          oninput={(e) => {
+            dbState = { ...dbState, syncFolder: e.currentTarget.value };
+            void persist();
+          }}
+        />
+      </label>
+      <button
+        type="button"
+        class="btn"
+        onclick={async () => {
+          if (!rpc) await startHelper();
+          const folder = dbState.syncFolder;
+          if (!folder) return;
+          await rpc!.request('syncCollections', {
+            folder,
+            direction: 'push',
+            collections: dbState.collections,
+          });
+          await persist();
+        }}
+      >
+        Push collections to folder
+      </button>
+      {#if erText}<pre class="ddl">{erText}</pre>{/if}
+      {#if designerDdl}<pre class="ddl">{designerDdl}</pre>{/if}
+      {#if explainText}<pre class="ddl">{explainText}</pre>{/if}
+    </div>
+  {:else if drawer}
+    <pre class="ddl">{JSON.stringify(drawer.payload, null, 2)}</pre>
+  {/if}
+</Drawer>
+
 {#if formOpen}
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="conn-form-title">
+  <div class="modal modal-conn" role="dialog" aria-modal="true" aria-labelledby="conn-form-title">
     <div class="modal-card conn-form">
-      <h3 id="conn-form-title">Connection</h3>
+      <header class="conn-dialog-head">
+        <h3 id="conn-form-title">Connection</h3>
+        <span class="engine-badge">{ENGINE_LABELS[draft.engine] ?? draft.engine}</span>
+      </header>
+      <div class="dialog-tabs" role="tablist">
+        <button type="button" class:active={dialogTab === 'main'} onclick={() => (dialogTab = 'main')}>Main</button>
+        <button type="button" class:active={dialogTab === 'ssl'} onclick={() => (dialogTab = 'ssl')}>SSL</button>
+        <button type="button" class:active={dialogTab === 'ssh'} onclick={() => (dialogTab = 'ssh')}>SSH</button>
+        <button type="button" class:active={dialogTab === 'advanced'} onclick={() => (dialogTab = 'advanced')}>Advanced</button>
+      </div>
+      <div class="conn-form-body">
+      <div class="dialog-panel" class:hidden={dialogTab !== 'main'}>
       <p class="muted">
         <button type="button" class="linkish" onclick={() => (showImportUrl = !showImportUrl)}>Import from URL</button>
       </p>
@@ -1404,8 +2254,14 @@
         <button type="button" class="btn" onclick={applyPasteUrl}>Fill from URL</button>
       {/if}
 
+      {#if dialogTab === 'main'}
       <div class="form-grid">
-        <label>Name <input bind:value={draft.name} /></label>
+        <label>
+          <span class="field-label"
+            >Name<span class="req" aria-hidden="true">*</span></span
+          >
+          <input bind:value={draft.name} aria-required="true" />
+        </label>
         <label>
           Database type
           <select
@@ -1423,7 +2279,7 @@
                 environment: draft.environment,
                 port: portTouched ? draft.port : next.port,
               };
-              cql = defaultStatement(engine);
+              ensureActiveTabBody(defaultStatement(engine));
             }}
           >
             {#each availableEngines as [id, label]}
@@ -1470,18 +2326,22 @@
           </label>
         {/if}
         <label>Group <input bind:value={draft.group} /></label>
-        <label>Color <input type="color" bind:value={draft.color} /></label>
+        <div class="color-field">
+          <span id="conn-color-label">Color</span>
+          <input type="color" bind:value={draft.color} aria-labelledby="conn-color-label" />
+        </div>
         <label>
           Environment
           <select bind:value={draft.environment}>
-            <option value="local">Local</option>
-            <option value="staging">Staging</option>
-            <option value="production">Production</option>
+            {#each environmentOptions as opt}
+              <option value={opt.value}>{opt.label}</option>
+            {/each}
           </select>
         </label>
       </div>
+      {/if}
 
-      <fieldset class="section">
+      {#if dialogTab === 'main'}<fieldset class="section">
         <legend>Basic</legend>
         <div class="form-grid">
           {#each draftFields.filter((f) => f.group === 'basic') as field}
@@ -1497,9 +2357,12 @@
                 </label>
               {:else if field.kind === 'select'}
                 <label>
-                  {field.label}
+                  <span class="field-label"
+                    >{field.label}{#if field.required}<span class="req" aria-hidden="true">*</span>{/if}</span
+                  >
                   <select
                     value={String(draftGet(field.path) ?? '')}
+                    aria-required={field.required ? 'true' : undefined}
                     onchange={(e) => draftSet(field.path, e.currentTarget.value)}
                   >
                     {#each field.options ?? [] as opt}
@@ -1509,31 +2372,42 @@
                 </label>
               {:else if field.kind === 'path'}
                 <label class="path-field">
-                  {field.label}
+                  <span class="field-label"
+                    >{field.label}{#if field.required}<span class="req" aria-hidden="true">*</span>{/if}</span
+                  >
                   <span class="path-row">
                     <input
                       value={String(draftGet(field.path) ?? '')}
                       placeholder={field.placeholder}
+                      aria-required={field.required ? 'true' : undefined}
                       oninput={(e) => draftSet(field.path, e.currentTarget.value)}
                     />
                     <button
                       type="button"
                       class="btn"
+                      disabled={browseLockedOther(field.path)}
                       onclick={() => browsePath(field.path)}
                     >
-                      {browsing ? 'Cancel…' : 'Browse'}
+                      {browseButtonLabel(field.path)}
                     </button>
-                    <button type="button" class="btn" onclick={() => draftSet(field.path, '')} aria-label="Clear"
-                      >Clear</button
+                    <button
+                      type="button"
+                      class="btn"
+                      disabled={browseLockedOther(field.path)}
+                      onclick={() => draftSet(field.path, '')}
+                      aria-label="Clear">Clear</button
                     >
                   </span>
                 </label>
               {:else if field.kind === 'number'}
                 <label>
-                  {field.label}
+                  <span class="field-label"
+                    >{field.label}{#if field.required}<span class="req" aria-hidden="true">*</span>{/if}</span
+                  >
                   <input
                     type="number"
                     value={draftGet(field.path) ?? ''}
+                    aria-required={field.required ? 'true' : undefined}
                     oninput={(e) => {
                       const n = e.currentTarget.value === '' ? undefined : Number(e.currentTarget.value);
                       draftSet(field.path, n);
@@ -1542,11 +2416,14 @@
                 </label>
               {:else}
                 <label>
-                  {field.label}
+                  <span class="field-label"
+                    >{field.label}{#if field.required}<span class="req" aria-hidden="true">*</span>{/if}</span
+                  >
                   <input
                     type="text"
                     value={String(draftGet(field.path) ?? '')}
                     placeholder={field.placeholder}
+                    aria-required={field.required ? 'true' : undefined}
                     oninput={(e) => draftSet(field.path, e.currentTarget.value)}
                   />
                 </label>
@@ -1558,15 +2435,18 @@
           {/if}
           {#if draft.engine === 'cassandra' && draft.target === 'astra'}
             <label class="path-field">
-              Secure connect bundle
+              <span class="field-label"
+                >Secure connect bundle<span class="req" aria-hidden="true">*</span></span
+              >
               <span class="path-row">
-                <input bind:value={draft.secureConnectBundlePath} />
+                <input bind:value={draft.secureConnectBundlePath} aria-required="true" />
                 <button
                   type="button"
                   class="btn"
+                  disabled={browseLockedOther('secureConnectBundlePath')}
                   onclick={() => browsePath('secureConnectBundlePath')}
                 >
-                  {browsing ? 'Cancel…' : 'Browse'}
+                  {browseButtonLabel('secureConnectBundlePath')}
                 </button>
               </span>
             </label>
@@ -1594,12 +2474,17 @@
         </div>
       </fieldset>
 
-      {#each ADVANCED_GROUPS as group}
+      {/if}
+</div>
+{#each ADVANCED_GROUPS as group}
+        {@const tabFor =
+          group === 'tls' ? 'ssl' : group === 'ssh' ? 'ssh' : 'advanced'}
         {@const groupAllowed =
           (group !== 'ssh' || hasSshCap) && (group !== 'proxy' || hasProxyCap)}
-        {@const groupFields = groupAllowed
-          ? draftFields.filter((f) => f.group === group && renderField(f))
-          : []}
+        {@const groupFields =
+          dialogTab === tabFor && groupAllowed
+            ? draftFields.filter((f) => f.group === group && renderField(f))
+            : []}
         {#if helperStatus === 'ready' && !groupAllowed && (group === 'ssh' || group === 'proxy')}
           <p class="muted cap-gate" role="note">
             {group === 'ssh' ? 'SSH tunnel' : 'Proxy'} options require a helper that advertises
@@ -1641,10 +2526,13 @@
                   </label>
                 {:else if field.kind === 'path'}
                   <label class="path-field">
-                    {field.label}
+                    <span class="field-label"
+                      >{field.label}{#if field.required}<span class="req" aria-hidden="true">*</span>{/if}</span
+                    >
                     <span class="path-row">
                       <input
                         value={String(draftGet(field.path) ?? '')}
+                        aria-required={field.required ? 'true' : undefined}
                         oninput={(e) => draftSet(field.path, e.currentTarget.value)}
                         onblur={() => {
                           if (field.path === 'tls.keyPath') {
@@ -1655,13 +2543,15 @@
                       <button
                         type="button"
                         class="btn"
+                        disabled={browseLockedOther(field.path)}
                         onclick={() => browsePath(field.path)}
                       >
-                        {browsing ? 'Cancel…' : 'Browse'}
+                        {browseButtonLabel(field.path)}
                       </button>
                       <button
                         type="button"
                         class="btn"
+                        disabled={browseLockedOther(field.path)}
                         onclick={() => {
                           draftSet(field.path, '');
                           if (field.path === 'tls.keyPath') {
@@ -1754,12 +2644,22 @@
           <p class="muted">{testMsg}</p>
         {/if}
       {/if}
+      </div>
       <div class="modal-actions">
-        <button type="button" class="btn" onclick={testDraft}>Test</button>
-        <button type="button" class="btn" onclick={() => void connectDraft()}>Connect</button>
+        <button type="button" class="btn" disabled={activeBrowsingPath !== null} onclick={testDraft}
+          >Test connection</button
+        >
         <span class="spacer"></span>
         <button type="button" class="btn" onclick={() => (formOpen = false)}>Cancel</button>
-        <button type="button" class="btn primary" onclick={saveDraft}>Save</button>
+        <button type="button" class="btn" disabled={activeBrowsingPath !== null} onclick={saveDraft}
+          >Save</button
+        >
+        <button
+          type="button"
+          class="btn primary"
+          disabled={activeBrowsingPath !== null}
+          onclick={() => void connectDraft()}>Save & connect</button
+        >
       </div>
     </div>
   </div>
@@ -1789,6 +2689,7 @@
   </div>
 {/if}
 
+
 {#if confirmOpen}
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
     <div class="modal-card">
@@ -1815,62 +2716,37 @@
   </div>
 {/if}
 
+{#if deleteConfirm}
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="delete-confirm-title">
+    <div class="modal-card">
+      <h3 id="delete-confirm-title">{deleteConfirm.title}</h3>
+      <p>{deleteConfirm.message}</p>
+      <div class="modal-actions">
+        <button type="button" class="btn" onclick={() => (deleteConfirm = null)}>Cancel</button>
+        <button
+          type="button"
+          class="btn danger"
+          onclick={() => {
+            const run = deleteConfirm?.run;
+            deleteConfirm = null;
+            run?.();
+          }}
+        >
+          Delete
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+
+
 <style>
-  .conn-form {
-    max-width: 42rem;
-    max-height: 90vh;
-    overflow: auto;
-  }
-  .form-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px 12px;
-  }
-  .form-grid > label,
-  .form-grid > .check,
-  .form-grid > .path-field {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-size: 0.85rem;
-  }
-  .path-row {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-  }
-  .path-row input {
-    flex: 1;
-  }
-  .section {
-    margin: 10px 0;
-    border: 1px solid var(--border, #333);
-    border-radius: 6px;
-    padding: 8px 10px;
-  }
-  .section.adv {
-    margin: 4px 0;
-    padding: 4px 8px;
-  }
-  .section.adv summary {
-    cursor: pointer;
-    font-weight: 600;
-    font-size: 0.9rem;
-  }
-  .linkish {
-    background: none;
-    border: none;
-    color: var(--accent, #5b8def);
-    cursor: pointer;
-    padding: 0;
-    text-decoration: underline;
-    font: inherit;
-  }
   .db {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    min-height: 60vh;
+    min-height: calc(100vh - 8rem);
   }
   .head {
     display: flex;
@@ -1890,11 +2766,17 @@
     gap: 8px;
     align-items: center;
   }
+  .pill-menu {
+    position: relative;
+  }
   .pill {
     border: 1px solid var(--border);
     border-radius: 999px;
     padding: 4px 10px;
     font-size: 0.85rem;
+    background: var(--surface-2, var(--surface));
+    color: inherit;
+    cursor: pointer;
   }
   .pill.ready {
     border-color: var(--ok, #3d9a6a);
@@ -1902,6 +2784,65 @@
   .pill.missing,
   .pill.err {
     border-color: var(--danger, #c44);
+  }
+  .pill.muted-pill {
+    cursor: default;
+    opacity: 0.85;
+  }
+  .helper-start {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    max-width: min(36rem, 85vw);
+  }
+  .helper-hint {
+    font-size: 0.75rem;
+    color: var(--muted);
+    max-width: 100%;
+    text-align: right;
+    white-space: nowrap;
+    overflow: visible;
+  }
+  @media (max-width: 28rem) {
+    .helper-hint {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
+  .pill.ready.compact {
+    padding: 4px 10px;
+    font-size: 0.8rem;
+  }
+  .collections-tree-wrap {
+    overflow: auto;
+    min-height: 0;
+  }
+  .menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 4px);
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    min-width: 10rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+  }
+  .menu button {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    padding: 8px 12px;
+    cursor: pointer;
+    font: inherit;
+  }
+  .menu button:hover {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
   }
   .setup {
     border: 1px solid var(--border);
@@ -1911,32 +2852,22 @@
   }
   .layout {
     display: grid;
-    grid-template-columns: minmax(220px, 280px) 1fr;
+    grid-template-columns: minmax(240px, 300px) 1fr;
     gap: 12px;
-    min-height: 480px;
-  }
-  .side {
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    display: flex;
-    flex-direction: column;
     min-height: 0;
-  }
-  .side-tabs {
-    display: flex;
-    border-bottom: 1px solid var(--border);
-  }
-  .side-tabs button {
     flex: 1;
-    background: transparent;
-    border: 0;
-    padding: 8px;
-    color: var(--muted);
-    cursor: pointer;
   }
-  .side-tabs button.active {
-    color: var(--fg);
-    box-shadow: inset 0 -2px 0 var(--accent);
+  .layout.nav-collapsed {
+    grid-template-columns: auto 1fr;
+  }
+  .panel-title {
+    margin: 0;
+    padding: 10px 12px 4px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--muted);
   }
   .side-tools {
     display: flex;
@@ -1944,11 +2875,29 @@
     gap: 6px;
     padding: 8px;
   }
+  .empty-hint {
+    margin: 4px 0 8px;
+  }
   .conn-list {
     list-style: none;
     margin: 0;
     padding: 0;
     overflow: auto;
+    flex: 1;
+    min-height: 0;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--text-muted, var(--muted)) 45%, transparent) transparent;
+  }
+  .conn-list::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  .conn-list::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .conn-list::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--text-muted, var(--muted)) 45%, transparent);
+    border-radius: 999px;
   }
   .conn-list li {
     border-bottom: 1px solid var(--border);
@@ -1995,6 +2944,9 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--surface);
   }
   .conn-bar {
     display: flex;
@@ -2004,25 +2956,52 @@
     padding: 8px 12px;
     border-bottom: 1px solid var(--border);
     border-left: 4px solid var(--conn-color);
+    background: var(--surface-2, var(--surface));
   }
   .conn-bar.prod {
     background: color-mix(in srgb, var(--danger, #c44) 12%, transparent);
   }
   .split {
     display: grid;
-    grid-template-columns: minmax(160px, 220px) 1fr;
+    grid-template-columns: auto minmax(0, 1fr);
     min-height: 0;
     flex: 1;
   }
-  .explorer {
-    border-right: 1px solid var(--border);
+  .center {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-width: 0;
+    min-height: 0;
+  }
+  .hist {
+    list-style: none;
+    margin: 0;
     padding: 8px;
     overflow: auto;
+    flex: 1;
+    min-height: 0;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--text-muted, var(--muted)) 45%, transparent) transparent;
   }
-  .explorer ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
+  .hist::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  .hist::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .hist::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--text-muted, var(--muted)) 45%, transparent);
+    border-radius: 999px;
+  }
+  .fail {
+    color: var(--danger, #e07070);
+  }
+  .pad {
+    padding: 8px;
+  }
+  .warn {
+    color: var(--danger, #e07070);
   }
   .ddl {
     font-size: 0.75rem;
@@ -2031,48 +3010,109 @@
     padding: 8px;
     border-radius: 6px;
   }
-  .editor-pane {
+  .pro-drawer {
     display: flex;
     flex-direction: column;
-    min-width: 0;
-    padding: 8px;
     gap: 8px;
   }
-  .run-bar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: end;
+  .conn-form {
+    max-width: 42rem;
   }
-  .run-bar label {
+  /* Caption + * must be one flex child; bare text+span under flex-column stacks * alone. */
+  .field-label {
+    display: inline;
+  }
+  .req {
+    color: var(--accent, #5b8def);
+    font-weight: 600;
+    margin-left: 0.15em;
+  }
+  .conn-dialog-head {
     display: flex;
-    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    justify-content: space-between;
+  }
+  .engine-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--accent-tint, color-mix(in srgb, var(--accent) 18%, transparent));
+    color: var(--accent);
+  }
+  .dialog-tabs {
+    display: flex;
     gap: 2px;
-    font-size: 0.8rem;
-  }
-  .cm {
-    min-height: 140px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    overflow: hidden;
-  }
-  .grid-wrap {
-    overflow: auto;
-    max-height: 320px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-  }
-  .grid {
-    border-collapse: collapse;
-    width: 100%;
-    font-size: 0.8rem;
-  }
-  .grid th,
-  .grid td {
     border-bottom: 1px solid var(--border);
-    padding: 4px 8px;
-    text-align: left;
-    vertical-align: top;
+    margin: 8px 0;
+  }
+  .dialog-tabs button {
+    background: transparent;
+    border: 0;
+    padding: 8px 12px;
+    color: var(--muted);
+    cursor: pointer;
+    font: inherit;
+  }
+  .dialog-tabs button.active {
+    color: var(--fg, var(--text));
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  .dialog-panel.hidden {
+    display: none;
+  }
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 12px;
+  }
+  .form-grid > label,
+  .form-grid > .path-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.85rem;
+  }
+  .form-grid > .color-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.85rem;
+    align-items: flex-start;
+  }
+  .path-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .path-row input {
+    flex: 1;
+  }
+  .section {
+    margin: 10px 0;
+    border: 1px solid var(--border, #333);
+    border-radius: 6px;
+    /* Extra horizontal padding so focus rings clear the fieldset border. */
+    padding: 8px 12px;
+  }
+  .section.adv {
+    margin: 4px 0;
+    padding: 4px 10px;
+  }
+  .section.adv summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+  .linkish {
+    background: none;
+    border: none;
+    color: var(--accent, #5b8def);
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
+    font: inherit;
   }
   .modal {
     position: fixed;
@@ -2083,7 +3123,15 @@
     z-index: 80;
     padding: 16px;
   }
-  /* Above connection form modal so Update key passphrase is reachable while editing. */
+  .modal.modal-conn {
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    place-items: unset;
+    padding: min(6vh, 3rem) 16px 16px;
+    overflow: auto;
+  }
   .modal.modal-ssl-key-pass {
     z-index: 90;
   }
@@ -2098,6 +3146,41 @@
     gap: 8px;
     max-height: 90vh;
     overflow: auto;
+  }
+  .conn-form.modal-card,
+  .modal-card.conn-form {
+    width: min(42rem, 100%);
+    max-width: min(42rem, 100%);
+    height: fit-content;
+    max-height: min(90vh, 52rem);
+    align-self: flex-start;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--fg, #fff) 22%, var(--border, #333));
+    box-shadow:
+      0 12px 40px rgba(0, 0, 0, 0.55),
+      0 0 0 1px color-mix(in srgb, var(--fg, #fff) 6%, transparent);
+  }
+  .conn-form .conn-dialog-head,
+  .conn-form .dialog-tabs {
+    flex: 0 0 auto;
+  }
+  .conn-form-body {
+    flex: 0 1 auto;
+    min-height: 0;
+    /* Keep vertical scroll; pad so :focus-visible outline (2px) + offset (2px) is not clipped.
+       overflow-x:visible cannot pair with overflow-y:auto (CSS forces both non-visible). */
+    overflow-x: hidden;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 4px 6px;
+  }
+  .conn-form .modal-actions {
+    flex: 0 0 auto;
+    margin-top: 4px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
   }
   .modal-card label {
     display: flex;
@@ -2114,9 +3197,6 @@
   .spacer {
     flex: 1;
   }
-  .warn {
-    color: var(--danger, #e07070);
-  }
   .test-result {
     margin: 8px 0 0;
     padding: 6px 8px;
@@ -2130,27 +3210,32 @@
     display: block;
     margin-bottom: 2px;
   }
-  .warn-list {
-    color: var(--danger, #e07070);
-    margin: 0;
-    padding-left: 1.2rem;
-  }
-  .pad {
-    padding: 8px;
-  }
-  .hist {
-    list-style: none;
-    margin: 0;
-    padding: 8px;
-    overflow: auto;
-  }
-  .fail {
-    color: var(--danger, #e07070);
+  .form-grid > .check {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
   }
   .check {
-    flex-direction: row !important;
+    display: flex;
+    flex-direction: row;
     align-items: center;
-    gap: 8px !important;
+    gap: 8px;
+  }
+  .color-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.85rem;
+    align-items: flex-start;
+  }
+  .color-field input[type='color'] {
+    width: 2.5rem;
+    height: 1.75rem;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: transparent;
+    cursor: pointer;
   }
   @media (max-width: 900px) {
     .layout,

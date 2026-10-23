@@ -301,26 +301,59 @@ export function createCassandraAdapter(): DbAdapter {
       if (serial !== undefined) execOpts.serialConsistency = serial;
       if (options.timeoutMs) execOpts.readTimeout = options.timeoutMs;
 
-      const rs = await client.execute(statement, params ?? [], execOpts);
-      const columns =
-        rs.columns?.map((c) => c.name) ??
-        (rs.rows[0] ? Object.keys(rs.rows[0]) : []);
-      const rows = rs.rows.map((row) => columns.map((name) => row[name]));
-      return {
-        columns,
-        rows,
-        pageToken: rs.pageState ?? null,
-        rowCount: rows.length,
-        timingMs: Date.now() - started,
-        warnings,
-        tracing: rs.info?.trace ?? rs.info?.traced,
-        messages: [`${rows.length} row(s) in ${Date.now() - started} ms`],
-      };
+      const requestId = options.requestId?.trim();
+      let ac: AbortController | undefined;
+      if (requestId) {
+        ac = new AbortController();
+        inflight.set(requestId, ac);
+      }
+
+      try {
+        const execPromise = client.execute(statement, params ?? [], execOpts);
+        const rs = ac
+          ? await Promise.race([
+              execPromise,
+              new Promise<never>((_, reject) => {
+                const onAbort = () => reject(new Error('Query cancelled'));
+                if (ac!.signal.aborted) onAbort();
+                else ac!.signal.addEventListener('abort', onAbort, { once: true });
+              }),
+            ])
+          : await execPromise;
+        const columns =
+          rs.columns?.map((c) => c.name) ??
+          (rs.rows[0] ? Object.keys(rs.rows[0]) : []);
+        const rows = rs.rows.map((row) => columns.map((name) => row[name]));
+        return {
+          columns,
+          rows,
+          pageToken: rs.pageState ?? null,
+          rowCount: rows.length,
+          timingMs: Date.now() - started,
+          warnings,
+          tracing: rs.info?.trace ?? rs.info?.traced,
+          messages: [`${rows.length} row(s) in ${Date.now() - started} ms`],
+        };
+      } finally {
+        if (requestId) inflight.delete(requestId);
+      }
     },
 
     async cancel(requestId: string) {
       inflight.get(requestId)?.abort();
       inflight.delete(requestId);
+    },
+
+    async setKeyspace(keyspace: string | null) {
+      if (!client) throw new Error('Not connected');
+      if (keyspace == null || keyspace.trim() === '') {
+        // Cassandra has no USE-null; All mode should emit qualified ks.table names.
+        return;
+      }
+      const name = keyspace.trim();
+      // Quote when needed (non-lowercase alphanumeric / underscore).
+      const quoted = /^[a-z][a-z0-9_]*$/.test(name) ? name : `"${name.replace(/"/g, '""')}"`;
+      await client.execute(`USE ${quoted}`);
     },
 
     async close() {

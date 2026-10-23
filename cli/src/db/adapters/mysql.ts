@@ -188,6 +188,12 @@ export function createMysqlAdapter(kind: 'mysql' | 'mariadb' = 'mysql'): DbAdapt
       for (const s of statements) await conn.query(s);
       return { applied: statements.length, statements };
     },
+    async setKeyspace(keyspace: string | null) {
+      if (!conn) throw new Error('Not connected');
+      if (keyspace == null || keyspace.trim() === '') return;
+      const name = keyspace.trim().replace(/`/g, '``');
+      await conn.query(`USE \`${name}\``);
+    },
     async close() {
       const c = conn;
       conn = undefined;

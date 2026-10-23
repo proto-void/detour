@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  defaultReadOnly,
   effectiveTlsMode,
+  ENV_OPTIONS,
+  environmentsSorted,
   migrateConnection,
   migrateConnections,
 } from './model';
@@ -69,5 +72,34 @@ describe('migrateConnection', () => {
     expect(list).toHaveLength(2);
     expect(list[0]?.tls?.mode).toBe('disable');
     expect(list[1]?.tls?.mode).toBe('verify-full');
+  });
+});
+
+describe('environments', () => {
+  it('lists Local → Development → QA → Staging → Production (lifecycle order)', () => {
+    expect(ENV_OPTIONS.map((e) => e.value)).toEqual([
+      'local',
+      'development',
+      'qa',
+      'staging',
+      'production',
+    ]);
+    expect(ENV_OPTIONS.map((e) => e.label)).toEqual([
+      'Local',
+      'Development',
+      'QA',
+      'Staging',
+      'Production',
+    ]);
+    expect(environmentsSorted()).toBe(ENV_OPTIONS);
+  });
+
+  it('defaults read-only only for production', () => {
+    expect(defaultReadOnly('production')).toBe(true);
+    expect(defaultReadOnly('development')).toBe(false);
+    expect(defaultReadOnly('qa')).toBe(false);
+    expect(defaultReadOnly('staging')).toBe(false);
+    expect(defaultReadOnly('local')).toBe(false);
+    expect(defaultReadOnly('development', true)).toBe(true);
   });
 });

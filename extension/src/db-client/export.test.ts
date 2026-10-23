@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { assertNoSecretsInExport, exportDbBundle, toConnectionTemplate } from './export';
-import { migrateConnection, type DbConnection } from './model';
+import { emptyDbClientState, migrateConnection, type DbConnection } from './model';
 
 const sample: DbConnection = migrateConnection({
   id: 'c1',
@@ -26,11 +26,9 @@ describe('export without secrets', () => {
 
   it('bundle JSON has no password keys', () => {
     const json = exportDbBundle({
+      ...emptyDbClientState(),
       connections: [sample],
-      collections: [{ id: 'col1', name: 'Demo', folders: [] }],
-      history: [],
-      idleTimeoutMinutes: 15,
-      syncFolder: '',
+      collections: [{ id: 'col1', name: 'Demo', queries: [], folders: [] }],
     });
     expect(assertNoSecretsInExport(json)).toEqual({ ok: true });
     expect(json.includes('secretAccount')).toBe(false);

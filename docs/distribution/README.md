@@ -22,7 +22,7 @@ corepack pnpm zip
 corepack pnpm zip:firefox
 ```
 
-The store zips are the extension only. Local Bridge is `corepack pnpm --filter @detour/cli exec detour bridge <folder>` (see `cli/README.md`). It is not published to npm from CI.
+The store zips are the extension only. Local Bridge is `corepack pnpm --filter @detour/cli exec node --experimental-strip-types src/cli.ts bridge <folder>` (see `cli/README.md`). It is not published to npm from CI.
 
 `corepack pnpm ci` runs that sequence and expects `CHROME` to be set already. `scripts/install-chrome.mjs` prints a Chrome for Testing **stable** binary (cached under `~/.cache/puppeteer` unless `CHROME_CACHE` is set). On Linux, install its libraries once as root:
 

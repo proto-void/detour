@@ -38,6 +38,13 @@ Implementation plans live **only** here. Numbered `NNN-short-name.md`.
 | [031-faster-pickfile.md](031-faster-pickfile.md) | Done — native Win32 / compiled macOS pickFile (Hamza “Go” 2026-10-09) |
 | [032-cassandra-jks-tls.md](032-cassandra-jks-tls.md) | Done — optional JKS/PKCS12 truststore+keystore (general; Cassandra-first) |
 | [033-node-cassandra-rogers-exit.md](033-node-cassandra-rogers-exit.md) | Done (2026-10-23) — Rogers product exit + Node Cassandra TLS (SNI/minVersion); no Java |
+| [034-databases-ux.md](034-databases-ux.md) | Done (2026-10-23) — Databases workbench UX redesign (Hamza “Go”) |
+| [035-databases-smoke-polish.md](035-databases-smoke-polish.md) | Done (2026-10-23) — thin scrollbars, nested explorer + active keyspace/USE, sticky + |
+| [036-query-gutter-multi-results.md](036-query-gutter-multi-results.md) | Done (2026-10-23) — gutter Run, multi Result N, Collections tree, helper Start CTA |
+| [037-databases-collections-polish.md](037-databases-collections-polish.md) | Done (2026-10-23) — helper compact, hover gutter, Collections DnD/delete, Connection dialog polish |
+| [038-helper-hint-width.md](038-helper-hint-width.md) | Done (2026-10-23) — full helper hint, no General seed, Detour delete modal, Connection hug height |
+| [039-browse-path-lock.md](039-browse-path-lock.md) | Done (2026-10-23) — path Browse lock, required asterisks, Connection fit-content hug |
+| [040-marketing-changelog-workbench.md](040-marketing-changelog-workbench.md) | Done (2026-10-23) — marketing workbench + Changelog; detour-web + protovoid-web redeployed |
 
 New plans only for **Approved** specs (`spec-workflow` gate).
 

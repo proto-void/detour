@@ -20,6 +20,17 @@ describe('fields descriptors', () => {
     expect(gssapi?.options?.some((o) => o.value === 'gssapi' && o.disabled)).toBe(true);
   });
 
+  it('marks soft-required basics (Host/Port, URI, region, SQLite file, Oracle service)', () => {
+    expect(fieldsFor('postgres').find((f) => f.path === 'host')?.required).toBe(true);
+    expect(fieldsFor('postgres').find((f) => f.path === 'port')?.required).toBe(true);
+    expect(fieldsFor('postgres').find((f) => f.path === 'username')?.required).toBeFalsy();
+    expect(fieldsFor('mongodb').find((f) => f.path === 'uri')?.required).toBe(true);
+    expect(fieldsFor('dynamodb').find((f) => f.path === 'region')?.required).toBe(true);
+    expect(fieldsFor('sqlite').find((f) => f.path === 'filename')?.required).toBe(true);
+    expect(fieldsFor('oracle').find((f) => f.path === 'service')?.required).toBe(true);
+    expect(fieldsFor('cassandra').find((f) => f.path === 'localDataCenter')?.required).toBeFalsy();
+  });
+
   it('always shows CA / client cert / client key under SSL (mode does not hide them)', () => {
     const fields = fieldsFor('postgres');
     const ca = fields.find((f) => f.id === 'tls.caPath')!;
@@ -59,6 +70,13 @@ describe('fields descriptors', () => {
 
   it('variants for cassandra family', () => {
     expect(variantsFor('cassandra').map((v) => v.value)).toContain('astra');
+  });
+
+  it('variants sorted alphabetically by label', () => {
+    const labels = variantsFor('cassandra').map((v) => v.label);
+    expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })));
+    expect(variantsFor('mysql').map((v) => v.label)).toEqual(['MariaDB', 'MySQL']);
+    expect(variantsFor('elasticsearch').map((v) => v.label)).toEqual(['Elasticsearch', 'OpenSearch']);
   });
 
   it('fieldVisible respects when', () => {

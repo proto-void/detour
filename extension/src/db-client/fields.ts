@@ -31,6 +31,8 @@ export type FieldDescriptor = {
   options?: Array<{ value: string; label: string; disabled?: boolean; hint?: string }>;
   placeholder?: string;
   hint?: string;
+  /** Soft-required for Test/Save/Connect (UI asterisk + empty guard). */
+  required?: boolean;
   /** Show when this select path equals value */
   when?: { path: string; equals: string | boolean };
   /**
@@ -47,28 +49,32 @@ export function secretAccountKind(secretAccount: string, kind: SecretKind): stri
 
 export type EngineVariant = { value: string; label: string };
 
+function sortByLabel<T extends { label: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+}
+
 export function variantsFor(engine: DbEngine): EngineVariant[] {
   if (engine === 'cassandra') {
-    return [
+    return sortByLabel([
       { value: 'apache', label: 'Apache Cassandra' },
       { value: 'dse', label: 'DataStax Enterprise' },
       { value: 'scylla', label: 'ScyllaDB' },
       { value: 'astra', label: 'DataStax Astra' },
       { value: 'keyspaces', label: 'AWS Keyspaces' },
       { value: 'cosmos', label: 'Azure Cosmos DB (Cassandra)' },
-    ];
+    ]);
   }
   if (engine === 'mysql' || engine === 'mariadb') {
-    return [
+    return sortByLabel([
       { value: 'mysql', label: 'MySQL' },
       { value: 'mariadb', label: 'MariaDB' },
-    ];
+    ]);
   }
   if (engine === 'elasticsearch' || engine === 'opensearch') {
-    return [
+    return sortByLabel([
       { value: 'elasticsearch', label: 'Elasticsearch' },
       { value: 'opensearch', label: 'OpenSearch' },
-    ];
+    ]);
   }
   return [];
 }
@@ -307,17 +313,42 @@ const SHARED_ADVANCED: FieldDescriptor[] = [
 
 function networkBasics(engine: DbEngine): FieldDescriptor[] {
   if (engine === 'sqlite') {
-    return [{ id: 'filename', label: 'Database file', kind: 'path', path: 'filename', group: 'basic' }];
+    return [
+      {
+        id: 'filename',
+        label: 'Database file',
+        kind: 'path',
+        path: 'filename',
+        group: 'basic',
+        required: true,
+      },
+    ];
   }
   if (engine === 'mongodb') {
     return [
-      { id: 'uri', label: 'URI', kind: 'text', path: 'uri', group: 'basic', placeholder: 'mongodb://127.0.0.1:27017' },
+      {
+        id: 'uri',
+        label: 'URI',
+        kind: 'text',
+        path: 'uri',
+        group: 'basic',
+        placeholder: 'mongodb://127.0.0.1:27017',
+        required: true,
+      },
       { id: 'database', label: 'Database', kind: 'text', path: 'database', group: 'basic' },
     ];
   }
   if (engine === 'dynamodb') {
     return [
-      { id: 'region', label: 'Region', kind: 'text', path: 'region', group: 'basic', placeholder: 'us-east-1' },
+      {
+        id: 'region',
+        label: 'Region',
+        kind: 'text',
+        path: 'region',
+        group: 'basic',
+        placeholder: 'us-east-1',
+        required: true,
+      },
       {
         id: 'endpoint',
         label: 'Endpoint override',
@@ -329,8 +360,8 @@ function networkBasics(engine: DbEngine): FieldDescriptor[] {
     ];
   }
   const fields: FieldDescriptor[] = [
-    { id: 'host', label: 'Host', kind: 'text', path: 'host', group: 'basic' },
-    { id: 'port', label: 'Port', kind: 'number', path: 'port', group: 'basic' },
+    { id: 'host', label: 'Host', kind: 'text', path: 'host', group: 'basic', required: true },
+    { id: 'port', label: 'Port', kind: 'number', path: 'port', group: 'basic', required: true },
     { id: 'username', label: 'User', kind: 'text', path: 'username', group: 'basic' },
     {
       id: 'passwordStorage',
@@ -353,7 +384,6 @@ function networkBasics(engine: DbEngine): FieldDescriptor[] {
       kind: 'text',
       path: 'localDataCenter',
       group: 'basic',
-      placeholder: 'e.g. DC1 (required for most clusters)',
     });
   }
   if (engine === 'oracle') {
@@ -364,6 +394,7 @@ function networkBasics(engine: DbEngine): FieldDescriptor[] {
       path: 'service',
       group: 'basic',
       placeholder: 'FREEPDB1',
+      required: true,
     });
   }
   return fields;

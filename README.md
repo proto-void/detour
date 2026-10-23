@@ -471,7 +471,7 @@ You already build to a folder (`./dist`) and want production URLs to load those 
 2. Start the bridge:
 
 ```sh
-corepack pnpm --filter @detour/cli exec detour bridge ./dist
+corepack pnpm --filter @detour/cli exec node --experimental-strip-types src/cli.ts bridge ./dist
 ```
 
 3. The process prints `http://127.0.0.1:<port>`, the folder name, and a **token** (new every start).
@@ -484,7 +484,7 @@ corepack pnpm --filter @detour/cli exec detour bridge ./dist
 Same commands in Terminal. Use any folder you can read (not `/`). Example:
 
 ```sh
-corepack pnpm --filter @detour/cli exec detour bridge ./dist --port 47321
+corepack pnpm --filter @detour/cli exec node --experimental-strip-types src/cli.ts bridge ./dist --port 47321
 ```
 
 </details>
@@ -542,18 +542,20 @@ Store zips remain **extension-only**; OS packs are for Releases / sideloading.
 <details>
 <summary>Developers (Node / pnpm)</summary>
 
-From the Detour repo with Node 24+:
+From the Detour repo with Node 24+ (invoke the CLI entry with Node — `pnpm exec detour` fails because nothing depends on `@detour/cli`, so the `detour` bin is never linked into `.bin`):
 
 ```sh
-corepack pnpm --filter @detour/cli exec detour db install
+corepack pnpm --filter @detour/cli exec node --experimental-strip-types src/cli.ts db install
 ```
 
 Optional `--extension-id=<id>` adds an extra Chromium id (stable unpacked ids come from the public manifest `key`). Firefox uses `detour@protovoid.com` unless you pass `--no-firefox`.
 
 ```sh
-corepack pnpm --filter @detour/cli exec detour db uninstall
-corepack pnpm --filter @detour/cli exec detour db doctor
+corepack pnpm --filter @detour/cli exec node --experimental-strip-types src/cli.ts db uninstall
+corepack pnpm --filter @detour/cli exec node --experimental-strip-types src/cli.ts db doctor
 ```
+
+Windows (PowerShell), same from the repo root, or `cd cli` then `node --experimental-strip-types src/cli.ts db install`.
 
 </details>
 

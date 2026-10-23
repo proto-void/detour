@@ -1,6 +1,6 @@
 # Architecture
 
-**Last verified:** 2026-10-21 (grow-field `.collapsed` one-line blur)
+**Last verified:** 2026-10-23 (Databases — env lifecycle order + Connection focus/sort polish)
 
 ## Pipeline
 
@@ -30,7 +30,7 @@ Workbench (separate from RuleCompiler):
 | `observability` | Toolbar badge and session match log (no rule-body telemetry) | `extension/src/observability/` |
 | `distribution` | Store listing docs, permission rationale, CI and zip artifacts | `.github/workflows/ci.yml`, `docs/distribution/`, `extension/scripts/install-chrome.mjs` |
 | `api-client` | API Tester A–C: collections, send, scripts, dual-scope Apply Detour; runner/power; OAuth/SigV4/Digest, cookies, GraphQL/WS/SSE, visualizer, folder sync, capture | `extension/src/api-client/` + `ApiTester.svelte` + `ApiTesterPower.svelte` + `ApiTesterAdvanced.svelte` |
-| `db-client` | Databases tab + JSON-RPC to brand `nativeHostName` (default `com.detour.db`) | `extension/src/db-client/` + `cli/src/db/` + `Databases.svelte` (A–D + hooks) |
+| `db-client` | Databases workbench + JSON-RPC to brand `nativeHostName` (default `com.detour.db`) | `extension/src/db-client/` + `cli/src/db/` + `Databases.svelte` + `entrypoints/options/db/*` (A–D + plans 034–036 UX) |
 
 ## Databases helper (Slices A–D + Connection options + partner hooks, ADR-027/029/030)
 
@@ -56,9 +56,19 @@ SEA: `cli/scripts/build-sea.mjs` (esbuild CJS + postject + official Node base + 
 Pack: `cli/scripts/pack-os.mjs` + `cli/pack/templates/`; store zips remain extension-only
 Compose: `docker-compose.db.yml` (+ profile `tls`) + `DETOUR_DB_E2E=1`; portable host via `DETOUR_DB_HOST_CMD`
 Brand build: `DETOUR_BRAND` and/or `DETOUR_BRAND_DIR` (absolute external brand tree, ADR-030)
-Connection form: declarative `fields.ts`; DbConnection v2 nested tls/ssh/proxy/advanced
+Connection form: declarative `fields.ts`; DbConnection v2 nested tls/ssh/proxy/advanced; environment tag `local` | `development` | `qa` | `staging` | `production` (`ENV_OPTIONS` lifecycle order Local→Development→QA→Staging→Production; production-only read-only default); Database type / Variant selects sorted A–Z by label
   TLS verify-full: CA / client cert / client key paths + Key passphrase → `:sslKeyPass`
+Workbench UX (plans 034–037): icon rail (Connections/Collections/History) + nested Object Explorer
+  (All vs active keyspace; `setKeyspace` USE/search_path); Collections tree with `collection.queries[]`
+  + `folders[].queries[]` (icon rename/delete, DnD move, New folder/query; `collectionsExpandedIds`);
+  queryTabs with `resultSets[]` + `activeResultIndex` (migrate legacy `lastResult`); Result 1…N + Messages;
+  gutter: always line numbers + hover Run on statement-start; toolbar/Mod+Enter = selection or **all**
+  statements (client sequential `execute`, no host batch RPC); helper chrome: header Start + one-line hint
+  when stopped (no workbench banner), compact Ready chip when ready (auto-start on connect/Test/Run/Browse
+  only — not on tab open); thin scrollbars; sticky New Tab `+`; Drawer inspect; Stop via requestId cancel;
+  connection dialog top-anchored Main | SSL | SSH | Advanced (border/shadow; body scrolls)
 ```
+
 
 
 ## Core DNR data flow (as built)

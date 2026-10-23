@@ -10,8 +10,8 @@ Neither is a remote server. Neither phones home.
 ## Local Bridge
 
 ```sh
-corepack pnpm --filter @detour/cli exec detour bridge ./dist
-# or
+corepack pnpm --filter @detour/cli exec node --experimental-strip-types src/cli.ts bridge ./dist
+# or from repo root:
 node --experimental-strip-types cli/src/cli.ts bridge ./dist --port 47321
 ```
 
@@ -22,9 +22,11 @@ There is no `--host` flag. The process binds `127.0.0.1` only.
 ## Databases host
 
 ```sh
-corepack pnpm --filter @detour/cli exec detour db install --extension-id=<chrome-extension-id>
-corepack pnpm --filter @detour/cli exec detour db uninstall
+corepack pnpm --filter @detour/cli exec node --experimental-strip-types src/cli.ts db install --extension-id=<chrome-extension-id>
+corepack pnpm --filter @detour/cli exec node --experimental-strip-types src/cli.ts db uninstall
 ```
+
+(`pnpm exec detour` is not linked: no workspace package depends on `@detour/cli`. Use `node … src/cli.ts` or `node bin/detour.js` instead.)
 
 Then open **Databases** → **Start**. Day to day, Detour starts and stops the helper; you do not leave a terminal open.
 

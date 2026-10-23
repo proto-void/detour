@@ -51,6 +51,6 @@ Passwords and tokens live in your OS keychain (service `com.detour.db`), not in 
 From a Detour repo checkout with Node 24+:
 
 ```sh
-corepack pnpm --filter @detour/cli exec detour db install
-corepack pnpm --filter @detour/cli exec detour db uninstall
+corepack pnpm --filter @detour/cli exec node --experimental-strip-types src/cli.ts db install
+corepack pnpm --filter @detour/cli exec node --experimental-strip-types src/cli.ts db uninstall
 ```

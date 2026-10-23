@@ -7,6 +7,8 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "build": "pnpm -r build",
-    "pack:os": "corepack pnpm --filter @detour/cli pack:os"
-  }
+    "pack:os": "corepack pnpm --filter @detour/cli pack:os",
+    "bump": "node bump-version.mjs"
+  },
+  "version": "0.1.2"
 }

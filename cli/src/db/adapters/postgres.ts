@@ -195,6 +195,15 @@ export function createPostgresAdapter(): DbAdapter {
       for (const s of statements) await client.query(s);
       return { applied: statements.length, statements };
     },
+    async setKeyspace(keyspace: string | null) {
+      if (!client) throw new Error('Not connected');
+      if (keyspace == null || keyspace.trim() === '') {
+        await client.query('RESET search_path');
+        return;
+      }
+      const name = keyspace.trim().replace(/"/g, '""');
+      await client.query(`SET search_path TO "${name}"`);
+    },
     async close() {
       const c = client;
       client = undefined;

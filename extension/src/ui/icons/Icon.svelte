@@ -32,7 +32,14 @@
       | 'body'
       | 'local'
       | 'star'
-      | 'pencil';
+      | 'pencil'
+      | 'trash'
+      | 'query'
+      | 'folder'
+      | 'refresh'
+      | 'stop'
+      | 'panel'
+      | 'play';
     size?: number;
   } = $props();
 </script>
@@ -113,6 +120,47 @@
       stroke-linecap="round"
       stroke-linejoin="round"
     />
+  {:else if name === 'trash'}
+    <path
+      d="M3.5 4.5h9M6 4.5V3.5h4v1M5.5 4.5l.5 8h4l.5-8M7 7v4M9 7v4"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.3"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  {:else if name === 'query'}
+    <path
+      d="M4 2.5h5.5L12 5v8.5H4V2.5zM9.5 2.5V5H12M6 8h4M6 10.5h3"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.3"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  {:else if name === 'folder'}
+    <path
+      d="M2.5 4.5h4l1.5 1.5H13.5v7H2.5v-8.5z"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.3"
+      stroke-linejoin="round"
+    />
+  {:else if name === 'refresh'}
+    <path
+      d="M13 8a5 5 0 1 1-1.2-3.2M13 3.5V6.5H10"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.4"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  {:else if name === 'stop'}
+    <rect x="4.5" y="4.5" width="7" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.4" />
+  {:else if name === 'panel'}
+    <path d="M2.5 3.5h11v9h-11zM6 3.5v9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+  {:else if name === 'play'}
+    <path d="M5.5 3.5 12 8l-6.5 4.5z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
   {/if}
 </svg>
 

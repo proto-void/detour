@@ -1,10 +1,12 @@
 import * as v from 'valibot';
 import {
-  DbClientStateSchema,
   emptyDbClientState,
-  migrateConnections,
+  migrateDbClientState,
+  QUERY_TABS_CAP,
   type DbClientState,
   type DbHistoryEntry,
+  type DbQueryTab,
+  type DbUiPrefs,
 } from './model';
 import type { StorageAreaLike } from '../rule-model/storage';
 
@@ -22,10 +24,18 @@ export type ParseResult<T> = ParseOk<T> | ParseErr;
 
 const SettingsSchema = v.object({
   idleTimeoutMinutes: v.optional(v.number(), 15),
+  syncFolder: v.optional(v.string(), ''),
+  ui: v.optional(v.unknown()),
+  queryTabs: v.optional(v.unknown()),
+  activeQueryTabId: v.optional(v.nullable(v.string()), null),
 });
 
 export function capHistory(entries: DbHistoryEntry[], cap = HISTORY_CAP): DbHistoryEntry[] {
   return entries.slice(0, cap);
+}
+
+export function capQueryTabs(tabs: DbQueryTab[], cap = QUERY_TABS_CAP): DbQueryTab[] {
+  return tabs.slice(0, cap);
 }
 
 export async function loadDbClientState(area: StorageAreaLike): Promise<ParseResult<DbClientState>> {
@@ -52,42 +62,60 @@ export async function loadDbClientState(area: StorageAreaLike): Promise<ParseRes
 
   const settingsParsed =
     settings === undefined
-      ? { success: true as const, output: { idleTimeoutMinutes: 15 } }
+      ? {
+          success: true as const,
+          output: {
+            idleTimeoutMinutes: 15,
+            syncFolder: '',
+            ui: undefined,
+            queryTabs: undefined,
+            activeQueryTabId: null,
+          },
+        }
       : v.safeParse(SettingsSchema, settings);
+
+  const settingsOut = settingsParsed.success
+    ? settingsParsed.output
+    : { idleTimeoutMinutes: 15, syncFolder: '', ui: undefined, queryTabs: undefined, activeQueryTabId: null };
 
   const candidate = {
     connections: connections ?? [],
     collections: collections ?? [],
     history: history ?? [],
-    idleTimeoutMinutes: settingsParsed.success ? settingsParsed.output.idleTimeoutMinutes : 15,
+    idleTimeoutMinutes: settingsOut.idleTimeoutMinutes ?? 15,
+    syncFolder: settingsOut.syncFolder ?? '',
+    ui: settingsOut.ui,
+    queryTabs: settingsOut.queryTabs,
+    activeQueryTabId: settingsOut.activeQueryTabId ?? null,
   };
 
-  const migratedCandidate = {
-    ...candidate,
-    connections: migrateConnections(
-      Array.isArray(candidate.connections) ? (candidate.connections as unknown[]) : [],
-    ),
-  };
-
-  const parsed = v.safeParse(DbClientStateSchema, migratedCandidate);
-  if (!parsed.success) {
-    return { ok: false, errors: parsed.issues.map((i) => i.message) };
+  try {
+    const migrated = migrateDbClientState(candidate);
+    return {
+      ok: true,
+      value: {
+        ...migrated,
+        history: capHistory(migrated.history),
+        queryTabs: capQueryTabs(migrated.queryTabs ?? []),
+      },
+    };
+  } catch (e) {
+    return { ok: false, errors: [e instanceof Error ? e.message : String(e)] };
   }
-  return {
-    ok: true,
-    value: {
-      ...parsed.output,
-      connections: migrateConnections(parsed.output.connections),
-      history: capHistory(parsed.output.history),
-    },
-  };
 }
 
 export async function saveDbClientState(area: StorageAreaLike, state: DbClientState): Promise<void> {
+  const ui: DbUiPrefs | undefined = state.ui;
   await area.set({
     [DB_CONNECTIONS_KEY]: state.connections,
     [DB_COLLECTIONS_KEY]: state.collections,
     [DB_HISTORY_KEY]: capHistory(state.history),
-    [DB_SETTINGS_KEY]: { idleTimeoutMinutes: state.idleTimeoutMinutes ?? 15 },
+    [DB_SETTINGS_KEY]: {
+      idleTimeoutMinutes: state.idleTimeoutMinutes ?? 15,
+      syncFolder: state.syncFolder ?? '',
+      ui: ui ?? undefined,
+      queryTabs: capQueryTabs(state.queryTabs ?? []),
+      activeQueryTabId: state.activeQueryTabId ?? null,
+    },
   });
 }

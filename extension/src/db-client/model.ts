@@ -1,7 +1,39 @@
 import * as v from 'valibot';
 
-export const DbEnvironmentSchema = v.picklist(['local', 'staging', 'production']);
+export const DbEnvironmentSchema = v.picklist([
+  'local',
+  'development',
+  'qa',
+  'staging',
+  'production',
+]);
 export type DbEnvironment = v.InferOutput<typeof DbEnvironmentSchema>;
+
+/** Display labels for connection environment tags. */
+export const ENV_LABELS: Record<DbEnvironment, string> = {
+  local: 'Local',
+  development: 'Development',
+  qa: 'QA',
+  staging: 'Staging',
+  production: 'Production',
+};
+
+/**
+ * Environment select options in fixed lifecycle order (not A–Z):
+ * Local → Development → QA → Staging → Production.
+ */
+export const ENV_OPTIONS: Array<{ value: DbEnvironment; label: string }> = [
+  { value: 'local', label: ENV_LABELS.local },
+  { value: 'development', label: ENV_LABELS.development },
+  { value: 'qa', label: ENV_LABELS.qa },
+  { value: 'staging', label: ENV_LABELS.staging },
+  { value: 'production', label: ENV_LABELS.production },
+];
+
+/** Alias for ENV_OPTIONS (lifecycle order). Do not A–Z sort environments. */
+export function environmentsSorted(): Array<{ value: DbEnvironment; label: string }> {
+  return ENV_OPTIONS;
+}
 
 export const EngineSchema = v.picklist([
   'cassandra',
@@ -168,9 +200,200 @@ export type DbFolder = v.InferOutput<typeof DbFolderSchema>;
 export const DbCollectionSchema = v.object({
   id: v.string(),
   name: v.string(),
+  /** Queries at collection root (plan 037). */
+  queries: v.optional(v.array(DbQuerySchema), []),
   folders: v.optional(v.array(DbFolderSchema), []),
 });
 export type DbCollection = v.InferOutput<typeof DbCollectionSchema>;
+
+/** Target for save / DnD: collection root (`folderId` null) or a folder. */
+export type CollectionQueryLocation = {
+  collectionId: string;
+  folderId: string | null;
+};
+
+/** Ensure collection/folder query arrays exist (migrate missing `queries`). */
+export function migrateCollection(raw: unknown): DbCollection {
+  const c =
+    typeof raw === 'object' && raw !== null
+      ? (raw as Record<string, unknown>)
+      : {};
+  const folders = Array.isArray(c.folders)
+    ? (c.folders as unknown[]).map((f) => {
+        const folder =
+          typeof f === 'object' && f !== null
+            ? (f as Record<string, unknown>)
+            : {};
+        return {
+          id: typeof folder.id === 'string' ? folder.id : newId('fold'),
+          name: typeof folder.name === 'string' ? folder.name : 'Folder',
+          queries: Array.isArray(folder.queries)
+            ? (folder.queries as DbQuery[])
+            : [],
+        } satisfies DbFolder;
+      })
+    : [];
+  return {
+    id: typeof c.id === 'string' ? c.id : newId('col'),
+    name: typeof c.name === 'string' ? c.name : 'Collection',
+    queries: Array.isArray(c.queries) ? (c.queries as DbQuery[]) : [],
+    folders,
+  };
+}
+
+export function migrateCollections(list: unknown[]): DbCollection[] {
+  return list.map((c) => migrateCollection(c));
+}
+
+/** Default Save location: first folder if any, else collection root. */
+export function defaultSaveLocation(
+  collection: DbCollection,
+): CollectionQueryLocation {
+  const firstFolder = (collection.folders ?? [])[0];
+  return {
+    collectionId: collection.id,
+    folderId: firstFolder ? firstFolder.id : null,
+  };
+}
+
+export function findQueryInCollections(
+  collections: DbCollection[],
+  queryId: string,
+): { collection: DbCollection; folderId: string | null; query: DbQuery } | null {
+  for (const col of collections) {
+    const root = (col.queries ?? []).find((q) => q.id === queryId);
+    if (root) return { collection: col, folderId: null, query: root };
+    for (const folder of col.folders ?? []) {
+      const q = (folder.queries ?? []).find((x) => x.id === queryId);
+      if (q) return { collection: col, folderId: folder.id, query: q };
+    }
+  }
+  return null;
+}
+
+function queriesAt(
+  col: DbCollection,
+  folderId: string | null,
+): DbQuery[] {
+  if (folderId === null) return col.queries ?? [];
+  const folder = (col.folders ?? []).find((f) => f.id === folderId);
+  return folder?.queries ?? [];
+}
+
+function setQueriesAt(
+  col: DbCollection,
+  folderId: string | null,
+  queries: DbQuery[],
+): DbCollection {
+  if (folderId === null) return { ...col, queries };
+  return {
+    ...col,
+    folders: (col.folders ?? []).map((f) =>
+      f.id === folderId ? { ...f, queries } : f,
+    ),
+  };
+}
+
+/** Move a query to another collection root or folder (append). No-op if missing. */
+export function moveQuery(
+  collections: DbCollection[],
+  queryId: string,
+  to: CollectionQueryLocation,
+): DbCollection[] {
+  const found = findQueryInCollections(collections, queryId);
+  if (!found) return collections;
+  if (
+    found.collection.id === to.collectionId &&
+    found.folderId === to.folderId
+  ) {
+    return collections;
+  }
+  const query = found.query;
+  const without = deleteQueryFromCollections(collections, queryId);
+  return without.map((c) => {
+    if (c.id !== to.collectionId) return c;
+    const list = queriesAt(c, to.folderId).filter((q) => q.id !== queryId);
+    return setQueriesAt(c, to.folderId, [...list, query]);
+  });
+}
+
+export function upsertQueryAt(
+  collections: DbCollection[],
+  location: CollectionQueryLocation,
+  query: DbQuery,
+): DbCollection[] {
+  return collections.map((c) => {
+    if (c.id !== location.collectionId) return c;
+    const list = queriesAt(c, location.folderId);
+    const next = list.some((q) => q.id === query.id)
+      ? list.map((q) => (q.id === query.id ? query : q))
+      : [...list, query];
+    return setQueriesAt(c, location.folderId, next);
+  });
+}
+
+export function renameQueryInCollections(
+  collections: DbCollection[],
+  queryId: string,
+  name: string,
+): DbCollection[] {
+  return collections.map((c) => ({
+    ...c,
+    queries: (c.queries ?? []).map((q) => (q.id === queryId ? { ...q, name } : q)),
+    folders: (c.folders ?? []).map((f) => ({
+      ...f,
+      queries: (f.queries ?? []).map((q) => (q.id === queryId ? { ...q, name } : q)),
+    })),
+  }));
+}
+
+export function deleteQueryFromCollections(
+  collections: DbCollection[],
+  queryId: string,
+): DbCollection[] {
+  return collections.map((c) => ({
+    ...c,
+    queries: (c.queries ?? []).filter((q) => q.id !== queryId),
+    folders: (c.folders ?? []).map((f) => ({
+      ...f,
+      queries: (f.queries ?? []).filter((q) => q.id !== queryId),
+    })),
+  }));
+}
+
+/** Non-empty for confirm: has any queries (root or in folders) or any folders. */
+export function collectionIsNonEmpty(col: DbCollection): boolean {
+  return (col.queries ?? []).length > 0 || (col.folders ?? []).length > 0;
+}
+
+export function folderIsNonEmpty(folder: DbFolder): boolean {
+  return (folder.queries ?? []).length > 0;
+}
+
+/** Clear collectionQueryId on tabs that pointed at deleted query ids. */
+export function clearCollectionQueryIds(
+  tabs: DbQueryTab[],
+  deletedQueryIds: Set<string>,
+): DbQueryTab[] {
+  if (deletedQueryIds.size === 0) return tabs;
+  return tabs.map((t) =>
+    t.collectionQueryId && deletedQueryIds.has(t.collectionQueryId)
+      ? { ...t, collectionQueryId: null }
+      : t,
+  );
+}
+
+export function collectQueryIdsInCollection(col: DbCollection): string[] {
+  const ids = (col.queries ?? []).map((q) => q.id);
+  for (const f of col.folders ?? []) {
+    for (const q of f.queries ?? []) ids.push(q.id);
+  }
+  return ids;
+}
+
+export function collectQueryIdsInFolder(folder: DbFolder): string[] {
+  return (folder.queries ?? []).map((q) => q.id);
+}
 
 export const DbHistoryEntrySchema = v.object({
   id: v.string(),
@@ -183,23 +406,217 @@ export const DbHistoryEntrySchema = v.object({
 });
 export type DbHistoryEntry = v.InferOutput<typeof DbHistoryEntrySchema>;
 
+export const DbSideSchema = v.picklist(['connections', 'collections', 'history']);
+export type DbSide = v.InferOutput<typeof DbSideSchema>;
+
+/** Explorer scope per connection (keyspace / schema / database drill-down). */
+export const ExplorerScopeSchema = v.object({
+  kind: v.optional(v.string(), 'root'),
+  keyspace: v.optional(v.string(), ''),
+  schema: v.optional(v.string(), ''),
+  database: v.optional(v.string(), ''),
+  label: v.optional(v.string(), ''),
+});
+export type ExplorerScope = v.InferOutput<typeof ExplorerScopeSchema>;
+
+export const DbQueryTabResultSchema = v.object({
+  columns: v.array(v.string()),
+  rows: v.array(v.array(v.unknown())),
+  timingMs: v.optional(v.number()),
+  messages: v.optional(v.array(v.string()), []),
+  warnings: v.optional(v.array(v.string()), []),
+  pageToken: v.optional(v.nullable(v.string()), null),
+  lastStatement: v.optional(v.string(), ''),
+});
+export type DbQueryTabResult = v.InferOutput<typeof DbQueryTabResultSchema>;
+
+export const DbQueryTabSchema = v.object({
+  id: v.string(),
+  name: v.string(),
+  body: v.string(),
+  connectionId: v.optional(v.nullable(v.string()), null),
+  collectionQueryId: v.optional(v.nullable(v.string()), null),
+  /** Per-statement result grids for the last run (plan 036). */
+  resultSets: v.optional(v.array(DbQueryTabResultSchema), []),
+  activeResultIndex: v.optional(v.number(), 0),
+  /** Batch-level messages (mid-run errors, notes) shown in Messages. */
+  batchMessages: v.optional(v.array(v.string()), []),
+  /** @deprecated plan 036 — migrated into resultSets[0] */
+  lastResult: v.optional(v.nullable(DbQueryTabResultSchema), null),
+});
+export type DbQueryTab = v.InferOutput<typeof DbQueryTabSchema>;
+
+export const DbUiPrefsSchema = v.object({
+  side: v.optional(DbSideSchema, 'connections'),
+  sidebarCollapsed: v.optional(v.boolean(), false),
+  explorerCollapsed: v.optional(v.boolean(), false),
+  /** @deprecated plan 034 drill-down — prefer activeKeyspaceByConnectionId */
+  explorerScopeByConnectionId: v.optional(v.record(v.string(), ExplorerScopeSchema), {}),
+  /** Active keyspace / schema / database per connection (`null` = All). */
+  activeKeyspaceByConnectionId: v.optional(v.record(v.string(), v.nullable(v.string())), {}),
+  /** Expanded explorer node ids per connection. */
+  expandedIdsByConnectionId: v.optional(v.record(v.string(), v.array(v.string())), {}),
+  /** Expanded Collections tree ids (collection + folder). */
+  collectionsExpandedIds: v.optional(v.array(v.string()), []),
+});
+export type DbUiPrefs = v.InferOutput<typeof DbUiPrefsSchema>;
+
+export const QUERY_TABS_CAP = 20;
+
 export const DbClientStateSchema = v.object({
   connections: v.optional(v.array(DbConnectionSchema), []),
   collections: v.optional(v.array(DbCollectionSchema), []),
   history: v.optional(v.array(DbHistoryEntrySchema), []),
   idleTimeoutMinutes: v.optional(v.number(), 15),
   syncFolder: v.optional(v.string(), ''),
+  ui: v.optional(DbUiPrefsSchema),
+  queryTabs: v.optional(v.array(DbQueryTabSchema), []),
+  activeQueryTabId: v.optional(v.nullable(v.string()), null),
 });
 export type DbClientState = v.InferOutput<typeof DbClientStateSchema>;
 
+export function defaultDbUiPrefs(): DbUiPrefs {
+  return {
+    side: 'connections',
+    sidebarCollapsed: false,
+    explorerCollapsed: false,
+    explorerScopeByConnectionId: {},
+    activeKeyspaceByConnectionId: {},
+    expandedIdsByConnectionId: {},
+    collectionsExpandedIds: [],
+  };
+}
+
+/** Migrate legacy lastResult → resultSets; drop lastResult from the tab. */
+export function migrateQueryTab(raw: unknown): DbQueryTab {
+  const t =
+    typeof raw === 'object' && raw !== null
+      ? (raw as Record<string, unknown>)
+      : {};
+  const legacy = t.lastResult as DbQueryTabResult | null | undefined;
+  let resultSets = Array.isArray(t.resultSets)
+    ? (t.resultSets as DbQueryTabResult[])
+    : [];
+  if (resultSets.length === 0 && legacy && typeof legacy === 'object') {
+    resultSets = [legacy];
+  }
+  const activeResultIndex =
+    typeof t.activeResultIndex === 'number' && t.activeResultIndex >= 0
+      ? Math.min(t.activeResultIndex, Math.max(0, resultSets.length - 1))
+      : 0;
+  const batchMessages = Array.isArray(t.batchMessages)
+    ? (t.batchMessages as string[])
+    : [];
+  return {
+    id: typeof t.id === 'string' ? t.id : newId('qtab'),
+    name: typeof t.name === 'string' ? t.name : 'Query',
+    body: typeof t.body === 'string' ? t.body : '',
+    connectionId: (t.connectionId as string | null | undefined) ?? null,
+    collectionQueryId: (t.collectionQueryId as string | null | undefined) ?? null,
+    resultSets,
+    activeResultIndex: resultSets.length === 0 ? 0 : activeResultIndex,
+    batchMessages,
+    lastResult: null,
+  };
+}
+
 export function emptyDbClientState(): DbClientState {
-  return { connections: [], collections: [], history: [], idleTimeoutMinutes: 15, syncFolder: '' };
+  return {
+    connections: [],
+    collections: [],
+    history: [],
+    idleTimeoutMinutes: 15,
+    syncFolder: '',
+    ui: defaultDbUiPrefs(),
+    queryTabs: [],
+    activeQueryTabId: null,
+  };
+}
+
+/** Cap query tabs and ensure active id points at a real tab (or null). */
+export function migrateDbClientState(raw: unknown): DbClientState {
+  const base =
+    typeof raw === 'object' && raw !== null
+      ? (raw as Record<string, unknown>)
+      : {};
+  const collections = migrateCollections(
+    Array.isArray(base.collections) ? (base.collections as unknown[]) : [],
+  );
+  const parsed = v.safeParse(DbClientStateSchema, {
+    ...emptyDbClientState(),
+    ...base,
+    connections: migrateConnections(
+      Array.isArray(base.connections) ? (base.connections as unknown[]) : [],
+    ),
+    collections,
+  });
+  const state = parsed.success ? parsed.output : emptyDbClientState();
+  const ui = { ...defaultDbUiPrefs(), ...(state.ui ?? {}) };
+  let queryTabs = (state.queryTabs ?? [])
+    .map((t) => migrateQueryTab(t))
+    .slice(0, QUERY_TABS_CAP);
+  // Default Collections expand: first collection + its folders when unset
+  if (
+    (ui.collectionsExpandedIds?.length ?? 0) === 0 &&
+    (state.collections?.length ?? 0) > 0
+  ) {
+    const col = state.collections![0]!;
+    ui.collectionsExpandedIds = [
+      col.id,
+      ...(col.folders ?? []).map((f) => f.id),
+    ];
+  }
+  let activeQueryTabId = state.activeQueryTabId ?? null;
+  if (activeQueryTabId && !queryTabs.some((t) => t.id === activeQueryTabId)) {
+    activeQueryTabId = queryTabs[0]?.id ?? null;
+  }
+  if (!activeQueryTabId && queryTabs[0]) activeQueryTabId = queryTabs[0].id;
+  return {
+    ...state,
+    syncFolder: state.syncFolder ?? '',
+    ui,
+    queryTabs,
+    activeQueryTabId,
+  };
+}
+
+export function createQueryTab(partial?: Partial<DbQueryTab>): DbQueryTab {
+  const fromLegacy =
+    partial?.lastResult && (!partial.resultSets || partial.resultSets.length === 0)
+      ? [partial.lastResult]
+      : undefined;
+  return {
+    id: partial?.id ?? newId('qtab'),
+    name: partial?.name ?? 'Query',
+    body: partial?.body ?? '',
+    connectionId: partial?.connectionId ?? null,
+    collectionQueryId: partial?.collectionQueryId ?? null,
+    resultSets: partial?.resultSets ?? fromLegacy ?? [],
+    activeResultIndex: partial?.activeResultIndex ?? 0,
+    batchMessages: partial?.batchMessages ?? [],
+    lastResult: null,
+  };
+}
+
+export function emptyTabResult(
+  partial?: Partial<DbQueryTabResult>,
+): DbQueryTabResult {
+  return {
+    columns: partial?.columns ?? [],
+    rows: partial?.rows ?? [],
+    timingMs: partial?.timingMs,
+    messages: partial?.messages ?? [],
+    warnings: partial?.warnings ?? [],
+    pageToken: partial?.pageToken ?? null,
+    lastStatement: partial?.lastStatement ?? '',
+  };
 }
 
 export function newId(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** Production-only default: development / local / QA / staging stay writable unless explicitly read-only. */
 export function defaultReadOnly(env: DbEnvironment, explicit?: boolean): boolean {
   if (explicit !== undefined) return explicit;
   return env === 'production';

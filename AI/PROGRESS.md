@@ -4,6 +4,30 @@
 
 ## Done
 
+- [x] **detour-web Fuzio-like top nav + Chrome CTA icon** (2026-10-23): sticky/blur `SiteHeader` on all pages (Features, Workbench, Changelog, vs RO, Privacy + GitHub / Get for Chrome); multicolor Chrome mark on header + hero Get for Chrome. Redeploy detour.protovoid.com. No extension bump.
+
+- [x] **Changelog status icons + collapsible releases** (2026-10-23): detour-web `/changelog/` — Chrome / launching rocket / ready rocket status marks with subtle CSS motion (`prefers-reduced-motion` respected); 0.1.1 label is **On the way** only; each version is `<details>` (latest open by default) with Expand all / Collapse all. Redeployed detour.protovoid.com. Did not touch vs-resource-override.
+
+- [x] **vs Resource Override comparison table** (2026-10-23): detour-web `/vs-resource-override/` restructured from prose bullets to an accessible side-by-side table (MV3, MIT, local-only, override parity, tester/log/recipes, API Tester, Databases, Local Bridge, RO import, browsers). Intro + “when to choose” kept. Redeployed detour.protovoid.com. No extension version bump.
+
+- [x] **Marketing workbench + Changelog** (plan 040, 2026-10-23): detour.protovoid.com hero/Workbench/FAQ/Changelog (0.1.2 coming soon, 0.1.1 pending CWS, 0.1.0 live); privacy sync; vs RO bullet; protovoid.com/products Detour blurb; both sites redeployed. **Before next CWS upload:** bump extension to **0.1.2** so packaging matches changelog. No extension/cli code in this plan.
+
+- [x] **Connection focus rings + engine A–Z + env lifecycle** (2026-10-23): pad `.conn-form-body` / `.section` so `:focus-visible` rings aren’t clipped (card hug `overflow: hidden` kept); Database type + Variant selects sorted by label; `DbEnvironment` = `local` | `development` | `qa` | `staging` | `production` via `ENV_OPTIONS` (Local → Development → QA → Staging → Production, not A–Z); production-only read-only default. Zip: `extension/.output/detour/detour-0.1.1-chrome.zip`. Unit tests. No commit.
+
+- [x] **Required `*` inline + Create collection plus** (2026-10-23): Connection dialog wraps caption+asterisk in `.field-label` so flex-column labels no longer put `*` on its own row; Collections empty CTA uses `<Icon name="plus" />` like New Rule / tree actions. Zip: `extension/.output/detour/detour-0.1.1-chrome.zip`. No commit.
+
+- [x] **Browse path lock + required asterisks + Connection hug** (plan 039, 2026-10-23): `activeBrowsingPath` (Opening…/Cancel… on active field only; sibling Browse/Clear + Test/Save/Save & connect disabled while locked); SSL cert + Astra zip `pickFile` filters; soft-required Name/Host/Port (and engine basics) with `*`; Connection card `height: fit-content` (no bare `.conn-form` max-height fight). Zip: `extension/.output/detour/detour-0.1.1-chrome.zip`. `fields.test.ts` + typecheck. No commit.
+
+- [x] **Helper hint / collection seed / delete modal / Connection hug** (plan 038, 2026-10-23): full one-line helper hint (wider `.helper-start`, no ellipsis at normal widths); Create/save bootstrap seeds `My queries` with empty `folders[]` (no General); Detour in-app delete modal (Cancel/Delete, Escape); Connection card height hugs tab content (`conn-form-body` `flex: 0 1 auto`), body scrolls at max-height, footer under last field. Spec AC amended. Zip: `extension/.output/detour/detour-0.1.1-chrome.zip`. Typecheck green. No commit.
+
+- [x] **Databases collections polish** (plan 037, 2026-10-23): helper header-only (no banner; one-line hint; compact Ready); gutter line numbers + hover Run; `collection.queries` + migrate/move/delete; Collections icons/DnD/New folder|query; Connection dialog top-anchored + border/shadow; Main Local DC placeholder cleared; Read-only row align; Color swatch hit target. Spec AC amended. Zip: `extension/.output/detour/detour-0.1.1-chrome.zip`. Unit tests + typecheck green. No commit.
+
+- [x] **Databases query gutter + multi-results + Collections tree + helper CTA** (plan 036, 2026-10-23): statement-start gutter Run; toolbar/Mod+Enter = selection or all statements (sequential client execute); Result 1…N + Messages; `resultSets` migrate from `lastResult`; vertical Collections tree (expand/rename); Start database helper primary CTA + Ready chip (no auto-start on tab open). Spec AC amended. Zip: `extension/.output/detour/detour-0.1.1-chrome.zip`. Unit tests + typecheck green. No commit.
+
+- [x] **Databases smoke polish** (plan 035, 2026-10-23): thin scrollbars; Connections/Collections/History headings + empty UX; nested explorer (All vs active keyspace) + host `setKeyspace` (`USE` / search_path); unqualified SELECT when active KS matches; sticky New Tab `+` outside scroller. Zip: `extension/.output/detour/detour-0.1.1-chrome.zip`. Unit tests green (`qualifyTableRef`, setKeyspace RPC). No commit.
+
+- [x] **Databases workbench UX** (plan 034, 2026-10-23): SSMS/DBeaver-inspired layout — icon rail, collapsible explorer, multi query tabs with per-tab results, Results|Messages + Drawer, connection dialog Main|SSL|SSH|Advanced, helper status menu, Run selection/at-cursor + Stop (`requestId` / hello `cancel`). State: `ui` + `queryTabs` + `syncFolder` persist. Zip: `extension/.output/detour/detour-0.1.1-chrome.zip`. Unit tests green (db-client + CLI cancel). No commit.
+
 - [x] **Node Cassandra + Rogers product exit** (plan 033, 2026-10-23): deleted local `/Users/hamzakhan/rogers-detour` + GitHub `HamzaKhan-Rogers/rogers-detour` (already 404); cleared Rogers/Detour NM hosts + Application Support db-host; scrubbed public `zip:rogers` / dual-zip DoD / Rogers extension ids; Node `cassandra-config` forwards `servername`+`minVersion`; Keyspaces merge preserves them; safe `innerErrors` in testConnection. Detour zip only. Live Cassandra smoke skipped if VPN unavailable. No commit.
 
 - [x] **Root README overhaul** (user guide): collapsible `<details>` per tab/feature; contributor material collapsed at bottom; `cli/README.md` bridge wording aligned; README-sections convention in `AI/intelligence/conventions.md`; plan 025 docs DoD step; Databases Connect section updated for A–D
@@ -94,10 +118,10 @@
 
 ## Next
 
-1. **CWS 0.1.1 upload** — Hamza: dashboard → Package → upload `detour-0.1.1-chrome.zip` → Submit for review
-2. **Redeploy detour-web** — `cd ~/Project/detour-web && npm run deploy` (Wrangler login if needed) so site Install CTA / JSON-LD pick up `chromeStoreUrl`
-3. **CWS listing plain text** — Hamza pastes store-listing copy in the dashboard when editing (not agent)
-4. **Optional:** Protovoid `/products/` Detour CTA still points at detour.protovoid.com — switch primary CTA to CWS only if product wants install-from-store there
+1. **Bump extension to 0.1.2 before next CWS submit** — packaging must match Changelog (0.1.1 = API Tester polish pending review; 0.1.2 = Databases workbench). Do not upload until version matches the story you want on the store.
+2. **Smoke plan 036** — load zip: gutter Run on multi-line statement; Run with no selection runs all; Result N tabs + Messages on mid-batch error; Collections tree expand/rename; Start database helper CTA (not auto on tab open); intent actions still auto-start
+3. **CWS 0.1.1** — if not already submitted: dashboard → Package → upload `detour-0.1.1-chrome.zip` → Submit for review (site already says pending approval)
+4. **CWS listing plain text** — Hamza pastes store-listing copy in the dashboard when editing (not agent)
 5. **Plan 032 smoke (Windows Cassandra)** — Reload pack extension → Install Helper from **new** windows zip → connection: SSL Required/Verify CA, Java truststore+keystore paths + store passwords, Local datacenter from app config, Test. Also smoke PEM-only path still works
 6. **Plan 033 follow-up** — reinstall public Node helper if not done; live Cassandra Test connection (DC1 + truststore/CA + Server name when IP) when VPN available; cipher/OpenSSL plan only if still failing (not Java)
 7. **Plan 030 / 031 smoke** — Browse / SSL Disable+key path / encrypted-key modal; clean Chrome + Win/Ubuntu VMs; Edge manifests; Firefox route

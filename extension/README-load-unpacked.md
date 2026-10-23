@@ -28,7 +28,7 @@ Prefer the [AMO](https://addons.mozilla.org/) listing. For a temporary test: `ab
 If you need **Databases**, install a helper from an OS pack (double-click **Install Detour Helper**) or, as a developer with Node 24+:
 
 ```sh
-corepack pnpm --filter @detour/cli exec detour db install
+corepack pnpm --filter @detour/cli exec node --experimental-strip-types src/cli.ts db install
 ```
 
 See the root README **Connect to a database** section.

@@ -1,7 +1,7 @@
 # Spec: db-client
 
 **Status:** Approved — **Slices A–D** + **Connection options** + **OS packs setup** + **partner-helper public hooks** (Hamza, 2026-10-09).  
-**Last updated:** 2026-10-09 (TLS: optional JKS/PKCS12 truststore+keystore; no invent local DC; key-only allowed)  
+**Last updated:** 2026-10-23 (plan 035 smoke polish: nested explorer + setKeyspace, thin scrollbars, sticky +)  
 **Approved by:** Hamza (2026-10-09) — Slices A–D; Connection options; OS packs amendment; partner-helper public hooks (“Go and approved” on closed Rogers native helper plan)  
 **Build order:** 11  
 **Depends on:** workspace-ui (options tabs), distribution (optional permissions / packaging notes / OS packs), `@detour/cli` package layout (Local Bridge already ships)  
@@ -45,9 +45,9 @@ Databases tab (options)
 | Module (extension) | Logic under `extension/src/db-client/` (protocol client, safety rails, collection export, connection metadata). UI in options entrypoints. |
 | Module (host) | `cli/src/db/` — JSON-RPC host, adapters, installer, SEA build. Share `@detour/cli` package. |
 | Lifecycle | Port held by options page. Close tab / Stop helper / idle (default 15 min, configurable) → disconnect → host exits on stdin end. Status pill + Restart. |
-| Protocol | JSON-RPC: `hello` (handshake), `version`, `connect`, `testConnection`, `listObjects`, `describe`, `execute`, `fetchPage`, `cancel`, `close`, `saveCollection`, `readCollections`, …. Chunk results ≤ ~900 KB; paging explicit. |
+| Protocol | JSON-RPC: `hello` (handshake), `version`, `connect`, `testConnection`, `listObjects`, `describe`, `execute`, `fetchPage`, `cancel`, `setKeyspace`, `close`, `saveCollection`, `readCollections`, …. Chunk results ≤ ~900 KB; paging explicit. |
 | Host name | Brand-configurable `nativeHostName` (default `com.detour.db`). Partners may use a distinct name so helpers can coexist. |
-| Adapter interface | `connect`, `listObjects`, `describe`, `execute`, `explain?`, `cancel`, `close` in `cli/src/db/adapters/<name>.ts`. |
+| Adapter interface | `connect`, `listObjects`, `describe`, `execute`, `explain?`, `cancel`, `setKeyspace?`, `close` in `cli/src/db/adapters/<name>.ts`. |
 | One-time setup | **Preferred:** OS pack from GitHub Releases — load unpacked `extension/`, double-click Install helper (SEA self-installs to a per-user dir). **Developers:** `detour db install` / `db uninstall` from the repo (Node launcher). Manifests for Chrome/Edge/Brave/Chromium/Firefox; Windows registry. Missing host → guided setup card (OS-aware pack link + Developers disclosure). |
 | Local Bridge | Remains HTTP ([local-bridge](local-bridge.md)). Unchanged by Slice A–C. Slice D may optionally host-manage Local Bridge. |
 | Stable extension id | Fixed public Chrome manifest `key` per brand (Detour committed; Rogers gitignored). Installer writes `allowed_origins` for unpacked id + known store id(s). No required `--extension-id` for pack install. Private key never in repo ([ADR-029](../DECISIONS.md)). |
@@ -67,12 +67,12 @@ Databases tab (options)
 
 ### Acceptance criteria
 
-- [ ] Options tab **Databases** with subtitle above; status pill (Ready / Stopped / missing + version + open connections); **Stop helper** / **Restart helper**
+- [x] Options tab **Databases** with subtitle above; **helper chrome (plan 037/038):** when stopped (install OK) show primary **Start database helper** in the header only (no workbench banner duplicate); one-line hint (nowrap; full text at normal widths, ellipsis only when extremely narrow) when not ready; when ready show compact **Helper ready** chip with Stop/Restart menu and **no** hint; install / reload / mismatch cards unchanged for missing / needs_reload / error. Auto-start on connect / Test / Run / Browse / pickFile; do **not** auto-start on mere Databases tab open
 - [ ] `nativeMessaging` optional; requested on first tab use; Detour usable without it (other tabs)
 - [ ] `connectNative('com.detour.db')` on demand; idle timeout (default 15 min); exit when port closes / stdin ends
 - [ ] Host installer: Chrome, Edge, Brave, Chromium, Firefox manifests; Windows registry; `db install` / `db uninstall`; SEA spike confirmed for Slice A drivers
 - [ ] Keychain secrets; metadata-only in extension storage; export/import collections without secrets
-- [ ] JSON-RPC with chunking under 1 MB and cancel by request id
+- [x] JSON-RPC with chunking under 1 MB and cancel by request id (hello `cancel`; Cassandra inflight AbortController race — plan 034)
 - [ ] Cassandra adapter (`cassandra-driver`, Apache-2.0) for:
   - Apache Cassandra 3.x/4.x/5.x and DSE (TLS, password, contact points, local DC)
   - ScyllaDB
@@ -80,11 +80,12 @@ Databases tab (options)
   - AWS Keyspaces (TLS + Starfield CA bundled; service-specific credentials or SigV4 via `aws-sigv4-auth-cassandra-plugin`)
   - Azure Cosmos DB for Apache Cassandra (TLS, port 10350, account key)
 - [ ] Connection manager: groups/folders, search, color, env label, URL paste, TLS (CA / client cert / skip-verify with warning), Test, duplicate
-- [ ] Object explorer from `system_schema`; DESCRIBE-style DDL; consistency + serial consistency + page size; tracing view; ALLOW FILTERING / missing partition key / unbounded scan warnings
-- [ ] CQL editor (CodeMirror): multi tabs; run statement / selection / script; params; format; cancel; timeout; default row limit 500
-- [ ] Virtualized results grid: sort/filter loaded page; Load next page; copy CSV/JSON; JSON cell viewer; messages + timing
-- [ ] Query collections + folders; history per connection; production read-only default with timed unlock; confirm DROP/TRUNCATE/ALTER and DELETE/UPDATE without WHERE (plus Cassandra partition/table wipe cases); typed-name confirm on production
-- [ ] Keyboard accessible; no color-only status; works in Detour and Rogers brand zips
+- [x] Object explorer from `system_schema`; optional Show DDL (collapsed); consistency + page size; tracing; ALLOW FILTERING / unbounded scan warnings (plan 035: nested tree + active keyspace/`setKeyspace` USE; columns; no auto CREATE)
+- [x] CQL editor (CodeMirror): multi tabs (sticky New Tab `+`); **line numbers always visible**; **Run icon on hover** of statement-start gutter cells only (click still runs full `;`-delimited statement); toolbar / Mod+Enter: selection → those statements, else **all** statements in buffer (not at-cursor); cancel (Stop); default row limit 500; **multi-statement = client-orchestrated sequential `execute` (no host batch RPC)** — params / format / timeout UI still open (plan 037)
+- [x] Results grid (compact rows, render cap — not true virtualization); per query tab **Result 1…N** + Messages; Load next page on active result set; mid-batch failure stops and keeps prior Result tabs with error in Messages; copy JSON via Drawer; timing — **sort/filter loaded page still open** (plan 036)
+- [x] Query collections + folders as **vertical expandable folder/file tree** (`collection.queries[]` + `folders[].queries[]`; larger chevrons; icon rename/delete; New folder / New query; DnD move queries between collection root and folders; **Create collection / save bootstrap seeds `{ name: 'My queries', queries: [], folders: [] }` (no General folder; plan 038)**; **Detour in-app delete modal** (Cancel/Delete; Escape dismiss; no typed-name) for collection/folder/query deletes; clear `collectionQueryId` on tabs when a query is deleted; Save default = first folder if any else collection root; expand state in `dbState.ui`); history per connection; production read-only default with timed unlock; confirm DROP/TRUNCATE/ALTER and DELETE/UPDATE without WHERE (plus Cassandra partition/table wipe cases); typed-name confirm on production only for destructive CQL (plan 037/038)
+- [x] **Connection dialog (plan 037/038):** clearer dark border + shadow + stronger scrim; **top-anchored** card (not vertical center) so tab switches grow/shrink height south only; **height hugs tab content** (body `flex: 0 1 auto`; footer under last field on short SSL/SSH); **body scrolls at max-height**; footer stays at card bottom; fixed width; Main tab: no Local datacenter example placeholder; Read-only checkbox in a horizontal row (`align-items: center`); Color swatch only opens the picker (caption not a large click proxy)
+- [x] Keyboard accessible; no color-only status; works in Detour brand zip (Rogers product retired plan 033)
 
 ### Slice A out of scope
 

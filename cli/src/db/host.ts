@@ -194,6 +194,8 @@ export function createRpcHandlers(options?: {
             'tableDesigner',
             'transactions',
             'explain',
+            'cancel',
+            'setKeyspace',
           ];
           return {
             protocolVersion: PROTOCOL_VERSION,
@@ -331,19 +333,25 @@ export function createRpcHandlers(options?: {
 
         case 'execute': {
           const session = await getSession(String(params.connectionId ?? 'default'));
+          const execOpts = { ...((params.options as object) ?? {}) } as Record<string, unknown>;
+          const requestId = params.requestId ?? execOpts.requestId;
+          if (requestId != null && requestId !== '') execOpts.requestId = String(requestId);
           return session.adapter.execute(
             String(params.statement ?? ''),
             (params.params as unknown[]) ?? [],
-            (params.options as never) ?? {},
+            execOpts as never,
           );
         }
 
         case 'fetchPage': {
           const session = await getSession(String(params.connectionId ?? 'default'));
+          const execOpts = { ...((params.options as object) ?? {}) } as Record<string, unknown>;
+          const requestId = params.requestId ?? execOpts.requestId;
+          if (requestId != null && requestId !== '') execOpts.requestId = String(requestId);
           return session.adapter.execute(String(params.statement ?? ''), (params.params as unknown[]) ?? [], {
-            ...((params.options as object) ?? {}),
+            ...execOpts,
             pageToken: params.pageToken as string | null | undefined,
-          });
+          } as never);
         }
 
         case 'explain': {
@@ -392,6 +400,19 @@ export function createRpcHandlers(options?: {
           const session = sessions.get(String(params.connectionId ?? 'default'));
           await session?.adapter.cancel?.(String(params.requestId ?? ''));
           return { ok: true };
+        }
+
+        case 'setKeyspace': {
+          const session = await getSession(String(params.connectionId ?? 'default'));
+          const raw = params.keyspace;
+          const keyspace =
+            raw == null || raw === '' ? null : String(raw);
+          if (!session.adapter.setKeyspace) {
+            // Engines without session default still accept the RPC so the UI can stay in sync.
+            return { ok: true, supported: false };
+          }
+          await session.adapter.setKeyspace(keyspace);
+          return { ok: true, supported: true, keyspace };
         }
 
         case 'close': {

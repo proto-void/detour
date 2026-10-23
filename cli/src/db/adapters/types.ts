@@ -29,6 +29,8 @@ export type ExecuteOptions = {
   serialConsistency?: string;
   timeoutMs?: number;
   tracing?: boolean;
+  /** Client-supplied id for cancel RPC (Promise.race abort; not server kill). */
+  requestId?: string;
 };
 
 export type ExecuteResult = {
@@ -72,6 +74,11 @@ export type DbAdapter = {
   rollback?(): Promise<void>;
   applyEdits?(edits: PendingEdit[]): Promise<{ applied: number; statements: string[] }>;
   cancel?(requestId: string): Promise<void>;
+  /**
+   * Set session default keyspace / database / schema so unqualified table names resolve.
+   * Pass `null` to clear when the engine supports it; otherwise All-mode clients should use qualified names.
+   */
+  setKeyspace?(keyspace: string | null): Promise<void>;
   close(): Promise<void>;
 };
 
